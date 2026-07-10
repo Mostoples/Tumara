@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Tumara — Aplikasi</title>
+  <meta name="description" content="Dasbor Tumara: kesehatan, produktivitas, dan keuangan dalam satu tempat.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:ital,wght@0,300;0,400;0,500;0,600;0,700;0,800;1,400&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/style.css">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><defs><linearGradient id='g' x1='0' y1='0' x2='1' y2='1'><stop offset='0' stop-color='%2310b981'/><stop offset='1' stop-color='%238b5cf6'/></linearGradient></defs><rect width='100' height='100' rx='24' fill='url(%23g)'/><text x='50' y='68' font-size='52' font-family='Arial' font-weight='bold' fill='white' text-anchor='middle'>T</text></svg>">
+  <script type="module" src="https://unpkg.com/ionicons@7.1.0/dist/ionicons/ionicons.esm.js"></script>
+  <script nomodule src="https://unpkg.com/ionicons@7.1.0/dist/ionicons/ionicons.js"></script>
+</head>
+<body>
+
+  <!-- ============ LAYAR ONBOARDING ============ -->
+  <div id="onboardScreen" class="auth-screen hidden">
+    <div class="onboard-card" id="onboardCard"><!-- diisi oleh JS --></div>
+  </div>
+
+  <!-- ============ SHELL APLIKASI ============ -->
+  <div id="appShell" class="app-shell hidden">
+
+    <aside class="sidebar">
+      <div class="sidebar-logo">
+        <div class="logo-mark">T</div>
+        <div>
+          <div class="logo-text">Tumara</div>
+          <div class="logo-tag">Tumbuh &amp; seimbang</div>
+        </div>
+      </div>
+
+      <nav class="sidebar-nav" id="sidebarNav">
+        <a class="nav-link" data-route="dashboard"><ion-icon name="grid-outline"></ion-icon><span>Beranda</span></a>
+        <a class="nav-link" data-route="health"><ion-icon name="heart-outline"></ion-icon><span>Kesehatan</span></a>
+        <a class="nav-link" data-route="productivity"><ion-icon name="rocket-outline"></ion-icon><span>Produktivitas</span></a>
+        <a class="nav-link" data-route="finance"><ion-icon name="wallet-outline"></ion-icon><span>Keuangan</span></a>
+        <a class="nav-link" data-route="encyclopedia"><ion-icon name="book-outline"></ion-icon><span>Ensiklopedia</span></a>
+        <a class="nav-link" data-route="profile"><ion-icon name="person-outline"></ion-icon><span>Profil</span></a>
+      </nav>
+
+      <div class="sidebar-footer">
+        <button class="theme-toggle" id="themeToggle" title="Ganti tema">
+          <ion-icon name="moon-outline" id="themeIcon"></ion-icon>
+          <span id="themeLabel">Mode gelap</span>
+        </button>
+        <div class="sidebar-user" id="sidebarUser"></div>
+      </div>
+    </aside>
+
+    <main class="main-area">
+      <header class="topbar">
+        <div>
+          <h1 class="topbar-title" id="pageTitle">Beranda</h1>
+          <div class="topbar-sub" id="pageSub"></div>
+        </div>
+        <div class="topbar-actions">
+          <button class="icon-btn" id="topThemeBtn" title="Ganti tema"><ion-icon name="moon-outline"></ion-icon></button>
+          <button class="avatar-btn" id="topAvatar" title="Profil"></button>
+        </div>
+      </header>
+      <div class="view-wrap"><div id="view"></div></div>
+    </main>
+
+    <nav class="bottom-nav" id="bottomNav">
+      <a class="bnav-item" data-route="dashboard"><ion-icon name="grid-outline"></ion-icon><span>Beranda</span></a>
+      <a class="bnav-item" data-route="health"><ion-icon name="heart-outline"></ion-icon><span>Sehat</span></a>
+      <a class="bnav-item" data-route="productivity"><ion-icon name="rocket-outline"></ion-icon><span>Produktif</span></a>
+      <a class="bnav-item" data-route="finance"><ion-icon name="wallet-outline"></ion-icon><span>Uang</span></a>
+      <a class="bnav-item" data-route="encyclopedia"><ion-icon name="book-outline"></ion-icon><span>Pedia</span></a>
+      <a class="bnav-item" data-route="profile"><ion-icon name="person-outline"></ion-icon><span>Profil</span></a>
+    </nav>
+  </div>
+
+  <!-- Modal & Toast root -->
+  <div id="modalRoot"></div>
+  <div id="toastRoot" class="toast-root"></div>
+
+  <script src="js/firebase-config.js"></script>
+  <script src="js/utils.js"></script>
+  <script src="js/calc.js"></script>
+  <script src="js/db.js"></script>
+  <script src="js/views/auth.js"></script>
+  <script src="js/views/dashboard.js"></script>
+  <script src="js/views/health.js"></script>
+  <script src="js/views/productivity.js"></script>
+  <script src="js/views/finance.js"></script>
+  <script src="js/views/encyclopedia.js"></script>
+  <script src="js/views/profile.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,463 @@
+/* ============================================================
+   TUMARA — Produktivitas
+   Tab: Tugas · Catatan · Jadwal · Fokus (Pomodoro)
+   ============================================================ */
+
+const Prod = {
+  tab: 'tugas',
+  taskFilter: 'aktif',
+  noteQuery: '',
+  selectedDay: new Date().getDay(), // 0=Minggu
+
+  async render(el) {
+    el.innerHTML = `
+      <div class="tabs">
+        <button class="tab ${this.tab === 'tugas' ? 'active' : ''}" data-tab="tugas"><ion-icon name="checkbox-outline"></ion-icon>Tugas</button>
+        <button class="tab ${this.tab === 'catatan' ? 'active' : ''}" data-tab="catatan"><ion-icon name="document-text-outline"></ion-icon>Catatan</button>
+        <button class="tab ${this.tab === 'jadwal' ? 'active' : ''}" data-tab="jadwal"><ion-icon name="calendar-outline"></ion-icon>Jadwal</button>
+        <button class="tab ${this.tab === 'fokus' ? 'active' : ''}" data-tab="fokus"><ion-icon name="timer-outline"></ion-icon>Fokus</button>
+      </div>
+      <div id="prodBody"></div>`;
+
+    $$('.tab', el).forEach(t => t.onclick = () => { this.tab = t.dataset.tab; this.render(el); });
+
+    const body = $('#prodBody', el);
+    if (this.tab === 'tugas') await this.renderTasks(body);
+    else if (this.tab === 'catatan') await this.renderNotes(body);
+    else if (this.tab === 'jadwal') await this.renderSchedule(body);
+    else this.renderPomo(body);
+  },
+
+  /* ============ TAB: TUGAS ============ */
+
+  async renderTasks(el) {
+    const tasks = await DB.list('tasks');
+    const sortKey = t => (t.tenggat || '9999-99-99');
+    let shown = tasks.slice().sort((a, b) => sortKey(a) < sortKey(b) ? -1 : 1);
+    if (this.taskFilter === 'aktif') shown = shown.filter(t => t.status !== 'selesai');
+    else if (this.taskFilter === 'selesai') shown = shown.filter(t => t.status === 'selesai');
+
+    const doneCount = tasks.filter(t => t.status === 'selesai').length;
+
+    el.innerHTML = `
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:16px;">
+        <div style="display:flex;gap:8px;">
+          ${['aktif', 'selesai', 'semua'].map(f => `
+            <button class="chip ${this.taskFilter === f ? 'active' : ''}" data-filter="${f}">
+              ${f[0].toUpperCase() + f.slice(1)}${f === 'selesai' && doneCount ? ` (${doneCount})` : ''}
+            </button>`).join('')}
+        </div>
+        <button class="btn btn-prod btn-sm" id="addTask"><ion-icon name="add"></ion-icon> Tugas Baru</button>
+      </div>
+
+      ${shown.length ? `
+        <div style="display:flex;flex-direction:column;gap:10px;">
+          ${shown.map(t => `
+            <div class="list-item">
+              <button class="task-check ${t.status === 'selesai' ? 'done' : ''}" data-toggle="${t.id}"><ion-icon name="checkmark"></ion-icon></button>
+              <div style="flex:1;min-width:0;">
+                <div style="font-weight:700;font-size:.92rem;" class="${t.status === 'selesai' ? 'task-title-done' : ''}">${esc(t.judul)}</div>
+                <div style="display:flex;gap:8px;align-items:center;margin-top:4px;flex-wrap:wrap;">
+                  ${t.mapel ? `<span class="badge badge-purple">${esc(t.mapel)}</span>` : ''}
+                  ${t.tenggat && t.status !== 'selesai' ? deadlineBadge(t.tenggat) : t.tenggat ? `<span class="badge badge-gray">${fmtDate(t.tenggat, { short: true })}</span>` : ''}
+                  ${t.prioritas === 'tinggi' ? '<span class="badge badge-red">Prioritas tinggi</span>' : ''}
+                </div>
+              </div>
+              <button class="mini-icon-btn" data-edit="${t.id}"><ion-icon name="create-outline"></ion-icon></button>
+              <button class="mini-icon-btn danger" data-del="${t.id}"><ion-icon name="trash-outline"></ion-icon></button>
+            </div>`).join('')}
+        </div>` : `
+        <div class="card empty-state">
+          <ion-icon name="${this.taskFilter === 'selesai' ? 'trophy-outline' : 'checkbox-outline'}"></ion-icon>
+          <div class="es-title">${this.taskFilter === 'selesai' ? 'Belum ada tugas selesai' : 'Tidak ada tugas di sini'}</div>
+          <div class="es-sub">${this.taskFilter === 'aktif' ? 'Semua beres! Tambah rencana belajar baru? ✨' : 'Selesaikan tugas untuk mengisi daftar ini 💪'}</div>
+        </div>`}`;
+
+    $$('[data-filter]', el).forEach(c => c.onclick = () => { this.taskFilter = c.dataset.filter; App.refresh(); });
+    $('#addTask', el).onclick = () => this.openTaskModal();
+    $$('[data-toggle]', el).forEach(b => b.onclick = async () => {
+      const t = tasks.find(x => x.id === b.dataset.toggle);
+      const done = t.status !== 'selesai';
+      await DB.update('tasks', t.id, { status: done ? 'selesai' : 'aktif' });
+      if (done) toast('Tugas selesai — mantap! 🎉');
+      App.refresh();
+    });
+    $$('[data-edit]', el).forEach(b => b.onclick = () => this.openTaskModal(tasks.find(x => x.id === b.dataset.edit)));
+    $$('[data-del]', el).forEach(b => b.onclick = async () => {
+      if (!await confirmDialog('Hapus tugas ini?', { danger: true, okText: 'Hapus' })) return;
+      await DB.remove('tasks', b.dataset.del);
+      toast('Tugas dihapus.');
+      App.refresh();
+    });
+  },
+
+  openTaskModal(task = null) {
+    openModal({
+      title: task ? 'Ubah Tugas' : 'Tugas Baru',
+      body: `
+        <div class="field">
+          <label>Judul tugas</label>
+          <input type="text" class="input" id="mJudul" placeholder="mis. Kerjakan LKS Matematika hal. 42" value="${esc(task?.judul || '')}">
+        </div>
+        <div class="field">
+          <label>Mata pelajaran <span style="font-weight:500;color:var(--text-3)">(opsional)</span></label>
+          <input type="text" class="input" id="mMapel" placeholder="mis. Matematika" value="${esc(task?.mapel || '')}">
+        </div>
+        <div class="grid grid-2 keep-2" style="gap:12px;">
+          <div class="field">
+            <label>Tenggat</label>
+            <input type="date" class="input" id="mTenggat" value="${task?.tenggat || ''}">
+          </div>
+          <div class="field">
+            <label>Prioritas</label>
+            <select class="select" id="mPrioritas">
+              ${['rendah', 'sedang', 'tinggi'].map(p => `<option value="${p}" ${(task?.prioritas || 'sedang') === p ? 'selected' : ''}>${p[0].toUpperCase() + p.slice(1)}</option>`).join('')}
+            </select>
+          </div>
+        </div>
+        <button class="btn btn-prod btn-block" id="mSave"><ion-icon name="checkmark"></ion-icon> ${task ? 'Simpan Perubahan' : 'Tambah Tugas'}</button>`,
+      onMount: m => {
+        $('#mSave', m).onclick = async () => {
+          const judul = $('#mJudul', m).value.trim();
+          if (!judul) return toast('Judul tugas tidak boleh kosong.', 'warning');
+          const data = {
+            judul, mapel: $('#mMapel', m).value.trim(),
+            tenggat: $('#mTenggat', m).value,
+            prioritas: $('#mPrioritas', m).value
+          };
+          if (task) await DB.update('tasks', task.id, data);
+          else await DB.add('tasks', { ...data, status: 'aktif' });
+          closeModal();
+          toast(task ? 'Tugas diperbarui.' : 'Tugas ditambahkan 📌');
+          App.refresh();
+        };
+      }
+    });
+  },
+
+  /* ============ TAB: CATATAN ============ */
+
+  async renderNotes(el) {
+    const all = (await DB.list('notes')).sort((a, b) => (b.diubah || '') < (a.diubah || '') ? -1 : 1);
+    const q = this.noteQuery.toLowerCase();
+    const notes = q ? all.filter(n =>
+      (n.judul || '').toLowerCase().includes(q) ||
+      (n.isi || '').toLowerCase().includes(q) ||
+      (n.label || '').toLowerCase().includes(q)) : all;
+
+    el.innerHTML = `
+      <div style="display:flex;gap:10px;margin-bottom:16px;flex-wrap:wrap;">
+        <div class="input-group" style="flex:1;min-width:200px;">
+          <input type="text" class="input" id="noteSearch" placeholder="Cari catatan…" value="${esc(this.noteQuery)}">
+          <button class="suffix-btn"><ion-icon name="search-outline"></ion-icon></button>
+        </div>
+        <button class="btn btn-prod" id="addNote"><ion-icon name="add"></ion-icon> Catatan Baru</button>
+      </div>
+
+      ${notes.length ? `
+        <div class="grid grid-3">
+          ${notes.map(n => `
+            <div class="card note-card hoverable" data-open="${n.id}">
+              <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:8px;">
+                <div style="font-weight:800;font-size:.95rem;">${esc(n.judul) || '<i>Tanpa judul</i>'}</div>
+                ${n.label ? `<span class="badge badge-purple">${esc(n.label)}</span>` : ''}
+              </div>
+              <div class="nc-body">${esc(n.isi)}</div>
+              <div class="nc-date">Diubah ${fmtDate((n.diubah || '').slice(0, 10), { short: true })}</div>
+            </div>`).join('')}
+        </div>` : `
+        <div class="card empty-state">
+          <ion-icon name="document-text-outline"></ion-icon>
+          <div class="es-title">${q ? 'Tidak ada catatan yang cocok' : 'Belum ada catatan'}</div>
+          <div class="es-sub">${q ? 'Coba kata kunci lain' : 'Tulis ide, rangkuman pelajaran, atau apa pun ✍️'}</div>
+        </div>`}`;
+
+    let debounce;
+    $('#noteSearch', el).oninput = e => {
+      clearTimeout(debounce);
+      debounce = setTimeout(() => { this.noteQuery = e.target.value; this.renderNotes(el); }, 250);
+    };
+    $('#addNote', el).onclick = () => this._noteModal();
+    $$('[data-open]', el).forEach(c => c.onclick = () => this._noteModal(all.find(n => n.id === c.dataset.open)));
+  },
+
+  _noteModal(note = null) {
+    openModal({
+      title: note ? 'Ubah Catatan' : 'Catatan Baru',
+      body: `
+        <div class="field">
+          <label>Judul</label>
+          <input type="text" class="input" id="mJudul" placeholder="Judul catatan" value="${esc(note?.judul || '')}">
+        </div>
+        <div class="field">
+          <label>Label <span style="font-weight:500;color:var(--text-3)">(opsional)</span></label>
+          <input type="text" class="input" id="mLabel" placeholder="mis. Biologi, Pribadi, Ide" value="${esc(note?.label || '')}">
+        </div>
+        <div class="field">
+          <label>Isi catatan</label>
+          <textarea class="textarea" id="mIsi" placeholder="Tulis di sini…">${esc(note?.isi || '')}</textarea>
+        </div>
+        <div style="display:flex;gap:10px;">
+          ${note ? '<button class="btn btn-soft-danger" id="mDel"><ion-icon name="trash-outline"></ion-icon></button>' : ''}
+          <button class="btn btn-prod btn-block" id="mSave"><ion-icon name="checkmark"></ion-icon> Simpan</button>
+        </div>`,
+      onMount: m => {
+        $('#mSave', m).onclick = async () => {
+          const judul = $('#mJudul', m).value.trim();
+          const isi = $('#mIsi', m).value.trim();
+          if (!judul && !isi) return toast('Catatan masih kosong.', 'warning');
+          const data = { judul, label: $('#mLabel', m).value.trim(), isi, diubah: new Date().toISOString() };
+          if (note) await DB.update('notes', note.id, data);
+          else await DB.add('notes', { ...data, dibuat: new Date().toISOString() });
+          closeModal();
+          toast('Catatan tersimpan ✍️');
+          App.refresh();
+        };
+        const del = $('#mDel', m);
+        if (del) del.onclick = async () => {
+          if (!await confirmDialog('Hapus catatan ini?', { danger: true, okText: 'Hapus' })) return;
+          await DB.remove('notes', note.id);
+          toast('Catatan dihapus.');
+          App.refresh();
+        };
+      }
+    });
+  },
+
+  /* ============ TAB: JADWAL ============ */
+
+  async renderSchedule(el) {
+    const schedule = await DB.list('schedule');
+    const todayIdx = new Date().getDay();
+    const dayItems = schedule
+      .filter(s => +s.hari === this.selectedDay)
+      .sort((a, b) => (a.jamMulai || '') < (b.jamMulai || '') ? -1 : 1);
+
+    // urutan tampilan: Senin dulu
+    const dayOrder = [1, 2, 3, 4, 5, 6, 0];
+
+    el.innerHTML = `
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:16px;">
+        <div class="day-selector" style="flex:1;">
+          ${dayOrder.map(d => `
+            <div class="day-pill ${d === this.selectedDay ? 'active' : ''} ${d === todayIdx ? 'today' : ''}" data-day="${d}">
+              <div class="dp-name">${HARI[d].slice(0, 3)}</div>
+            </div>`).join('')}
+        </div>
+        <button class="btn btn-prod btn-sm" id="addSchedule"><ion-icon name="add"></ion-icon> Tambah</button>
+      </div>
+
+      <div class="section-head" style="margin-top:4px;">
+        <h2>${HARI[this.selectedDay]} ${this.selectedDay === todayIdx ? '<span class="badge badge-purple">Hari ini</span>' : ''}</h2>
+      </div>
+
+      ${dayItems.length ? `
+        <div style="display:flex;flex-direction:column;gap:10px;">
+          ${dayItems.map(s => `
+            <div class="list-item">
+              <div class="item-icon" style="background:var(--prod-soft);color:var(--prod);font-size:.78rem;font-weight:800;flex-direction:column;display:flex;align-items:center;justify-content:center;line-height:1.3;">
+                ${esc(s.jamMulai)}<span style="opacity:.6;font-size:.62rem;">${esc(s.jamSelesai)}</span>
+              </div>
+              <div style="flex:1;">
+                <div style="font-weight:700;font-size:.92rem;">${esc(s.mapel)}</div>
+                ${s.ruang ? `<div style="font-size:.78rem;color:var(--text-3);"><ion-icon name="location-outline" style="vertical-align:-2px;"></ion-icon> ${esc(s.ruang)}</div>` : ''}
+              </div>
+              <button class="mini-icon-btn" data-edit="${s.id}"><ion-icon name="create-outline"></ion-icon></button>
+              <button class="mini-icon-btn danger" data-del="${s.id}"><ion-icon name="trash-outline"></ion-icon></button>
+            </div>`).join('')}
+        </div>` : `
+        <div class="card empty-state">
+          <ion-icon name="calendar-outline"></ion-icon>
+          <div class="es-title">Belum ada jadwal di hari ${HARI[this.selectedDay]}</div>
+          <div class="es-sub">Tambahkan jam pelajaran atau kegiatanmu 📚</div>
+        </div>`}`;
+
+    $$('[data-day]', el).forEach(p => p.onclick = () => { this.selectedDay = +p.dataset.day; this.renderSchedule(el); });
+    $('#addSchedule', el).onclick = () => this._scheduleModal();
+    $$('[data-edit]', el).forEach(b => b.onclick = () => this._scheduleModal(schedule.find(s => s.id === b.dataset.edit)));
+    $$('[data-del]', el).forEach(b => b.onclick = async () => {
+      if (!await confirmDialog('Hapus jadwal ini?', { danger: true, okText: 'Hapus' })) return;
+      await DB.remove('schedule', b.dataset.del);
+      toast('Jadwal dihapus.');
+      App.refresh();
+    });
+  },
+
+  _scheduleModal(item = null) {
+    const dayOrder = [1, 2, 3, 4, 5, 6, 0];
+    openModal({
+      title: item ? 'Ubah Jadwal' : 'Jadwal Baru',
+      body: `
+        <div class="field">
+          <label>Mata pelajaran / kegiatan</label>
+          <input type="text" class="input" id="mMapel" placeholder="mis. Fisika" value="${esc(item?.mapel || '')}">
+        </div>
+        <div class="field">
+          <label>Hari</label>
+          <select class="select" id="mHari">
+            ${dayOrder.map(d => `<option value="${d}" ${(item ? +item.hari : this.selectedDay) === d ? 'selected' : ''}>${HARI[d]}</option>`).join('')}
+          </select>
+        </div>
+        <div class="grid grid-2 keep-2" style="gap:12px;">
+          <div class="field">
+            <label>Jam mulai</label>
+            <input type="time" class="input" id="mMulai" value="${item?.jamMulai || '07:00'}">
+          </div>
+          <div class="field">
+            <label>Jam selesai</label>
+            <input type="time" class="input" id="mSelesai" value="${item?.jamSelesai || '08:30'}">
+          </div>
+        </div>
+        <div class="field">
+          <label>Ruang <span style="font-weight:500;color:var(--text-3)">(opsional)</span></label>
+          <input type="text" class="input" id="mRuang" placeholder="mis. Lab IPA / R. 12" value="${esc(item?.ruang || '')}">
+        </div>
+        <button class="btn btn-prod btn-block" id="mSave"><ion-icon name="checkmark"></ion-icon> Simpan</button>`,
+      onMount: m => {
+        $('#mSave', m).onclick = async () => {
+          const mapel = $('#mMapel', m).value.trim();
+          const jamMulai = $('#mMulai', m).value, jamSelesai = $('#mSelesai', m).value;
+          if (!mapel) return toast('Isi nama pelajaran/kegiatan.', 'warning');
+          if (!jamMulai || !jamSelesai) return toast('Isi jam mulai dan selesai.', 'warning');
+          if (jamSelesai <= jamMulai) return toast('Jam selesai harus setelah jam mulai.', 'warning');
+          const data = { mapel, hari: +$('#mHari', m).value, jamMulai, jamSelesai, ruang: $('#mRuang', m).value.trim() };
+          if (item) await DB.update('schedule', item.id, data);
+          else await DB.add('schedule', data);
+          this.selectedDay = data.hari;
+          closeModal();
+          toast('Jadwal tersimpan 📅');
+          App.refresh();
+        };
+      }
+    });
+  },
+
+  /* ============ TAB: FOKUS (POMODORO) ============ */
+
+  pomo: {
+    mode: 'fokus',        // 'fokus' | 'istirahat'
+    focusMin: 25,
+    breakMin: 5,
+    remaining: 25 * 60,
+    running: false,
+    timerId: null
+  },
+
+  renderPomo(el) {
+    const p = this.pomo;
+    const total = (p.mode === 'fokus' ? p.focusMin : p.breakMin) * 60;
+    const pct = total ? ((total - p.remaining) / total) * 100 : 0;
+    const isFokus = p.mode === 'fokus';
+
+    DB.list('pomodoro').then(sessions => {
+      const todaySes = sessions.filter(s => s.tanggal === todayStr());
+      const menit = todaySes.reduce((s, x) => s + x.menit, 0);
+      const stat = $('#pomoStats');
+      if (stat) stat.innerHTML = `
+        <span class="badge badge-purple">🍅 ${todaySes.length} sesi hari ini</span>
+        <span class="badge badge-green">⏱️ ${menit} menit fokus</span>`;
+    });
+
+    el.innerHTML = `
+      <div class="grid grid-2" style="align-items:start;">
+        <div class="card" style="text-align:center;">
+          <div class="card-title" style="justify-content:center;"><ion-icon name="timer" style="color:${isFokus ? 'var(--danger)' : 'var(--brand)'}"></ion-icon>Timer Fokus</div>
+          <div class="pomo-ring">
+            ${ringSVG(pct, { size: 250, stroke: 13, color: isFokus ? '#ef4444' : '#10b981', track: 'var(--surface-3)' })}
+            <div class="pomo-center">
+              <div class="pomo-mode">${isFokus ? '🎯 Waktu Fokus' : '☕ Istirahat'}</div>
+              <div class="pomo-time" id="pomoTime">${this._fmtTime(p.remaining)}</div>
+            </div>
+          </div>
+          <div style="display:flex;gap:10px;justify-content:center;margin-top:10px;">
+            <button class="btn ${p.running ? '' : (isFokus ? 'btn-danger' : 'btn-primary')} btn-lg" id="pomoToggle">
+              <ion-icon name="${p.running ? 'pause' : 'play'}"></ion-icon> ${p.running ? 'Jeda' : 'Mulai'}
+            </button>
+            <button class="btn btn-lg" id="pomoReset"><ion-icon name="refresh"></ion-icon></button>
+            <button class="btn btn-lg" id="pomoSkip" title="Lewati ke sesi berikutnya"><ion-icon name="play-skip-forward"></ion-icon></button>
+          </div>
+          <div id="pomoStats" style="display:flex;gap:8px;justify-content:center;margin-top:18px;"></div>
+        </div>
+
+        <div class="card">
+          <div class="card-title"><ion-icon name="options" style="color:var(--prod)"></ion-icon>Pengaturan</div>
+          <div class="grid grid-2 keep-2" style="gap:12px;margin-top:16px;">
+            <div class="field">
+              <label>Durasi fokus</label>
+              <select class="select" id="pomoFocusMin" ${p.running ? 'disabled' : ''}>
+                ${[15, 20, 25, 30, 45, 50].map(m => `<option value="${m}" ${p.focusMin === m ? 'selected' : ''}>${m} menit</option>`).join('')}
+              </select>
+            </div>
+            <div class="field">
+              <label>Durasi istirahat</label>
+              <select class="select" id="pomoBreakMin" ${p.running ? 'disabled' : ''}>
+                ${[5, 10, 15].map(m => `<option value="${m}" ${p.breakMin === m ? 'selected' : ''}>${m} menit</option>`).join('')}
+              </select>
+            </div>
+          </div>
+          <div class="disclaimer" style="margin-top:8px;">
+            <ion-icon name="bulb-outline"></ion-icon>
+            <span><b>Teknik Pomodoro:</b> fokus penuh tanpa HP selama satu sesi, lalu istirahat singkat. Setelah 4 sesi, ambil istirahat panjang 15–30 menit. Timer tetap berjalan walau kamu pindah halaman.</span>
+          </div>
+        </div>
+      </div>`;
+
+    $('#pomoToggle', el).onclick = () => { p.running ? this._pomoPause() : this._pomoStart(); App.refresh(); };
+    $('#pomoReset', el).onclick = () => { this._pomoPause(); p.remaining = (isFokus ? p.focusMin : p.breakMin) * 60; App.refresh(); };
+    $('#pomoSkip', el).onclick = () => { this._pomoFinish(false); };
+    $('#pomoFocusMin', el).onchange = e => {
+      p.focusMin = +e.target.value;
+      if (p.mode === 'fokus') p.remaining = p.focusMin * 60;
+      App.refresh();
+    };
+    $('#pomoBreakMin', el).onchange = e => {
+      p.breakMin = +e.target.value;
+      if (p.mode === 'istirahat') p.remaining = p.breakMin * 60;
+      App.refresh();
+    };
+  },
+
+  _fmtTime(sec) {
+    return `${String(Math.floor(sec / 60)).padStart(2, '0')}:${String(sec % 60).padStart(2, '0')}`;
+  },
+
+  _pomoStart() {
+    const p = this.pomo;
+    if (p.timerId) clearInterval(p.timerId);
+    p.running = true;
+    p.timerId = setInterval(() => {
+      p.remaining--;
+      const elTime = $('#pomoTime');
+      if (elTime) elTime.textContent = this._fmtTime(p.remaining);
+      document.title = `${this._fmtTime(p.remaining)} · ${p.mode === 'fokus' ? 'Fokus' : 'Istirahat'} — Tumara`;
+      if (p.remaining <= 0) this._pomoFinish(true);
+    }, 1000);
+  },
+
+  _pomoPause() {
+    const p = this.pomo;
+    p.running = false;
+    if (p.timerId) { clearInterval(p.timerId); p.timerId = null; }
+    document.title = 'Tumara — Tumbuh sehat, produktif, terarah';
+  },
+
+  async _pomoFinish(completed) {
+    const p = this.pomo;
+    this._pomoPause();
+    if (p.mode === 'fokus') {
+      if (completed) {
+        await DB.add('pomodoro', { tanggal: todayStr(), menit: p.focusMin });
+        beep(880, 0.18, 3);
+        toast(`Sesi fokus ${p.focusMin} menit selesai! Saatnya istirahat ☕`);
+      }
+      p.mode = 'istirahat';
+      p.remaining = p.breakMin * 60;
+      if (completed) this._pomoStart(); // istirahat mulai otomatis
+    } else {
+      if (completed) { beep(660, 0.18, 2); toast('Istirahat selesai — siap fokus lagi? 🎯', 'info'); }
+      p.mode = 'fokus';
+      p.remaining = p.focusMin * 60;
+    }
+    if (App.route === 'productivity' && this.tab === 'fokus') App.refresh();
+  }
+};

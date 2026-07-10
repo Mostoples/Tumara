@@ -8,8 +8,11 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:ital,wght@0,300;0,400;0,500;0,600;0,700;0,800;1,400&display=swap" rel="stylesheet">
+  <!-- Terapkan tema tersimpan sebelum CSS dirender agar tidak berkedip -->
+  <script>document.documentElement.dataset.theme = localStorage.getItem('tumara_theme') || 'light';</script>
   <link rel="stylesheet" href="css/index.css">
-  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><defs><linearGradient id='g' x1='0' y1='0' x2='1' y2='1'><stop offset='0' stop-color='%2310b981'/><stop offset='1' stop-color='%238b5cf6'/></linearGradient></defs><rect width='100' height='100' rx='24' fill='url(%23g)'/><text x='50' y='68' font-size='52' font-family='Arial' font-weight='bold' fill='white' text-anchor='middle'>T</text></svg>">
+  <link rel="icon" type="image/png" href="assets/logo.png">
+  <script src="js/i18n.js"></script>
   <script type="module" src="https://unpkg.com/ionicons@7.1.0/dist/ionicons/ionicons.esm.js"></script>
   <script nomodule src="https://unpkg.com/ionicons@7.1.0/dist/ionicons/ionicons.js"></script>
 </head>
@@ -19,29 +22,33 @@
   <header class="nav" id="nav">
     <div class="container nav-inner">
       <a class="nav-logo" href="#beranda">
-        <span class="logo-mark">T</span>
+        <span class="logo-mark"><img src="assets/logo.png" alt="Logo Tumara"></span>
         <span class="logo-text">Tumara</span>
       </a>
       <nav class="nav-links" id="navLinks">
-        <a href="#fitur">Fitur</a>
-        <a href="#cara">Cara Kerja</a>
-        <a href="#tentang">Tentang</a>
-        <a href="#testimoni">Testimoni</a>
+        <a href="#fitur" data-en="Features">Fitur</a>
+        <a href="#cara" data-en="How It Works">Cara Kerja</a>
+        <a href="encyclopedia.html" data-en="Encyclopedia">Ensiklopedia</a>
+        <a href="#tentang" data-en="About">Tentang</a>
+        <a href="#testimoni" data-en="Testimonials">Testimoni</a>
       </nav>
+      <button class="theme-btn" id="langBtn" title="Bahasa / Language"><ion-icon name="language-outline"></ion-icon></button>
+      <button class="theme-btn" id="themeBtn" title="Ganti tema"><ion-icon name="moon-outline"></ion-icon></button>
       <div class="nav-cta">
-        <a class="btn btn-ghost" href="auth.html">Masuk</a>
-        <a class="btn btn-grad" href="auth.html">Daftar Gratis</a>
+        <a class="btn btn-ghost" href="auth.html" data-en="Sign In">Masuk</a>
+        <a class="btn btn-grad" href="auth.html" data-en="Sign Up Free">Daftar Gratis</a>
       </div>
       <button class="nav-burger" id="navBurger" aria-label="Menu"><ion-icon name="menu-outline"></ion-icon></button>
     </div>
     <div class="nav-mobile" id="navMobile">
-      <a href="#fitur">Fitur</a>
-      <a href="#cara">Cara Kerja</a>
-      <a href="#tentang">Tentang</a>
-      <a href="#testimoni">Testimoni</a>
+      <a href="#fitur" data-en="Features">Fitur</a>
+      <a href="#cara" data-en="How It Works">Cara Kerja</a>
+      <a href="encyclopedia.html" data-en="Encyclopedia">Ensiklopedia</a>
+      <a href="#tentang" data-en="About">Tentang</a>
+      <a href="#testimoni" data-en="Testimonials">Testimoni</a>
       <div class="nm-cta">
-        <a class="btn btn-ghost" href="auth.html">Masuk</a>
-        <a class="btn btn-grad" href="auth.html">Daftar Gratis</a>
+        <a class="btn btn-ghost" href="auth.html" data-en="Sign In">Masuk</a>
+        <a class="btn btn-grad" href="auth.html" data-en="Sign Up Free">Daftar Gratis</a>
       </div>
     </div>
   </header>
@@ -52,17 +59,17 @@
     <div class="hero-blob hb-2"></div>
     <div class="container hero-inner">
       <div class="hero-copy reveal">
-        <span class="hero-badge">🌱 Pendamping harian siswa Indonesia</span>
-        <h1>Tumbuh <span class="grad-text">sehat</span>, <span class="grad-text-purple">produktif</span>, dan <span class="grad-text-amber">terarah</span> — dari satu aplikasi.</h1>
-        <p>Tumara menyatukan tiga pilar kehidupan pelajar — kesehatan, produktivitas, dan keuangan — supaya tubuh, pikiran, dan dompetmu tetap seimbang setiap hari.</p>
+        <span class="hero-badge" data-en="🌱 Daily companion for Indonesian students">🌱 Pendamping harian siswa Indonesia</span>
+        <h1 data-en='Grow <span class="grad-text">healthy</span>, <span class="grad-text-purple">productive</span>, and <span class="grad-text-amber">on track</span> — from one app.'>Tumbuh <span class="grad-text">sehat</span>, <span class="grad-text-purple">produktif</span>, dan <span class="grad-text-amber">terarah</span> — dari satu aplikasi.</h1>
+        <p data-en="Tumara brings together three pillars of student life — health, productivity, and finance — so your body, mind, and wallet stay balanced every day.">Tumara menyatukan tiga pilar kehidupan pelajar — kesehatan, produktivitas, dan keuangan — supaya tubuh, pikiran, dan dompetmu tetap seimbang setiap hari.</p>
         <div class="hero-actions">
-          <a class="btn btn-grad btn-lg" href="auth.html">Mulai Gratis <ion-icon name="arrow-forward"></ion-icon></a>
-          <a class="btn btn-ghost btn-lg" href="#fitur">Lihat Fitur</a>
+          <a class="btn btn-grad btn-lg" href="auth.html"><span data-en="Start Free">Mulai Gratis</span> <ion-icon name="arrow-forward"></ion-icon></a>
+          <a class="btn btn-ghost btn-lg" href="#fitur" data-en="See Features">Lihat Fitur</a>
         </div>
         <div class="hero-points">
-          <span><ion-icon name="checkmark-circle"></ion-icon> 100% gratis</span>
-          <span><ion-icon name="checkmark-circle"></ion-icon> Tanpa iklan</span>
-          <span><ion-icon name="checkmark-circle"></ion-icon> Datamu milikmu</span>
+          <span><ion-icon name="checkmark-circle"></ion-icon> <span data-en="100% free">100% gratis</span></span>
+          <span><ion-icon name="checkmark-circle"></ion-icon> <span data-en="No ads">Tanpa iklan</span></span>
+          <span><ion-icon name="checkmark-circle"></ion-icon> <span data-en="Your data is yours">Datamu milikmu</span></span>
         </div>
       </div>
 
@@ -84,26 +91,26 @@
             <div class="ms-num">79</div>
           </div>
           <div>
-            <div class="mc-title">Skor Keseimbangan</div>
-            <div class="mc-sub">Luar biasa! Tubuh, pikiran, dan dompetmu seimbang 🌱</div>
+            <div class="mc-title" data-en="Balance Score">Skor Keseimbangan</div>
+            <div class="mc-sub" data-en="Amazing! Your body, mind, and wallet are in balance 🌱">Luar biasa! Tubuh, pikiran, dan dompetmu seimbang 🌱</div>
           </div>
         </div>
 
         <div class="mock-card mock-task">
-          <div class="mc-title"><span class="dot dot-purple"></span> Tugas hari ini</div>
-          <div class="mt-item"><span class="mt-check done">✓</span> Kerjakan LKS Matematika</div>
-          <div class="mt-item"><span class="mt-check">○</span> Rangkuman Biologi bab 4</div>
-          <div class="mt-item"><span class="mt-check">○</span> Latihan presentasi</div>
+          <div class="mc-title"><span class="dot dot-purple"></span> <span data-en="Today's tasks">Tugas hari ini</span></div>
+          <div class="mt-item"><span class="mt-check done">✓</span> <span data-en="Do the math workbook">Kerjakan LKS Matematika</span></div>
+          <div class="mt-item"><span class="mt-check">○</span> <span data-en="Biology chapter 4 summary">Rangkuman Biologi bab 4</span></div>
+          <div class="mt-item"><span class="mt-check">○</span> <span data-en="Presentation practice">Latihan presentasi</span></div>
         </div>
 
         <div class="mock-card mock-money">
-          <div class="mc-title"><span class="dot dot-amber"></span> Sisa uang saku</div>
+          <div class="mc-title"><span class="dot dot-amber"></span> <span data-en="Remaining allowance">Sisa uang saku</span></div>
           <div class="mm-value">Rp187.500</div>
           <div class="mm-bar"><span style="width:64%"></span></div>
-          <div class="mc-sub">🎯 Sepatu futsal — 64% terkumpul</div>
+          <div class="mc-sub" data-en="🎯 Futsal shoes — 64% collected">🎯 Sepatu futsal — 64% terkumpul</div>
         </div>
 
-        <div class="mock-card mock-water">💧 6 / 8 gelas</div>
+        <div class="mock-card mock-water" data-en="💧 6 / 8 glasses">💧 6 / 8 gelas</div>
       </div>
     </div>
   </section>
@@ -113,15 +120,15 @@
     <div class="container pillar-strip reveal">
       <div class="pillar-item">
         <span class="pi-icon pi-green"><ion-icon name="heart"></ion-icon></span>
-        <div><b>Kesehatan</b><span>Kalori, tidur, air &amp; olahraga</span></div>
+        <div><b data-en="Health">Kesehatan</b><span data-en="Calories, sleep, water &amp; exercise">Kalori, tidur, air &amp; olahraga</span></div>
       </div>
       <div class="pillar-item">
         <span class="pi-icon pi-purple"><ion-icon name="rocket"></ion-icon></span>
-        <div><b>Produktivitas</b><span>Tugas, catatan, jadwal &amp; fokus</span></div>
+        <div><b data-en="Productivity">Produktivitas</b><span data-en="Tasks, notes, schedule &amp; focus">Tugas, catatan, jadwal &amp; fokus</span></div>
       </div>
       <div class="pillar-item">
         <span class="pi-icon pi-amber"><ion-icon name="wallet"></ion-icon></span>
-        <div><b>Keuangan</b><span>Uang saku &amp; target menabung</span></div>
+        <div><b data-en="Finance">Keuangan</b><span data-en="Allowance &amp; saving goals">Uang saku &amp; target menabung</span></div>
       </div>
     </div>
   </section>
@@ -130,40 +137,40 @@
   <section class="section" id="fitur">
     <div class="container">
       <div class="section-head reveal">
-        <span class="eyebrow">Fitur Lengkap</span>
-        <h2>Semua yang siswa butuhkan, <br>tanpa berpindah aplikasi.</h2>
-        <p>Berhenti bolak-balik antara kalkulator kalori, aplikasi catatan, dan pencatat keuangan. Tumara merangkum semuanya.</p>
+        <span class="eyebrow" data-en="Full Features">Fitur Lengkap</span>
+        <h2 data-en="Everything students need, <br>without switching apps.">Semua yang siswa butuhkan, <br>tanpa berpindah aplikasi.</h2>
+        <p data-en="Stop switching between a calorie calculator, a notes app, and a money tracker. Tumara brings it all together.">Berhenti bolak-balik antara kalkulator kalori, aplikasi catatan, dan pencatat keuangan. Tumara merangkum semuanya.</p>
       </div>
       <div class="feature-grid">
         <div class="feature-card fc-green reveal">
           <span class="fc-icon"><ion-icon name="flame"></ion-icon></span>
-          <h3>Kalkulator Gizi &amp; Kalori</h3>
-          <p>BMR, TDEE, dan BMI dihitung otomatis dari data dirimu — lengkap dengan panduan porsi <b>Isi Piringku</b> dari Kemenkes.</p>
+          <h3 data-en="Nutrition &amp; Calorie Calculator">Kalkulator Gizi &amp; Kalori</h3>
+          <p data-en="BMR, TDEE, and BMI calculated automatically from your data — complete with the &quot;Isi Piringku&quot; (Balanced Plate) portion guide from Indonesia&#39;s Ministry of Health.">BMR, TDEE, dan BMI dihitung otomatis dari data dirimu — lengkap dengan panduan porsi <b>Isi Piringku</b> dari Kemenkes.</p>
         </div>
         <div class="feature-card fc-green reveal">
           <span class="fc-icon"><ion-icon name="moon"></ion-icon></span>
-          <h3>Siklus Tidur &amp; Air Minum</h3>
-          <p>Kalkulator jam tidur berbasis siklus 90 menit, plus target dan pengingat minum yang menyesuaikan berat badanmu.</p>
+          <h3 data-en="Sleep Cycle &amp; Water Intake">Siklus Tidur &amp; Air Minum</h3>
+          <p data-en="A sleep calculator based on 90-minute cycles, plus a water target and reminders tailored to your body weight.">Kalkulator jam tidur berbasis siklus 90 menit, plus target dan pengingat minum yang menyesuaikan berat badanmu.</p>
         </div>
         <div class="feature-card fc-green reveal">
           <span class="fc-icon"><ion-icon name="barbell"></ion-icon></span>
-          <h3>Olahraga &amp; Gaya Hidup</h3>
-          <p>Catat latihan mingguan dan bangun <i>streak</i> hari sehat bebas rokok &amp; miras — dengan bingkai positif, bukan menghakimi.</p>
+          <h3 data-en="Exercise &amp; Lifestyle">Olahraga &amp; Gaya Hidup</h3>
+          <p data-en="Log weekly workouts and build a smoke- and alcohol-free streak — with a positive framing, not a judgmental one.">Catat latihan mingguan dan bangun <i>streak</i> hari sehat bebas rokok &amp; miras — dengan bingkai positif, bukan menghakimi.</p>
         </div>
         <div class="feature-card fc-purple reveal">
           <span class="fc-icon"><ion-icon name="checkbox"></ion-icon></span>
-          <h3>Tugas, Catatan &amp; Jadwal</h3>
-          <p>Rencana belajar dengan tenggat dan prioritas, catatan pelajaran yang bisa dicari, serta jadwal kelas mingguan.</p>
+          <h3 data-en="Tasks, Notes &amp; Schedule">Tugas, Catatan &amp; Jadwal</h3>
+          <p data-en="Study plans with deadlines and priorities, searchable class notes, and a weekly class schedule.">Rencana belajar dengan tenggat dan prioritas, catatan pelajaran yang bisa dicari, serta jadwal kelas mingguan.</p>
         </div>
         <div class="feature-card fc-purple reveal">
           <span class="fc-icon"><ion-icon name="timer"></ion-icon></span>
-          <h3>Timer Fokus Pomodoro</h3>
-          <p>25 menit fokus, 5 menit istirahat. Timer tetap berjalan walau berpindah halaman, dan setiap sesi tercatat otomatis.</p>
+          <h3 data-en="Pomodoro Focus Timer">Timer Fokus Pomodoro</h3>
+          <p data-en="25 minutes focused, 5 minutes break. The timer keeps running even if you switch pages, and every session is logged automatically.">25 menit fokus, 5 menit istirahat. Timer tetap berjalan walau berpindah halaman, dan setiap sesi tercatat otomatis.</p>
         </div>
         <div class="feature-card fc-amber reveal">
           <span class="fc-icon"><ion-icon name="wallet"></ion-icon></span>
-          <h3>Keuangan &amp; Target Menabung</h3>
-          <p>Catat uang saku dan jajan, lihat grafik pengeluaran, lalu wujudkan barang impianmu dengan target menabung berprogres.</p>
+          <h3 data-en="Finance &amp; Savings Goals">Keuangan &amp; Target Menabung</h3>
+          <p data-en="Track your allowance and spending, view expense charts, and make your dream item happen with progressive savings goals.">Catat uang saku dan jajan, lihat grafik pengeluaran, lalu wujudkan barang impianmu dengan target menabung berprogres.</p>
         </div>
       </div>
     </div>
@@ -173,26 +180,26 @@
   <section class="section section-alt" id="cara">
     <div class="container">
       <div class="section-head reveal">
-        <span class="eyebrow">Cara Kerja</span>
-        <h2>Mulai dalam tiga langkah.</h2>
+        <span class="eyebrow" data-en="How It Works">Cara Kerja</span>
+        <h2 data-en="Start in three steps.">Mulai dalam tiga langkah.</h2>
       </div>
       <div class="steps">
         <div class="step reveal">
           <span class="step-num">1</span>
-          <h3>Daftar &amp; kenalan</h3>
-          <p>Buat akun gratis, lalu isi data diri singkat — usia, tinggi, berat, dan tingkat aktivitasmu.</p>
+          <h3 data-en="Sign up &amp; get acquainted">Daftar &amp; kenalan</h3>
+          <p data-en="Create a free account, then fill in a few quick details — your age, height, weight, and activity level.">Buat akun gratis, lalu isi data diri singkat — usia, tinggi, berat, dan tingkat aktivitasmu.</p>
         </div>
         <div class="step-arrow reveal"><ion-icon name="arrow-forward"></ion-icon></div>
         <div class="step reveal">
           <span class="step-num">2</span>
-          <h3>Target dihitung otomatis</h3>
-          <p>Tumara langsung menghitung kebutuhan kalori dan target minum harian yang pas untukmu.</p>
+          <h3 data-en="Targets calculated automatically">Target dihitung otomatis</h3>
+          <p data-en="Tumara instantly calculates the right calorie and daily water targets for you.">Tumara langsung menghitung kebutuhan kalori dan target minum harian yang pas untukmu.</p>
         </div>
         <div class="step-arrow reveal"><ion-icon name="arrow-forward"></ion-icon></div>
         <div class="step reveal">
           <span class="step-num">3</span>
-          <h3>Jalani &amp; pantau</h3>
-          <p>Check-in tiap hari: tandai tugas, catat jajan, minum air — dan lihat Skor Keseimbanganmu naik.</p>
+          <h3 data-en="Live it &amp; track it">Jalani &amp; pantau</h3>
+          <p data-en="Check in every day: tick off tasks, log spending, drink water — and watch your Balance Score climb.">Check-in tiap hari: tandai tugas, catat jajan, minum air — dan lihat Skor Keseimbanganmu naik.</p>
         </div>
       </div>
     </div>
@@ -202,15 +209,15 @@
   <section class="balance">
     <div class="container balance-inner reveal">
       <div class="balance-copy">
-        <span class="eyebrow eyebrow-light">Keunggulan Kami</span>
-        <h2>Satu angka yang merangkum harimu: <br>Skor Keseimbangan.</h2>
-        <p>Bukan sekadar banyak fitur. Setiap pagi kamu melihat satu ringkasan — kalori hari ini, tugas yang jatuh tempo, dan sisa uang jajan — dirangkum menjadi satu skor yang memotivasi.</p>
+        <span class="eyebrow eyebrow-light" data-en="Our Edge">Keunggulan Kami</span>
+        <h2 data-en="One number that sums up your day: <br>the Balance Score.">Satu angka yang merangkum harimu: <br>Skor Keseimbangan.</h2>
+        <p data-en="Not just a pile of features. Every morning you see one summary — today's calories, tasks due, and remaining allowance — rolled into one motivating score.">Bukan sekadar banyak fitur. Setiap pagi kamu melihat satu ringkasan — kalori hari ini, tugas yang jatuh tempo, dan sisa uang jajan — dirangkum menjadi satu skor yang memotivasi.</p>
         <ul class="balance-list">
-          <li><ion-icon name="heart"></ion-icon> Skor kesehatan dari air, tidur, makan &amp; gerak</li>
-          <li><ion-icon name="rocket"></ion-icon> Skor produktivitas dari tugas yang terselesaikan</li>
-          <li><ion-icon name="wallet"></ion-icon> Skor keuangan dari kebiasaan mencatat &amp; saldo</li>
+          <li><ion-icon name="heart"></ion-icon> <span data-en="Health score from water, sleep, food &amp; movement">Skor kesehatan dari air, tidur, makan &amp; gerak</span></li>
+          <li><ion-icon name="rocket"></ion-icon> <span data-en="Productivity score from completed tasks">Skor produktivitas dari tugas yang terselesaikan</span></li>
+          <li><ion-icon name="wallet"></ion-icon> <span data-en="Finance score from logging habits &amp; balance">Skor keuangan dari kebiasaan mencatat &amp; saldo</span></li>
         </ul>
-        <a class="btn btn-light btn-lg" href="auth.html">Coba Sekarang <ion-icon name="arrow-forward"></ion-icon></a>
+        <a class="btn btn-light btn-lg" href="auth.html"><span data-en="Try It Now">Coba Sekarang</span> <ion-icon name="arrow-forward"></ion-icon></a>
       </div>
       <div class="balance-visual">
         <div class="bv-ring">
@@ -220,7 +227,7 @@
               stroke-linecap="round" stroke-dasharray="528" stroke-dashoffset="111"
               transform="rotate(-90 100 100)"/>
           </svg>
-          <div class="bv-center"><b>79</b><span>Skor Seimbang</span></div>
+          <div class="bv-center"><b>79</b><span data-en="Balance Score">Skor Seimbang</span></div>
         </div>
       </div>
     </div>
@@ -230,24 +237,24 @@
   <section class="section" id="tentang">
     <div class="container about">
       <div class="section-head reveal">
-        <span class="eyebrow">Tentang Tumara</span>
-        <h2>Dari kata <i>"tumbuh"</i> — untuk versi dirimu yang lebih baik.</h2>
+        <span class="eyebrow" data-en="About Tumara">Tentang Tumara</span>
+        <h2 data-en='From the word <i>"tumbuh"</i> (grow) — for a better version of you.'>Dari kata <i>"tumbuh"</i> — untuk versi dirimu yang lebih baik.</h2>
       </div>
       <div class="about-grid">
         <div class="about-card reveal">
           <span class="ac-emoji">🌱</span>
-          <h3>Visi</h3>
-          <p>Menjadi sahabat bertumbuh bagi setiap pelajar Indonesia — membantu menjaga tubuh, pikiran, dan dompet tetap seimbang sejak dini.</p>
+          <h3 data-en="Vision">Visi</h3>
+          <p data-en="To be a growth companion for every Indonesian student — helping keep body, mind, and wallet balanced from an early age.">Menjadi sahabat bertumbuh bagi setiap pelajar Indonesia — membantu menjaga tubuh, pikiran, dan dompet tetap seimbang sejak dini.</p>
         </div>
         <div class="about-card reveal">
           <span class="ac-emoji">🎯</span>
-          <h3>Misi</h3>
-          <p>Menyederhanakan kebiasaan sehat, belajar terarah, dan literasi keuangan ke dalam satu pengalaman yang ringan, ramah, dan menyenangkan.</p>
+          <h3 data-en="Mission">Misi</h3>
+          <p data-en="Simplifying healthy habits, focused learning, and financial literacy into one light, friendly, and enjoyable experience.">Menyederhanakan kebiasaan sehat, belajar terarah, dan literasi keuangan ke dalam satu pengalaman yang ringan, ramah, dan menyenangkan.</p>
         </div>
         <div class="about-card reveal">
           <span class="ac-emoji">🛡️</span>
-          <h3>Tanggung Jawab</h3>
-          <p>Dirancang untuk remaja: framing positif, tanpa target ekstrem, dan bukan pengganti nasihat tenaga kesehatan profesional.</p>
+          <h3 data-en="Responsibility">Tanggung Jawab</h3>
+          <p data-en="Designed for teens: positive framing, no extreme targets, and not a substitute for professional medical advice.">Dirancang untuk remaja: framing positif, tanpa target ekstrem, dan bukan pengganti nasihat tenaga kesehatan profesional.</p>
         </div>
       </div>
     </div>
@@ -257,32 +264,32 @@
   <section class="section section-alt" id="testimoni">
     <div class="container">
       <div class="section-head reveal">
-        <span class="eyebrow">Kata Mereka</span>
-        <h2>Disukai siswa yang ingin bertumbuh.</h2>
+        <span class="eyebrow" data-en="What They Say">Kata Mereka</span>
+        <h2 data-en="Loved by students who want to grow.">Disukai siswa yang ingin bertumbuh.</h2>
       </div>
       <div class="testi-grid">
         <div class="testi-card reveal">
           <div class="tc-stars">★★★★★</div>
-          <p>"Dulu aku pakai tiga aplikasi beda-beda. Sekarang tinggal buka Tumara tiap pagi — tugas, uang jajan, sama target minum kelihatan semua."</p>
+          <p data-en='"I used to juggle three different apps. Now I just open Tumara every morning — tasks, allowance, and my water target all in one place."'>"Dulu aku pakai tiga aplikasi beda-beda. Sekarang tinggal buka Tumara tiap pagi — tugas, uang jajan, sama target minum kelihatan semua."</p>
           <div class="tc-user">
             <span class="tc-avatar" style="background:linear-gradient(135deg,#10b981,#34d399)">NA</span>
-            <div><b>Nadia A.</b><span>Siswi SMA · Bandung</span></div>
+            <div><b>Nadia A.</b><span data-en="High school student · Bandung">Siswi SMA · Bandung</span></div>
           </div>
         </div>
         <div class="testi-card reveal">
           <div class="tc-stars">★★★★★</div>
-          <p>"Timer Pomodoro-nya bikin belajar jadi kebiasaan. Streak fokusku udah 3 minggu dan nilai ulangan ikut naik!"</p>
+          <p data-en='"The Pomodoro timer turned studying into a habit. My focus streak is already 3 weeks and my grades went up too!"'>"Timer Pomodoro-nya bikin belajar jadi kebiasaan. Streak fokusku udah 3 minggu dan nilai ulangan ikut naik!"</p>
           <div class="tc-user">
             <span class="tc-avatar" style="background:linear-gradient(135deg,#8b5cf6,#a78bfa)">RF</span>
-            <div><b>Raka F.</b><span>Siswa SMK · Surabaya</span></div>
+            <div><b>Raka F.</b><span data-en="Vocational student · Surabaya">Siswa SMK · Surabaya</span></div>
           </div>
         </div>
         <div class="testi-card reveal">
           <div class="tc-stars">★★★★★</div>
-          <p>"Fitur target menabungnya juara. Akhirnya kebeli sepatu futsal impian dari nyisihin uang jajan sendiri 🎉"</p>
+          <p data-en='"The savings goal feature is the best. I finally bought my dream futsal shoes just by setting aside my own allowance 🎉"'>"Fitur target menabungnya juara. Akhirnya kebeli sepatu futsal impian dari nyisihin uang jajan sendiri 🎉"</p>
           <div class="tc-user">
             <span class="tc-avatar" style="background:linear-gradient(135deg,#f59e0b,#f97316)">DP</span>
-            <div><b>Dimas P.</b><span>Siswa SMP · Yogyakarta</span></div>
+            <div><b>Dimas P.</b><span data-en="Middle school student · Yogyakarta">Siswa SMP · Yogyakarta</span></div>
           </div>
         </div>
       </div>
@@ -292,9 +299,9 @@
   <!-- ============ CTA ============ -->
   <section class="cta">
     <div class="container cta-card reveal">
-      <h2>Siap bertumbuh bersama Tumara?</h2>
-      <p>Gratis, kurang dari satu menit untuk memulai. Keseimbangan kecil setiap hari, hasil besar di masa depan.</p>
-      <a class="btn btn-grad btn-lg" href="auth.html">Buat Akun Gratis <ion-icon name="arrow-forward"></ion-icon></a>
+      <h2 data-en="Ready to grow with Tumara?">Siap bertumbuh bersama Tumara?</h2>
+      <p data-en="Free, takes less than a minute to get started. A little balance every day, big results in the future.">Gratis, kurang dari satu menit untuk memulai. Keseimbangan kecil setiap hari, hasil besar di masa depan.</p>
+      <a class="btn btn-grad btn-lg" href="auth.html"><span data-en="Create Free Account">Buat Akun Gratis</span> <ion-icon name="arrow-forward"></ion-icon></a>
     </div>
   </section>
 
@@ -303,35 +310,59 @@
     <div class="container footer-inner">
       <div class="footer-brand">
         <a class="nav-logo" href="#beranda">
-          <span class="logo-mark">T</span>
+          <span class="logo-mark"><img src="assets/logo.png" alt="Logo Tumara"></span>
           <span class="logo-text">Tumara</span>
         </a>
-        <p>Tumbuh sehat, produktif, terarah.<br>Pendamping harian siswa Indonesia.</p>
+        <p data-en="Grow healthy, productive, on track.<br>Daily companion for Indonesian students.">Tumbuh sehat, produktif, terarah.<br>Pendamping harian siswa Indonesia.</p>
       </div>
       <div class="footer-col">
-        <b>Produk</b>
-        <a href="#fitur">Fitur</a>
-        <a href="#cara">Cara Kerja</a>
-        <a href="auth.html">Masuk / Daftar</a>
+        <b data-en="Product">Produk</b>
+        <a href="#fitur" data-en="Features">Fitur</a>
+        <a href="#cara" data-en="How It Works">Cara Kerja</a>
+        <a href="encyclopedia.html" data-en="Encyclopedia">Ensiklopedia</a>
+        <a href="auth.html" data-en="Sign In / Sign Up">Masuk / Daftar</a>
       </div>
       <div class="footer-col">
-        <b>Perusahaan</b>
-        <a href="#tentang">Tentang Kami</a>
-        <a href="#testimoni">Testimoni</a>
+        <b data-en="Company">Perusahaan</b>
+        <a href="#tentang" data-en="About Us">Tentang Kami</a>
+        <a href="#testimoni" data-en="Testimonials">Testimoni</a>
       </div>
       <div class="footer-col">
-        <b>Kontak</b>
+        <b data-en="Contact">Kontak</b>
         <a href="mailto:halo@tumara.id"><ion-icon name="mail-outline"></ion-icon> halo@tumara.id</a>
         <a href="#"><ion-icon name="logo-instagram"></ion-icon> @tumara.id</a>
       </div>
     </div>
     <div class="container footer-bottom">
-      <span>© 2026 Tumara. Semua hak dilindungi.</span>
-      <span>Tumara bukan pengganti nasihat tenaga kesehatan profesional.</span>
+      <span data-en="© 2026 Tumara. All rights reserved.">© 2026 Tumara. Semua hak dilindungi.</span>
+      <span data-en="Tumara is not a substitute for professional medical advice.">Tumara bukan pengganti nasihat tenaga kesehatan profesional.</span>
     </div>
   </footer>
 
+  <!-- ============ BOTTOM NAV (mobile) ============ -->
+  <nav class="bnav" id="bnav">
+    <a href="#beranda" class="active"><ion-icon name="home-outline"></ion-icon><span data-en="Home">Beranda</span></a>
+    <a href="#fitur"><ion-icon name="sparkles-outline"></ion-icon><span data-en="Features">Fitur</span></a>
+    <a href="encyclopedia.html"><ion-icon name="book-outline"></ion-icon><span data-en="Pedia">Pedia</span></a>
+    <a href="#tentang"><ion-icon name="information-circle-outline"></ion-icon><span data-en="About">Tentang</span></a>
+    <a href="auth.html"><ion-icon name="person-circle-outline"></ion-icon><span data-en="Sign in">Masuk</span></a>
+  </nav>
+
   <script>
+    // Toggle bahasa ID/EN (I18N.set menukar semua elemen [data-en] otomatis)
+    document.getElementById('langBtn').onclick = () => I18N.toggle();
+
+    // Toggle tema terang/gelap (key sama dengan aplikasi: tumara_theme)
+    const themeBtn = document.getElementById('themeBtn');
+    const themeIcon = themeBtn.querySelector('ion-icon');
+    const applyTheme = t => {
+      document.documentElement.dataset.theme = t;
+      localStorage.setItem('tumara_theme', t);
+      themeIcon.setAttribute('name', t === 'dark' ? 'sunny-outline' : 'moon-outline');
+    };
+    applyTheme(document.documentElement.dataset.theme || 'light');
+    themeBtn.onclick = () => applyTheme(document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark');
+
     // Navbar: efek solid saat digulir
     const nav = document.getElementById('nav');
     addEventListener('scroll', () => nav.classList.toggle('scrolled', scrollY > 12), { passive: true });
@@ -347,6 +378,18 @@
       if (e.isIntersecting) { e.target.classList.add('shown'); io.unobserve(e.target); }
     }), { threshold: 0.12 });
     document.querySelectorAll('.reveal').forEach(el => io.observe(el));
+
+    // Bottom nav (mobile): tandai menu sesuai section yang sedang terlihat
+    const bnavLinks = document.querySelectorAll('#bnav a[href^="#"]');
+    const spy = new IntersectionObserver(entries => entries.forEach(e => {
+      if (!e.isIntersecting) return;
+      bnavLinks.forEach(a =>
+        a.classList.toggle('active', a.getAttribute('href') === '#' + e.target.id));
+    }), { rootMargin: '-40% 0px -55% 0px' });
+    ['beranda', 'fitur', 'tentang'].forEach(id => {
+      const el = document.getElementById(id);
+      if (el) spy.observe(el);
+    });
   </script>
 </body>
 </html>

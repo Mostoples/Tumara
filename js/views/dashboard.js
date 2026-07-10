@@ -45,34 +45,34 @@ const Dashboard = {
           ${ringSVG(score.total, { size: 130, stroke: 11 })}
           <div class="sr-val">
             <div class="sr-num">${score.total}</div>
-            <div class="sr-label">Skor Seimbang</div>
+            <div class="sr-label">${tr('Skor Seimbang', 'Balance Score')}</div>
           </div>
         </div>
       </div>
 
       <!-- AKSI CEPAT -->
-      <div class="section-head"><h2>Aksi Cepat</h2></div>
+      <div class="section-head"><h2>${tr('Aksi Cepat', 'Quick Actions')}</h2></div>
       <div class="quick-actions">
         <button class="qa-btn" id="qaWater">
           <span class="item-icon" style="background:var(--info-soft);color:var(--info)"><ion-icon name="water"></ion-icon></span>
-          + Gelas Air
+          ${tr('+ Gelas Air', '+ Glass of Water')}
         </button>
         <button class="qa-btn" id="qaTx">
           <span class="item-icon" style="background:var(--fin-soft);color:var(--fin)"><ion-icon name="cash-outline"></ion-icon></span>
-          + Transaksi
+          ${tr('+ Transaksi', '+ Transaction')}
         </button>
         <button class="qa-btn" id="qaTask">
           <span class="item-icon" style="background:var(--prod-soft);color:var(--prod)"><ion-icon name="add-circle-outline"></ion-icon></span>
-          + Tugas
+          ${tr('+ Tugas', '+ Task')}
         </button>
         <button class="qa-btn" id="qaFocus">
           <span class="item-icon" style="background:var(--danger-soft);color:var(--danger)"><ion-icon name="timer-outline"></ion-icon></span>
-          Timer Fokus
+          ${tr('Timer Fokus', 'Focus Timer')}
         </button>
       </div>
 
       <!-- TIGA PILAR -->
-      <div class="section-head"><h2>Ringkasan Hari Ini</h2></div>
+      <div class="section-head"><h2>${tr('Ringkasan Hari Ini', "Today's Summary")}</h2></div>
       <div class="grid grid-3">
 
         <!-- KESEHATAN -->
@@ -80,26 +80,26 @@ const Dashboard = {
           <div class="pc-head">
             <div class="pc-title">
               <span class="item-icon" style="background:var(--health-soft);color:var(--health)"><ion-icon name="heart"></ion-icon></span>
-              Kesehatan
+              ${tr('Kesehatan', 'Health')}
             </div>
             <span class="badge badge-green">${score.health}</span>
           </div>
           <div style="display:flex;flex-direction:column;gap:13px;">
             <div>
               <div style="display:flex;justify-content:space-between;font-size:.8rem;font-weight:600;color:var(--text-2);margin-bottom:6px;">
-                <span>🔥 Energi</span><span>${daily.kalori.toLocaleString('id-ID')} / ${targetKalori.toLocaleString('id-ID')} kkal</span>
+                <span>🔥 ${tr('Energi', 'Energy')}</span><span>${daily.kalori.toLocaleString('id-ID')} / ${targetKalori.toLocaleString('id-ID')} ${tr('kkal', 'kcal')}</span>
               </div>
               <div class="progress"><div class="progress-fill" style="width:${pctKalori}%"></div></div>
             </div>
             <div>
               <div style="display:flex;justify-content:space-between;font-size:.8rem;font-weight:600;color:var(--text-2);margin-bottom:6px;">
-                <span>💧 Minum</span><span>${daily.air} / ${targetAir} gelas</span>
+                <span>💧 ${tr('Minum', 'Water')}</span><span>${daily.air} / ${targetAir} ${tr('gelas', 'glasses')}</span>
               </div>
               <div class="progress"><div class="progress-fill blue" style="width:${pctAir}%"></div></div>
             </div>
             <div style="display:flex;justify-content:space-between;font-size:.8rem;font-weight:600;color:var(--text-2);">
-              <span>🌙 Tidur semalam</span>
-              <span>${daily.tidur > 0 ? daily.tidur + ' jam' : '<i style="color:var(--text-3)">belum dicatat</i>'}</span>
+              <span>🌙 ${tr('Tidur semalam', "Last night's sleep")}</span>
+              <span>${daily.tidur > 0 ? daily.tidur + ' ' + tr('jam', 'hours') : `<i style="color:var(--text-3)">${tr('belum dicatat', 'not logged yet')}</i>`}</span>
             </div>
           </div>
         </div>
@@ -109,11 +109,11 @@ const Dashboard = {
           <div class="pc-head">
             <div class="pc-title">
               <span class="item-icon" style="background:var(--prod-soft);color:var(--prod)"><ion-icon name="rocket"></ion-icon></span>
-              Produktivitas
+              ${tr('Produktivitas', 'Productivity')}
             </div>
             <span class="badge badge-purple">${score.prod}</span>
           </div>
-          ${dueToday > 0 ? `<div style="font-size:.8rem;font-weight:600;color:var(--text-2);margin-bottom:11px;">📌 ${dueToday} tugas jatuh tempo hari ini</div>` : ''}
+          ${dueToday > 0 ? `<div style="font-size:.8rem;font-weight:600;color:var(--text-2);margin-bottom:11px;">📌 ${tr(`${dueToday} tugas jatuh tempo hari ini`, `${dueToday} task${dueToday > 1 ? 's' : ''} due today`)}</div>` : ''}
           ${aktif.length ? `
             <div style="display:flex;flex-direction:column;gap:9px;">
               ${aktif.slice(0, 3).map(t => `
@@ -125,8 +125,8 @@ const Dashboard = {
             </div>` : `
             <div class="empty-state" style="padding:22px 10px;">
               <ion-icon name="checkmark-done-outline"></ion-icon>
-              <div class="es-title">Tidak ada tugas aktif</div>
-              <div class="es-sub">Santai, atau tambah tugas baru ✨</div>
+              <div class="es-title">${tr('Tidak ada tugas aktif', 'No active tasks')}</div>
+              <div class="es-sub">${tr('Santai, atau tambah tugas baru ✨', 'Relax, or add a new task ✨')}</div>
             </div>`}
         </div>
 
@@ -135,11 +135,11 @@ const Dashboard = {
           <div class="pc-head">
             <div class="pc-title">
               <span class="item-icon" style="background:var(--fin-soft);color:var(--fin)"><ion-icon name="wallet"></ion-icon></span>
-              Keuangan
+              ${tr('Keuangan', 'Finance')}
             </div>
             <span class="badge badge-amber">${score.fin}</span>
           </div>
-          <div style="font-size:.78rem;font-weight:700;color:var(--text-3);">SISA SALDO BULAN INI</div>
+          <div style="font-size:.78rem;font-weight:700;color:var(--text-3);">${tr('SISA SALDO BULAN INI', "THIS MONTH'S BALANCE")}</div>
           <div class="stat-row" style="margin:3px 0 13px;">
             <span class="stat-num" style="color:${saldo >= 0 ? 'inherit' : 'var(--danger)'}">${fmtRp(saldo)}</span>
           </div>
@@ -149,13 +149,13 @@ const Dashboard = {
               <span>${Math.round(topGoal.terkumpul / topGoal.target * 100)}%</span>
             </div>
             <div class="progress"><div class="progress-fill amber" style="width:${clamp(Math.round(topGoal.terkumpul / topGoal.target * 100), 0, 100)}%"></div></div>` : `
-            <div style="font-size:.8rem;color:var(--text-3);">Belum ada target menabung — yuk buat satu! 🎯</div>`}
+            <div style="font-size:.8rem;color:var(--text-3);">${tr('Belum ada target menabung — yuk buat satu! 🎯', 'No savings goal yet — create one! 🎯')}</div>`}
         </div>
       </div>
 
       <div class="disclaimer" style="margin-top:26px;">
         <ion-icon name="shield-checkmark-outline"></ion-icon>
-        <span>Tumara adalah pendamping kebiasaan sehat dan bukan pengganti nasihat tenaga kesehatan profesional.</span>
+        <span>${tr('Tumara adalah pendamping kebiasaan sehat dan bukan pengganti nasihat tenaga kesehatan profesional.', 'Tumara is a healthy-habit companion and not a substitute for professional medical advice.')}</span>
       </div>`;
 
     /* --- interaksi --- */
@@ -164,7 +164,7 @@ const Dashboard = {
     $('#qaWater', el).onclick = async () => {
       const d = await DB.getDaily();
       await DB.saveDaily(todayStr(), { air: (d.air || 0) + 1 });
-      toast(`Segar! ${(d.air || 0) + 1} gelas air hari ini 💧`);
+      toast(tr(`Segar! ${(d.air || 0) + 1} gelas air hari ini 💧`, `Refreshing! ${(d.air || 0) + 1} glasses of water today 💧`));
       App.refresh();
     };
     $('#qaTx', el).onclick = () => Fin.openTxModal();

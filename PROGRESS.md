@@ -14,6 +14,7 @@ Semua file rancangan sudah dibuat dan Firebase sudah AKTIF.
   - `index.html` — **company profile / landing page** (CSS sendiri: `css/index.css`)
   - `auth.html` — halaman masuk/daftar (pakai `css/style.css`)
   - `app.html` — shell aplikasi/dasbor SPA (pakai `css/style.css`; view dirender JS)
+  - `encyclopedia.html` — **ensiklopedia publik** (tanpa login; memuat `utils.js` + `views/encyclopedia.js` saja, render `Ency` langsung; ditautkan dari nav & footer landing)
 - Database: **Firebase AKTIF** (`USE_FIREBASE = true`, config project `tumara-id` sudah diisi di `js/firebase-config.js`). Adapter Firebase Auth + Firestore ada di `js/db.js`. Bila ingin mode offline/lokal, ubah `USE_FIREBASE = false` → otomatis pakai localStorage.
 - Bahasa UI: Indonesia. Desain: elegan, modern, mobile-first, mode terang/gelap (app), font Plus Jakarta Sans, ikon Ionicons 7 (CDN).
 - Warna pilar: hijau = kesehatan (`--health`), ungu = produktivitas (`--prod`), amber = keuangan (`--fin`). Brand: emerald.
@@ -27,7 +28,9 @@ Tumara/
 ├── index.html                 ✅ landing page / company profile (nav, hero + mock preview, pilar, fitur, cara kerja, skor keseimbangan, tentang, testimoni, CTA, footer)
 ├── auth.html                  ✅ halaman masuk/daftar (bootstrap inline: sudah login → redirect app.html)
 ├── app.html                   ✅ shell aplikasi (onboarding screen, sidebar+bottom-nav, topbar, modal/toast root, urutan <script>)
-├── firebase.json / .firebaserc / 404.html  (Firebase Hosting)
+├── firebase.json / .firebaserc / 404.html  (Firebase Hosting; 404 sudah bergaya Tumara)
+├── assets/
+│   └── logo.png               ✅ logo resmi (tunas 3 daun, PNG transparan 1040px) — dipakai sebagai favicon semua halaman & di `.logo-mark` (chip putih + <img>, gaya di style.css & index.css)
 ├── css/
 │   ├── index.css              ✅ gaya landing page (terpisah dari aplikasi)
 │   └── style.css              ✅ design system aplikasi (token light/dark, shell, card, btn, form, dst.)
@@ -66,6 +69,9 @@ view objects: `Dashboard`, `Health`, `Prod`, `Fin`, `Ency`, `Profile`, `AuthView
 Modul Ensiklopedia (route `encyclopedia`, view `Ency` di `js/views/encyclopedia.js`):
 konten artikel statis di `Ency.ARTIKEL` (id unik, kategori health/prod/fin, isi = array `{h?, p?, list?}`),
 gaya di `css/style.css` bagian "ENSIKLOPEDIA" (prefix `.ency-*`), tidak menyentuh Firestore.
+Selain di dalam app, `Ency` juga dirender di halaman publik `encyclopedia.html`
+(shell sendiri via `<style>` inline, tema ikut localStorage `tumara_theme`,
+bookmark berbagi key `tumara_ency_bm` dengan versi in-app).
 
 ## Setup Firebase (console.firebase.google.com, project: tumara-id)
 
@@ -101,4 +107,20 @@ Wajib dipastikan agar login berfungsi:
 - Scope Opsi A (siswa saja); "Isi Piringku" (bukan 4 sehat 5 sempurna); framing positif untuk streak bebas rokok/miras; disclaimer kesehatan di onboarding, dashboard, kalkulator, profil, dan footer landing.
 - Skor Keseimbangan = rata-rata skor health/prod/fin (logika di `calc.js`).
 - Menit olahraga harian disinkronkan dari log workout ke `health_daily.olahraga` via `Health._syncDailySport(tanggal)`.
-- Landing page satu tema terang yang elegan; aplikasi mendukung terang/gelap.
+- Landing page & aplikasi sama-sama mendukung terang/gelap. Landing memakai key
+  localStorage yang sama (`tumara_theme`) + `data-theme` di `<html>`; tombol toggle
+  `#themeBtn` di navbar (`.theme-btn` di `css/index.css`, override gelap di blok
+  `[data-theme="dark"]`); tema diterapkan lewat script inline di `<head>` sebelum
+  CSS agar tidak berkedip.
+- **Mobile-first di semua halaman**: bottom nav muncul di layar kecil pada semua halaman —
+  app (`.bottom-nav` bawaan, ≤860px), `encyclopedia.html` / `auth.html` / `404.html`
+  (pakai `.bottom-nav` + `.bnav-item` dari `style.css`, link antar halaman),
+  dan landing `index.html` (kelas `.bnav` sendiri di `css/index.css`, tampil ≤620px,
+  dengan scrollspy IntersectionObserver untuk menandai section aktif).
+  Di ≤560px modal aplikasi berubah jadi bottom-sheet (`style.css`). Halaman yang
+  menampilkan bottom nav wajib memberi padding-bawah ±110px agar konten tidak tertutup.
+- Topbar app **sticky** (blur, `z-index: 30`) — tidak ikut ter-scroll. Scrollbar
+  disembunyikan global di `style.css` (scroll tetap jalan). Avatar merender
+  `fotoUrl` dari Firestore via `Profile._avatarHTML(u)` (fallback inisial;
+  `referrerpolicy="no-referrer"` agar foto akun Google tidak 403) — dipakai di
+  topbar, sidebar user, dan halaman Profil.

@@ -1,0 +1,11 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Setiap pengguna hanya boleh membaca/menulis datanya sendiri:
+    // profil di users/{uid} dan seluruh subkoleksi di bawahnya
+    // (health_daily, workouts, notes, tasks, schedule, transactions, goals, pomodoro).
+    match /users/{uid}/{document=**} {
+      allow read, write: if request.auth != null && request.auth.uid == uid;
+    }
+  }
+}

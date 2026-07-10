@@ -7,11 +7,11 @@
 const Calc = {
 
   AKTIVITAS: [
-    { key: 'sedentary', label: 'Jarang bergerak (banyak duduk)',            faktor: 1.2 },
-    { key: 'ringan',    label: 'Aktivitas ringan (olahraga 1–3×/minggu)',   faktor: 1.375 },
-    { key: 'sedang',    label: 'Aktivitas sedang (olahraga 3–5×/minggu)',   faktor: 1.55 },
-    { key: 'aktif',     label: 'Aktif (olahraga 6–7×/minggu)',              faktor: 1.725 },
-    { key: 'sangat',    label: 'Sangat aktif (atlet / kerja fisik berat)',  faktor: 1.9 }
+    { key: 'sedentary', get label() { return tr('Jarang bergerak (banyak duduk)', 'Mostly sitting (sedentary)'); },                  faktor: 1.2 },
+    { key: 'ringan',    get label() { return tr('Aktivitas ringan (olahraga 1–3×/minggu)', 'Lightly active (exercise 1–3×/week)'); }, faktor: 1.375 },
+    { key: 'sedang',    get label() { return tr('Aktivitas sedang (olahraga 3–5×/minggu)', 'Moderately active (exercise 3–5×/week)'); }, faktor: 1.55 },
+    { key: 'aktif',     get label() { return tr('Aktif (olahraga 6–7×/minggu)', 'Active (exercise 6–7×/week)'); },                   faktor: 1.725 },
+    { key: 'sangat',    get label() { return tr('Sangat aktif (atlet / kerja fisik berat)', 'Very active (athlete / heavy physical work)'); }, faktor: 1.9 }
   ],
 
   // BMR — rumus Mifflin-St Jeor
@@ -31,14 +31,14 @@ const Calc = {
   },
 
   bmiInfo(bmi) {
-    if (bmi < 18.5) return { kategori: 'Berat badan kurang', warna: '#3b82f6', badge: 'badge-blue',
-      pesan: 'Tubuhmu butuh asupan lebih. Makan teratur dengan gizi seimbang, ya.' };
-    if (bmi < 25)   return { kategori: 'Normal / ideal', warna: '#10b981', badge: 'badge-green',
-      pesan: 'Keren! Pertahankan pola makan seimbang dan tetap aktif bergerak.' };
-    if (bmi < 30)   return { kategori: 'Berat badan berlebih', warna: '#f59e0b', badge: 'badge-amber',
-      pesan: 'Fokus pada kebiasaan sehat: porsi seimbang dan rutin bergerak — bukan diet ekstrem.' };
-    return { kategori: 'Obesitas', warna: '#ef4444', badge: 'badge-red',
-      pesan: 'Mulai perlahan dari kebiasaan kecil, dan bicarakan dengan tenaga kesehatan bila perlu.' };
+    if (bmi < 18.5) return { kategori: tr('Berat badan kurang', 'Underweight'), warna: '#3b82f6', badge: 'badge-blue',
+      pesan: tr('Tubuhmu butuh asupan lebih. Makan teratur dengan gizi seimbang, ya.', 'Your body needs a bit more fuel. Eat regularly with balanced nutrition, okay?') };
+    if (bmi < 25)   return { kategori: tr('Normal / ideal', 'Normal / ideal'), warna: '#10b981', badge: 'badge-green',
+      pesan: tr('Keren! Pertahankan pola makan seimbang dan tetap aktif bergerak.', 'Awesome! Keep up your balanced diet and stay active.') };
+    if (bmi < 30)   return { kategori: tr('Berat badan berlebih', 'Overweight'), warna: '#f59e0b', badge: 'badge-amber',
+      pesan: tr('Fokus pada kebiasaan sehat: porsi seimbang dan rutin bergerak — bukan diet ekstrem.', 'Focus on healthy habits: balanced portions and regular movement — not extreme diets.') };
+    return { kategori: tr('Obesitas', 'Obese'), warna: '#ef4444', badge: 'badge-red',
+      pesan: tr('Mulai perlahan dari kebiasaan kecil, dan bicarakan dengan tenaga kesehatan bila perlu.', 'Start slowly with small habits, and talk to a health professional if needed.') };
   },
 
   // Rentang berat ideal (BMI 18.5 – 24.9)
@@ -72,7 +72,7 @@ const Calc = {
       results.push({
         cycles,
         time: `${H}:${M}`,
-        durasi: `${(cycles * 90 / 60).toFixed(1).replace('.0', '')} jam`,
+        durasi: `${(cycles * 90 / 60).toFixed(1).replace('.0', '')} ${tr('jam', 'hours')}`,
         best: cycles >= 5
       });
     }
@@ -127,9 +127,9 @@ const Calc = {
   },
 
   balanceMessage(total) {
-    if (total >= 80) return 'Luar biasa! Tubuh, pikiran, dan dompetmu seimbang hari ini. 🌱';
-    if (total >= 60) return 'Sudah bagus — tinggal sedikit lagi untuk hari yang benar-benar seimbang.';
-    if (total >= 40) return 'Pelan-pelan saja. Selesaikan satu hal kecil dulu, sisanya menyusul.';
-    return 'Hari baru, kesempatan baru. Mulai dari check-in kecil di bawah ini, yuk!';
+    if (total >= 80) return tr('Luar biasa! Tubuh, pikiran, dan dompetmu seimbang hari ini. 🌱', 'Amazing! Your body, mind, and wallet are in balance today. 🌱');
+    if (total >= 60) return tr('Sudah bagus — tinggal sedikit lagi untuk hari yang benar-benar seimbang.', 'Looking good — just a little more for a truly balanced day.');
+    if (total >= 40) return tr('Pelan-pelan saja. Selesaikan satu hal kecil dulu, sisanya menyusul.', 'Take it easy. Finish one small thing first, the rest will follow.');
+    return tr('Hari baru, kesempatan baru. Mulai dari check-in kecil di bawah ini, yuk!', 'New day, new chance. Start with a small check-in below!');
   }
 };

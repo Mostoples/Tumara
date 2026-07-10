@@ -11,9 +11,9 @@ const Ency = {
   selected: null,  // id artikel yang sedang dibuka
 
   KATEGORI: {
-    health: { label: 'Kesehatan',     color: 'var(--health)', soft: 'var(--health-soft)', badge: 'badge-green'  },
-    prod:   { label: 'Produktivitas', color: 'var(--prod)',   soft: 'var(--prod-soft)',   badge: 'badge-purple' },
-    fin:    { label: 'Keuangan',      color: 'var(--fin)',    soft: 'var(--fin-soft)',    badge: 'badge-amber'  }
+    health: { get label() { return tr('Kesehatan', 'Health'); },        color: 'var(--health)', soft: 'var(--health-soft)', badge: 'badge-green'  },
+    prod:   { get label() { return tr('Produktivitas', 'Productivity'); }, color: 'var(--prod)',   soft: 'var(--prod-soft)',   badge: 'badge-purple' },
+    fin:    { get label() { return tr('Keuangan', 'Finance'); },        color: 'var(--fin)',    soft: 'var(--fin-soft)',    badge: 'badge-amber'  }
   },
 
   ARTIKEL: [
@@ -295,19 +295,30 @@ const Ency = {
     }
   ],
 
-  /* ---------- bookmark (localStorage) ---------- */
+  /* ---------- bookmark (tersimpan per akun di users/{uid}) ---------- */
 
   _bookmarks() {
-    try { return JSON.parse(localStorage.getItem('tumara_ency_bm') || '[]'); }
-    catch (_) { return []; }
+    const remote = DB.user?.bookmarkArtikel;
+    if (Array.isArray(remote)) return remote;
+    // Migrasi sekali dari versi lama (localStorage) ke profil akun.
+    let lokal = [];
+    try { lokal = JSON.parse(localStorage.getItem('tumara_ency_bm') || '[]'); }
+    catch (_) { lokal = []; }
+    if (DB.user) {
+      DB.updateUser({ bookmarkArtikel: lokal })
+        .then(() => localStorage.removeItem('tumara_ency_bm'))
+        .catch(() => {});
+    }
+    return lokal;
   },
 
-  _toggleBookmark(id) {
-    const bm = this._bookmarks();
+  async _toggleBookmark(id) {
+    const bm = this._bookmarks().slice();
     const i = bm.indexOf(id);
-    if (i >= 0) { bm.splice(i, 1); toast('Dihapus dari artikel tersimpan', 'info'); }
-    else { bm.push(id); toast('Artikel disimpan 🔖'); }
-    localStorage.setItem('tumara_ency_bm', JSON.stringify(bm));
+    if (i >= 0) { bm.splice(i, 1); toast(tr('Dihapus dari artikel tersimpan', 'Removed from saved articles'), 'info'); }
+    else { bm.push(id); toast(tr('Artikel disimpan 🔖', 'Article saved 🔖')); }
+    try { await DB.updateUser({ bookmarkArtikel: bm }); }
+    catch (_) { toast(tr('Gagal menyimpan bookmark. Periksa koneksimu.', 'Could not save bookmark. Check your connection.'), 'error'); }
   },
 
   /* ---------- render ---------- */
@@ -332,17 +343,17 @@ const Ency = {
     const hasil = this._filtered();
     const bm = this._bookmarks();
     const chips = [
-      ['semua', '📚 Semua'],
-      ['health', '💚 Kesehatan'],
-      ['prod', '💜 Produktivitas'],
-      ['fin', '💛 Keuangan'],
-      ['simpan', '🔖 Tersimpan']
+      ['semua', `📚 ${tr('Semua', 'All')}`],
+      ['health', `💚 ${tr('Kesehatan', 'Health')}`],
+      ['prod', `💜 ${tr('Produktivitas', 'Productivity')}`],
+      ['fin', `💛 ${tr('Keuangan', 'Finance')}`],
+      ['simpan', `🔖 ${tr('Tersimpan', 'Saved')}`]
     ];
 
     el.innerHTML = `
       <div class="ency-search">
         <ion-icon name="search-outline"></ion-icon>
-        <input class="input" id="encyQ" type="search" placeholder="Cari artikel… (mis. tidur, pomodoro, nabung)" value="${esc(this.query)}">
+        <input class="input" id="encyQ" type="search" placeholder="${tr('Cari artikel… (mis. tidur, pomodoro, nabung)', 'Search articles… (e.g. sleep, pomodoro, savings)')}" value="${esc(this.query)}">
       </div>
 
       <div class="ency-chips">
@@ -358,7 +369,7 @@ const Ency = {
               <div class="card ency-card hoverable" data-open="${a.id}">
                 <div class="ency-card-head">
                   <span class="item-icon" style="background:${kat.soft};font-size:1.4rem;">${a.emoji}</span>
-                  <button class="mini-icon-btn ency-bm ${saved ? 'saved' : ''}" data-bm="${a.id}" title="${saved ? 'Hapus dari tersimpan' : 'Simpan artikel'}">
+                  <button class="mini-icon-btn ency-bm ${saved ? 'saved' : ''}" data-bm="${a.id}" title="${saved ? tr('Hapus dari tersimpan', 'Remove from saved') : tr('Simpan artikel', 'Save article')}">
                     <ion-icon name="${saved ? 'bookmark' : 'bookmark-outline'}"></ion-icon>
                   </button>
                 </div>
@@ -366,15 +377,15 @@ const Ency = {
                 <div class="ency-card-sub">${esc(a.ringkasan)}</div>
                 <div class="ency-card-meta">
                   <span class="badge ${kat.badge}">${kat.label}</span>
-                  <span class="ency-min"><ion-icon name="time-outline"></ion-icon>${a.menit} menit baca</span>
+                  <span class="ency-min"><ion-icon name="time-outline"></ion-icon>${tr(`${a.menit} menit baca`, `${a.menit} min read`)}</span>
                 </div>
               </div>`;
           }).join('')}
         </div>` : `
         <div class="empty-state">
           <ion-icon name="${this.tab === 'simpan' ? 'bookmark-outline' : 'search-outline'}"></ion-icon>
-          <div class="es-title">${this.tab === 'simpan' ? 'Belum ada artikel tersimpan' : 'Tidak ada artikel yang cocok'}</div>
-          <div class="es-sub">${this.tab === 'simpan' ? 'Ketuk ikon 🔖 pada artikel untuk menyimpannya di sini.' : 'Coba kata kunci lain atau ganti kategori.'}</div>
+          <div class="es-title">${this.tab === 'simpan' ? tr('Belum ada artikel tersimpan', 'No saved articles yet') : tr('Tidak ada artikel yang cocok', 'No matching articles')}</div>
+          <div class="es-sub">${this.tab === 'simpan' ? tr('Ketuk ikon 🔖 pada artikel untuk menyimpannya di sini.', 'Tap the 🔖 icon on an article to save it here.') : tr('Coba kata kunci lain atau ganti kategori.', 'Try a different keyword or category.')}</div>
         </div>`}`;
 
     /* interaksi */
@@ -387,9 +398,9 @@ const Ency = {
       q2.setSelectionRange(q2.value.length, q2.value.length);
     };
     $$('[data-chip]', el).forEach(c => c.onclick = () => { this.tab = c.dataset.chip; this.renderList(el); });
-    $$('[data-bm]', el).forEach(b => b.onclick = e => {
+    $$('[data-bm]', el).forEach(b => b.onclick = async e => {
       e.stopPropagation();
-      this._toggleBookmark(b.dataset.bm);
+      await this._toggleBookmark(b.dataset.bm);
       this.renderList(el);
     });
     $$('[data-open]', el).forEach(c => c.onclick = () => {
@@ -408,8 +419,11 @@ const Ency = {
 
     el.innerHTML = `
       <button class="btn btn-sm" id="encyBack" style="margin-bottom:18px;">
-        <ion-icon name="arrow-back"></ion-icon> Semua artikel
+        <ion-icon name="arrow-back"></ion-icon> ${tr('Semua artikel', 'All articles')}
       </button>
+
+      ${I18N.lang === 'en' ? `
+      <div class="badge badge-gray" style="margin-bottom:12px;">🇮🇩 This article is available in Indonesian only</div>` : ''}
 
       <div class="card">
         <div class="ency-hero">
@@ -417,11 +431,11 @@ const Ency = {
           <div style="flex:1;min-width:0;">
             <div class="ency-card-meta" style="margin:0 0 8px;">
               <span class="badge ${kat.badge}">${kat.label}</span>
-              <span class="ency-min"><ion-icon name="time-outline"></ion-icon>${a.menit} menit baca</span>
+              <span class="ency-min"><ion-icon name="time-outline"></ion-icon>${tr(`${a.menit} menit baca`, `${a.menit} min read`)}</span>
             </div>
             <h2 class="ency-title">${esc(a.judul)}</h2>
           </div>
-          <button class="mini-icon-btn ency-bm ${saved ? 'saved' : ''}" id="encyBm" title="${saved ? 'Hapus dari tersimpan' : 'Simpan artikel'}">
+          <button class="mini-icon-btn ency-bm ${saved ? 'saved' : ''}" id="encyBm" title="${saved ? tr('Hapus dari tersimpan', 'Remove from saved') : tr('Simpan artikel', 'Save article')}">
             <ion-icon name="${saved ? 'bookmark' : 'bookmark-outline'}"></ion-icon>
           </button>
         </div>
@@ -437,12 +451,12 @@ const Ency = {
         ${a.kategori === 'health' ? `
           <div class="disclaimer" style="margin-top:20px;">
             <ion-icon name="shield-checkmark-outline"></ion-icon>
-            <span>Artikel ini bersifat edukatif dan bukan pengganti nasihat tenaga kesehatan profesional.</span>
+            <span>${tr('Artikel ini bersifat edukatif dan bukan pengganti nasihat tenaga kesehatan profesional.', 'This article is for education only and is not a substitute for professional medical advice.')}</span>
           </div>` : ''}
       </div>
 
       ${terkait.length ? `
-        <div class="section-head" style="margin-top:26px;"><h2>Artikel Terkait</h2></div>
+        <div class="section-head" style="margin-top:26px;"><h2>${tr('Artikel Terkait', 'Related Articles')}</h2></div>
         <div style="display:flex;flex-direction:column;gap:10px;">
           ${terkait.map(t => `
             <div class="list-item hoverable" data-open="${t.id}">
@@ -457,7 +471,7 @@ const Ency = {
 
     /* interaksi */
     $('#encyBack', el).onclick = () => { this.selected = null; this.render(el); window.scrollTo({ top: 0 }); };
-    $('#encyBm', el).onclick = () => { this._toggleBookmark(a.id); this.renderDetail(el); };
+    $('#encyBm', el).onclick = async () => { await this._toggleBookmark(a.id); this.renderDetail(el); };
     $$('[data-open]', el).forEach(c => c.onclick = () => {
       this.selected = c.dataset.open;
       this.render(el);

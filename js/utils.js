@@ -17,9 +17,7 @@ function uid() {
 
 /* ---------- Tanggal & format ---------- */
 
-const HARI  = ['Minggu', 'Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu'];
-const BULAN = ['Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni',
-               'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'];
+// HARI & BULAN kini disediakan js/i18n.js (mengikuti bahasa aktif)
 
 // 'YYYY-MM-DD' berbasis waktu lokal
 function todayStr(d = new Date()) {
@@ -60,19 +58,19 @@ function daysUntil(iso) {
 
 function deadlineBadge(iso) {
   const d = daysUntil(iso);
-  if (d < 0)   return `<span class="badge badge-red"><ion-icon name="alert-circle"></ion-icon>Terlambat ${-d} hari</span>`;
-  if (d === 0) return `<span class="badge badge-amber"><ion-icon name="time-outline"></ion-icon>Hari ini</span>`;
-  if (d === 1) return `<span class="badge badge-amber">Besok</span>`;
-  if (d <= 7)  return `<span class="badge badge-blue">${d} hari lagi</span>`;
+  if (d < 0)   return `<span class="badge badge-red"><ion-icon name="alert-circle"></ion-icon>${tr(`Terlambat ${-d} hari`, `${-d} day${-d > 1 ? 's' : ''} overdue`)}</span>`;
+  if (d === 0) return `<span class="badge badge-amber"><ion-icon name="time-outline"></ion-icon>${tr('Hari ini', 'Today')}</span>`;
+  if (d === 1) return `<span class="badge badge-amber">${tr('Besok', 'Tomorrow')}</span>`;
+  if (d <= 7)  return `<span class="badge badge-blue">${tr(`${d} hari lagi`, `${d} days left`)}</span>`;
   return `<span class="badge badge-gray">${fmtDate(iso, { short: true })}</span>`;
 }
 
 function greeting() {
   const h = new Date().getHours();
-  if (h < 11) return 'Selamat pagi';
-  if (h < 15) return 'Selamat siang';
-  if (h < 18) return 'Selamat sore';
-  return 'Selamat malam';
+  if (h < 11) return tr('Selamat pagi', 'Good morning');
+  if (h < 15) return tr('Selamat siang', 'Good afternoon');
+  if (h < 18) return tr('Selamat sore', 'Good evening');
+  return tr('Selamat malam', 'Good evening');
 }
 
 /* ---------- Toast ---------- */
@@ -122,14 +120,16 @@ function closeModal() {
   document.body.style.overflow = '';
 }
 
-function confirmDialog(message, { title = 'Konfirmasi', okText = 'Ya, lanjutkan', danger = false } = {}) {
+function confirmDialog(message, { title, okText, danger = false } = {}) {
+  title = title || tr('Konfirmasi', 'Confirmation');
+  okText = okText || tr('Ya, lanjutkan', 'Yes, continue');
   return new Promise(resolve => {
     openModal({
       title,
       body: `
         <p style="font-size:.9rem;color:var(--text-2);line-height:1.6;">${esc(message)}</p>
         <div style="display:flex;gap:10px;margin-top:22px;">
-          <button class="btn btn-block" id="cfNo">Batal</button>
+          <button class="btn btn-block" id="cfNo">${tr('Batal', 'Cancel')}</button>
           <button class="btn btn-block ${danger ? 'btn-danger' : 'btn-primary'}" id="cfYes">${esc(okText)}</button>
         </div>`,
       onMount(el) {

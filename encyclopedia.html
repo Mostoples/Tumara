@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Tumara — Ensiklopedia</title>
+  <meta name="description" content="Ensiklopedia Tumara: kumpulan artikel pengetahuan seputar kesehatan, produktivitas, dan keuangan untuk pelajar. Gratis, tanpa perlu login.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:ital,wght@0,300;0,400;0,500;0,600;0,700;0,800;1,400&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/style.css">
+  <link rel="icon" type="image/png" href="assets/logo.png">
+  <script type="module" src="https://unpkg.com/ionicons@7.1.0/dist/ionicons/ionicons.esm.js"></script>
+  <script nomodule src="https://unpkg.com/ionicons@7.1.0/dist/ionicons/ionicons.js"></script>
+  <style>
+    /* Shell khusus halaman ensiklopedia mandiri (publik, tanpa login) */
+    .ency-page { min-height: 100vh; display: flex; flex-direction: column; }
+
+    .ency-topbar {
+      position: sticky; top: 0; z-index: 40;
+      display: flex; align-items: center; justify-content: space-between; gap: 12px;
+      padding: 14px 24px;
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+    }
+    .ency-topbar .brand {
+      display: flex; align-items: center; gap: 11px;
+      text-decoration: none; color: var(--text);
+    }
+    .ency-topbar .logo-mark { width: 38px; height: 38px; font-size: 1.15rem; border-radius: 12px; }
+    .ency-topbar .logo-text { font-size: 1.1rem; }
+    .ency-topbar-actions { display: flex; align-items: center; gap: 10px; }
+
+    .ency-wrap { flex: 1; width: 100%; max-width: 1160px; margin: 0 auto; padding: 26px 24px 56px; }
+    .ency-page-head { margin-bottom: 20px; }
+    .ency-page-head h1 { font-size: 1.5rem; font-weight: 800; letter-spacing: -.02em; }
+    .ency-page-head p { font-size: .87rem; color: var(--text-3); font-weight: 500; }
+
+    .ency-footer {
+      padding: 20px 24px; text-align: center;
+      font-size: .78rem; color: var(--text-3);
+      border-top: 1px solid var(--border);
+    }
+    .ency-footer a { color: var(--brand-dark); font-weight: 600; text-decoration: none; }
+    [data-theme="dark"] .ency-footer a { color: #34d399; }
+
+    @media (max-width: 860px) {
+      /* Beri ruang untuk bottom nav yang muncul di mobile */
+      .ency-wrap { padding-bottom: 110px; }
+      .ency-footer { padding-bottom: 96px; }
+    }
+
+    @media (max-width: 560px) {
+      .ency-topbar { padding: 12px 16px; }
+      .ency-topbar .app-cta span { display: none; }
+      .ency-wrap { padding: 20px 16px 110px; }
+      .ency-page-head h1 { font-size: 1.3rem; }
+    }
+  </style>
+</head>
+<body>
+
+  <div class="ency-page">
+
+    <header class="ency-topbar">
+      <a class="brand" href="index.html" title="Kembali ke beranda Tumara">
+        <span class="logo-mark"><img src="assets/logo.png" alt="Logo Tumara"></span>
+        <span class="logo-text">Tumara <span style="color:var(--text-3);font-weight:600;">· Ensiklopedia</span></span>
+      </a>
+      <div class="ency-topbar-actions">
+        <button class="icon-btn" id="themeBtn" title="Ganti tema"><ion-icon name="moon-outline"></ion-icon></button>
+        <a class="btn btn-primary btn-sm app-cta" href="app.html" style="text-decoration:none;">
+          <ion-icon name="apps-outline"></ion-icon><span>Buka Aplikasi</span>
+        </a>
+      </div>
+    </header>
+
+    <main class="ency-wrap">
+      <div class="ency-page-head">
+        <h1>Ensiklopedia</h1>
+        <p>Pengetahuan seputar sehat, belajar &amp; uang — gratis untuk semua, tanpa perlu masuk.</p>
+      </div>
+      <div id="view"></div>
+    </main>
+
+    <footer class="ency-footer">
+      © 2026 Tumara · Artikel bersifat edukatif dan bukan pengganti nasihat tenaga kesehatan profesional ·
+      <a href="index.html">Tentang Tumara</a>
+    </footer>
+
+  </div>
+
+  <!-- Bottom nav (muncul otomatis di layar ≤860px via style.css) -->
+  <nav class="bottom-nav">
+    <a class="bnav-item" href="index.html"><ion-icon name="home-outline"></ion-icon><span>Beranda</span></a>
+    <a class="bnav-item active" href="encyclopedia.html"><ion-icon name="book"></ion-icon><span>Ensiklopedia</span></a>
+    <a class="bnav-item" href="app.html"><ion-icon name="apps-outline"></ion-icon><span>Aplikasi</span></a>
+  </nav>
+
+  <!-- Toast root (dipakai toast() saat menyimpan artikel) -->
+  <div id="toastRoot" class="toast-root"></div>
+
+  <script src="js/i18n.js"></script>
+  <script src="js/utils.js"></script>
+  <script src="js/views/encyclopedia.js"></script>
+  <script>
+    // Halaman publik: hanya butuh utils + view Ency (konten statis + bookmark
+    // localStorage) — tidak menyentuh Firebase, jadi tidak perlu login.
+    (() => {
+      const setTheme = t => {
+        document.documentElement.dataset.theme = t;
+        localStorage.setItem('tumara_theme', t);
+        const icon = document.querySelector('#themeBtn ion-icon');
+        if (icon) icon.setAttribute('name', t === 'dark' ? 'sunny-outline' : 'moon-outline');
+      };
+      setTheme(localStorage.getItem('tumara_theme') || 'light');
+      document.getElementById('themeBtn').onclick = () =>
+        setTheme(document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark');
+
+      Ency.render(document.getElementById('view'));
+    })();
+  </script>
+</body>
+</html>

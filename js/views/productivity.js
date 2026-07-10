@@ -12,10 +12,10 @@ const Prod = {
   async render(el) {
     el.innerHTML = `
       <div class="tabs">
-        <button class="tab ${this.tab === 'tugas' ? 'active' : ''}" data-tab="tugas"><ion-icon name="checkbox-outline"></ion-icon>Tugas</button>
-        <button class="tab ${this.tab === 'catatan' ? 'active' : ''}" data-tab="catatan"><ion-icon name="document-text-outline"></ion-icon>Catatan</button>
-        <button class="tab ${this.tab === 'jadwal' ? 'active' : ''}" data-tab="jadwal"><ion-icon name="calendar-outline"></ion-icon>Jadwal</button>
-        <button class="tab ${this.tab === 'fokus' ? 'active' : ''}" data-tab="fokus"><ion-icon name="timer-outline"></ion-icon>Fokus</button>
+        <button class="tab ${this.tab === 'tugas' ? 'active' : ''}" data-tab="tugas"><ion-icon name="checkbox-outline"></ion-icon>${tr('Tugas', 'Tasks')}</button>
+        <button class="tab ${this.tab === 'catatan' ? 'active' : ''}" data-tab="catatan"><ion-icon name="document-text-outline"></ion-icon>${tr('Catatan', 'Notes')}</button>
+        <button class="tab ${this.tab === 'jadwal' ? 'active' : ''}" data-tab="jadwal"><ion-icon name="calendar-outline"></ion-icon>${tr('Jadwal', 'Schedule')}</button>
+        <button class="tab ${this.tab === 'fokus' ? 'active' : ''}" data-tab="fokus"><ion-icon name="timer-outline"></ion-icon>${tr('Fokus', 'Focus')}</button>
       </div>
       <div id="prodBody"></div>`;
 
@@ -38,16 +38,17 @@ const Prod = {
     else if (this.taskFilter === 'selesai') shown = shown.filter(t => t.status === 'selesai');
 
     const doneCount = tasks.filter(t => t.status === 'selesai').length;
+    const filterLabel = { aktif: tr('Aktif', 'Active'), selesai: tr('Selesai', 'Done'), semua: tr('Semua', 'All') };
 
     el.innerHTML = `
       <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:16px;">
         <div style="display:flex;gap:8px;">
           ${['aktif', 'selesai', 'semua'].map(f => `
             <button class="chip ${this.taskFilter === f ? 'active' : ''}" data-filter="${f}">
-              ${f[0].toUpperCase() + f.slice(1)}${f === 'selesai' && doneCount ? ` (${doneCount})` : ''}
+              ${filterLabel[f]}${f === 'selesai' && doneCount ? ` (${doneCount})` : ''}
             </button>`).join('')}
         </div>
-        <button class="btn btn-prod btn-sm" id="addTask"><ion-icon name="add"></ion-icon> Tugas Baru</button>
+        <button class="btn btn-prod btn-sm" id="addTask"><ion-icon name="add"></ion-icon> ${tr('Tugas Baru', 'New Task')}</button>
       </div>
 
       ${shown.length ? `
@@ -60,7 +61,7 @@ const Prod = {
                 <div style="display:flex;gap:8px;align-items:center;margin-top:4px;flex-wrap:wrap;">
                   ${t.mapel ? `<span class="badge badge-purple">${esc(t.mapel)}</span>` : ''}
                   ${t.tenggat && t.status !== 'selesai' ? deadlineBadge(t.tenggat) : t.tenggat ? `<span class="badge badge-gray">${fmtDate(t.tenggat, { short: true })}</span>` : ''}
-                  ${t.prioritas === 'tinggi' ? '<span class="badge badge-red">Prioritas tinggi</span>' : ''}
+                  ${t.prioritas === 'tinggi' ? `<span class="badge badge-red">${tr('Prioritas tinggi', 'High priority')}</span>` : ''}
                 </div>
               </div>
               <button class="mini-icon-btn" data-edit="${t.id}"><ion-icon name="create-outline"></ion-icon></button>
@@ -69,8 +70,8 @@ const Prod = {
         </div>` : `
         <div class="card empty-state">
           <ion-icon name="${this.taskFilter === 'selesai' ? 'trophy-outline' : 'checkbox-outline'}"></ion-icon>
-          <div class="es-title">${this.taskFilter === 'selesai' ? 'Belum ada tugas selesai' : 'Tidak ada tugas di sini'}</div>
-          <div class="es-sub">${this.taskFilter === 'aktif' ? 'Semua beres! Tambah rencana belajar baru? ✨' : 'Selesaikan tugas untuk mengisi daftar ini 💪'}</div>
+          <div class="es-title">${this.taskFilter === 'selesai' ? tr('Belum ada tugas selesai', 'No finished tasks yet') : tr('Tidak ada tugas di sini', 'No tasks here')}</div>
+          <div class="es-sub">${this.taskFilter === 'aktif' ? tr('Semua beres! Tambah rencana belajar baru? ✨', 'All clear! Add a new study plan? ✨') : tr('Selesaikan tugas untuk mengisi daftar ini 💪', 'Finish some tasks to fill this list 💪')}</div>
         </div>`}`;
 
     $$('[data-filter]', el).forEach(c => c.onclick = () => { this.taskFilter = c.dataset.filter; App.refresh(); });
@@ -79,47 +80,48 @@ const Prod = {
       const t = tasks.find(x => x.id === b.dataset.toggle);
       const done = t.status !== 'selesai';
       await DB.update('tasks', t.id, { status: done ? 'selesai' : 'aktif' });
-      if (done) toast('Tugas selesai — mantap! 🎉');
+      if (done) toast(tr('Tugas selesai — mantap! 🎉', 'Task done — nice work! 🎉'));
       App.refresh();
     });
     $$('[data-edit]', el).forEach(b => b.onclick = () => this.openTaskModal(tasks.find(x => x.id === b.dataset.edit)));
     $$('[data-del]', el).forEach(b => b.onclick = async () => {
-      if (!await confirmDialog('Hapus tugas ini?', { danger: true, okText: 'Hapus' })) return;
+      if (!await confirmDialog(tr('Hapus tugas ini?', 'Delete this task?'), { danger: true, okText: tr('Hapus', 'Delete') })) return;
       await DB.remove('tasks', b.dataset.del);
-      toast('Tugas dihapus.');
+      toast(tr('Tugas dihapus.', 'Task deleted.'));
       App.refresh();
     });
   },
 
   openTaskModal(task = null) {
+    const prioLabel = { rendah: tr('Rendah', 'Low'), sedang: tr('Sedang', 'Medium'), tinggi: tr('Tinggi', 'High') };
     openModal({
-      title: task ? 'Ubah Tugas' : 'Tugas Baru',
+      title: task ? tr('Ubah Tugas', 'Edit Task') : tr('Tugas Baru', 'New Task'),
       body: `
         <div class="field">
-          <label>Judul tugas</label>
-          <input type="text" class="input" id="mJudul" placeholder="mis. Kerjakan LKS Matematika hal. 42" value="${esc(task?.judul || '')}">
+          <label>${tr('Judul tugas', 'Task title')}</label>
+          <input type="text" class="input" id="mJudul" placeholder="${tr('mis. Kerjakan LKS Matematika hal. 42', 'e.g. Do the math workbook p. 42')}" value="${esc(task?.judul || '')}">
         </div>
         <div class="field">
-          <label>Mata pelajaran <span style="font-weight:500;color:var(--text-3)">(opsional)</span></label>
-          <input type="text" class="input" id="mMapel" placeholder="mis. Matematika" value="${esc(task?.mapel || '')}">
+          <label>${tr('Mata pelajaran', 'Subject')} <span style="font-weight:500;color:var(--text-3)">${tr('(opsional)', '(optional)')}</span></label>
+          <input type="text" class="input" id="mMapel" placeholder="${tr('mis. Matematika', 'e.g. Math')}" value="${esc(task?.mapel || '')}">
         </div>
         <div class="grid grid-2 keep-2" style="gap:12px;">
           <div class="field">
-            <label>Tenggat</label>
+            <label>${tr('Tenggat', 'Due date')}</label>
             <input type="date" class="input" id="mTenggat" value="${task?.tenggat || ''}">
           </div>
           <div class="field">
-            <label>Prioritas</label>
+            <label>${tr('Prioritas', 'Priority')}</label>
             <select class="select" id="mPrioritas">
-              ${['rendah', 'sedang', 'tinggi'].map(p => `<option value="${p}" ${(task?.prioritas || 'sedang') === p ? 'selected' : ''}>${p[0].toUpperCase() + p.slice(1)}</option>`).join('')}
+              ${['rendah', 'sedang', 'tinggi'].map(p => `<option value="${p}" ${(task?.prioritas || 'sedang') === p ? 'selected' : ''}>${prioLabel[p]}</option>`).join('')}
             </select>
           </div>
         </div>
-        <button class="btn btn-prod btn-block" id="mSave"><ion-icon name="checkmark"></ion-icon> ${task ? 'Simpan Perubahan' : 'Tambah Tugas'}</button>`,
+        <button class="btn btn-prod btn-block" id="mSave"><ion-icon name="checkmark"></ion-icon> ${task ? tr('Simpan Perubahan', 'Save Changes') : tr('Tambah Tugas', 'Add Task')}</button>`,
       onMount: m => {
         $('#mSave', m).onclick = async () => {
           const judul = $('#mJudul', m).value.trim();
-          if (!judul) return toast('Judul tugas tidak boleh kosong.', 'warning');
+          if (!judul) return toast(tr('Judul tugas tidak boleh kosong.', 'Task title can\'t be empty.'), 'warning');
           const data = {
             judul, mapel: $('#mMapel', m).value.trim(),
             tenggat: $('#mTenggat', m).value,
@@ -128,7 +130,7 @@ const Prod = {
           if (task) await DB.update('tasks', task.id, data);
           else await DB.add('tasks', { ...data, status: 'aktif' });
           closeModal();
-          toast(task ? 'Tugas diperbarui.' : 'Tugas ditambahkan 📌');
+          toast(task ? tr('Tugas diperbarui.', 'Task updated.') : tr('Tugas ditambahkan 📌', 'Task added 📌'));
           App.refresh();
         };
       }
@@ -345,6 +347,14 @@ const Prod = {
 
   renderPomo(el) {
     const p = this.pomo;
+    // Muat preferensi durasi dari profil akun (sekali per sesi)
+    if (!p.loaded) {
+      p.loaded = true;
+      const u = DB.user || {};
+      if (u.pomoFokus) p.focusMin = u.pomoFokus;
+      if (u.pomoIstirahat) p.breakMin = u.pomoIstirahat;
+      if (!p.running) p.remaining = (p.mode === 'fokus' ? p.focusMin : p.breakMin) * 60;
+    }
     const total = (p.mode === 'fokus' ? p.focusMin : p.breakMin) * 60;
     const pct = total ? ((total - p.remaining) / total) * 100 : 0;
     const isFokus = p.mode === 'fokus';
@@ -408,11 +418,13 @@ const Prod = {
     $('#pomoFocusMin', el).onchange = e => {
       p.focusMin = +e.target.value;
       if (p.mode === 'fokus') p.remaining = p.focusMin * 60;
+      DB.updateUser({ pomoFokus: p.focusMin }).catch(() => {});
       App.refresh();
     };
     $('#pomoBreakMin', el).onchange = e => {
       p.breakMin = +e.target.value;
       if (p.mode === 'istirahat') p.remaining = p.breakMin * 60;
+      DB.updateUser({ pomoIstirahat: p.breakMin }).catch(() => {});
       App.refresh();
     };
   },

@@ -86,10 +86,9 @@ body {
 
 .hidden { display: none !important; }
 
-::-webkit-scrollbar { width: 10px; height: 10px; }
-::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: var(--surface-3); border-radius: 8px; border: 2px solid var(--bg); }
-::-webkit-scrollbar-thumb:hover { background: var(--text-3); }
+/* Scrollbar disembunyikan — scroll tetap berfungsi normal */
+* { scrollbar-width: none; -ms-overflow-style: none; }
+::-webkit-scrollbar { width: 0; height: 0; display: none; }
 
 ion-icon { pointer-events: none; flex-shrink: 0; }
 
@@ -111,11 +110,14 @@ ion-icon { pointer-events: none; flex-shrink: 0; }
 
 .logo-mark {
   width: 44px; height: 44px; border-radius: 14px;
-  background: var(--grad-logo);
+  background: #fff;
+  border: 1px solid var(--border);
   color: #fff; font-weight: 800; font-size: 1.35rem;
   display: grid; place-items: center;
-  box-shadow: 0 6px 16px -4px rgba(16,185,129,.5);
+  box-shadow: 0 6px 16px -4px rgba(16,185,129,.35);
+  overflow: hidden;
 }
+.logo-mark img { width: 76%; height: 76%; object-fit: contain; display: block; }
 .logo-text { font-weight: 800; font-size: 1.25rem; letter-spacing: -.02em; }
 .logo-tag { font-size: .72rem; color: var(--text-3); font-weight: 500; }
 
@@ -167,8 +169,11 @@ ion-icon { pointer-events: none; flex-shrink: 0; }
 }
 
 .topbar {
+  position: sticky; top: 0; z-index: 30;
   display: flex; align-items: center; justify-content: space-between;
-  padding: 22px 32px 0;
+  padding: 18px 32px 14px;
+  background: color-mix(in srgb, var(--bg) 86%, transparent);
+  backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
 }
 .topbar-title { font-size: 1.5rem; font-weight: 800; letter-spacing: -.02em; }
 .topbar-sub { font-size: .85rem; color: var(--text-3); font-weight: 500; }
@@ -190,8 +195,15 @@ ion-icon { pointer-events: none; flex-shrink: 0; }
   font-family: var(--font);
   box-shadow: 0 4px 12px -2px rgba(16,185,129,.4);
   transition: transform .12s;
+  padding: 0; overflow: hidden;
 }
 .avatar-btn:hover { transform: scale(1.06); }
+
+/* Foto profil (fotoUrl dari Firestore) di dalam avatar */
+.avatar { overflow: hidden; }
+.avatar img, .avatar-btn img {
+  width: 100%; height: 100%; object-fit: cover; border-radius: 50%; display: block;
+}
 
 .view-wrap { flex: 1; padding: 20px 32px 48px; max-width: 1160px; width: 100%; margin: 0 auto; }
 
@@ -218,7 +230,7 @@ ion-icon { pointer-events: none; flex-shrink: 0; }
   transition: color .18s;
 }
 .bnav-item ion-icon { font-size: 1.35rem; }
-.bnav-item.active { color: var(--brand-dark); }
+.bnav-item.active { color: var(--brand-dark); background: var(--brand-soft); }
 [data-theme="dark"] .bnav-item.active { color: #34d399; }
 
 /* ============ KARTU & SECTION ============ */
@@ -521,7 +533,7 @@ ion-icon { pointer-events: none; flex-shrink: 0; }
 .auth-brand > * { position: relative; z-index: 1; }
 
 .ab-logo { display: flex; align-items: center; gap: 12px; font-weight: 800; font-size: 1.3rem; }
-.ab-logo .logo-mark { background: rgba(255,255,255,.18); backdrop-filter: blur(6px); box-shadow: none; }
+.ab-logo .logo-mark { background: #fff; border: none; box-shadow: 0 4px 14px rgba(0,0,0,.18); }
 
 .ab-headline { font-size: 1.9rem; font-weight: 800; line-height: 1.25; letter-spacing: -.02em; }
 .ab-desc { margin-top: 12px; font-size: .93rem; opacity: .9; line-height: 1.65; }
@@ -800,7 +812,7 @@ ion-icon { pointer-events: none; flex-shrink: 0; }
   .main-area { margin-left: 0; }
   .bottom-nav { display: flex; }
   .view-wrap { padding: 16px 18px 110px; }
-  .topbar { padding: 18px 18px 0; }
+  .topbar { padding: 14px 18px 12px; }
   .topbar-title { font-size: 1.3rem; }
 
   .auth-card { grid-template-columns: 1fr; min-height: 0; max-width: 460px; }
@@ -822,7 +834,28 @@ ion-icon { pointer-events: none; flex-shrink: 0; }
   .grid-4.keep-2, .grid-2.keep-2 { grid-template-columns: repeat(2, 1fr); }
   .pomo-ring { width: 210px; height: 210px; }
   .pomo-time { font-size: 2.5rem; }
+
+  .view-wrap { padding: 14px 14px 110px; }
+  .topbar { padding: 12px 14px 10px; }
+  .card { padding: 18px; }
+  .section-head { flex-wrap: wrap; gap: 8px; margin: 22px 0 12px; }
+
+  /* Modal jadi bottom-sheet ala aplikasi mobile */
+  .modal-overlay { align-items: flex-end; padding: 0; }
+  .modal {
+    max-width: none; max-height: 92vh;
+    border-radius: 24px 24px 0 0;
+    border-bottom: none;
+    padding-bottom: env(safe-area-inset-bottom);
+    animation: sheetIn .3s cubic-bezier(.22,1,.36,1);
+  }
+
+  /* Toast tidak menutupi topbar penuh di layar sempit */
+  .toast-root { top: 14px; width: calc(100% - 28px); }
+  .toast { max-width: 100%; }
 }
+
+@keyframes sheetIn { from { opacity: 0; transform: translateY(48px); } to { opacity: 1; transform: none; } }
 
 @media (min-width: 861px) {
   .topbar-actions #topThemeBtn { display: none; }

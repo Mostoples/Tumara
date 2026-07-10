@@ -8,17 +8,17 @@ const AuthView = {
   render() {
     const brand = `
       <div class="auth-brand">
-        <div class="ab-logo"><div class="logo-mark">T</div> Tumara</div>
+        <div class="ab-logo"><div class="logo-mark"><img src="assets/logo.png" alt="Logo Tumara"></div> Tumara</div>
         <div>
-          <div class="ab-headline">Tumbuh sehat,<br>produktif, terarah.</div>
-          <p class="ab-desc">Satu aplikasi untuk menjaga tubuh, pikiran, dan dompetmu tetap seimbang — dirancang khusus untuk siswa.</p>
+          <div class="ab-headline">${tr('Tumbuh sehat,<br>produktif, terarah.', 'Grow healthy,<br>productive, on track.')}</div>
+          <p class="ab-desc">${tr('Satu aplikasi untuk menjaga tubuh, pikiran, dan dompetmu tetap seimbang — dirancang khusus untuk siswa.', 'One app to keep your body, mind, and wallet in balance — designed just for students.')}</p>
           <div class="ab-pillars">
-            <div class="ab-pill"><ion-icon name="heart"></ion-icon> Kesehatan — kalori, tidur, air &amp; olahraga</div>
-            <div class="ab-pill"><ion-icon name="rocket"></ion-icon> Produktivitas — tugas, catatan &amp; fokus</div>
-            <div class="ab-pill"><ion-icon name="wallet"></ion-icon> Keuangan — uang saku &amp; target menabung</div>
+            <div class="ab-pill"><ion-icon name="heart"></ion-icon> ${tr('Kesehatan — kalori, tidur, air &amp; olahraga', 'Health — calories, sleep, water &amp; exercise')}</div>
+            <div class="ab-pill"><ion-icon name="rocket"></ion-icon> ${tr('Produktivitas — tugas, catatan &amp; fokus', 'Productivity — tasks, notes &amp; focus')}</div>
+            <div class="ab-pill"><ion-icon name="wallet"></ion-icon> ${tr('Keuangan — uang saku &amp; target menabung', 'Finance — allowance &amp; saving goals')}</div>
           </div>
         </div>
-        <div class="ab-quote">"Keseimbangan kecil setiap hari, hasil besar di masa depan."</div>
+        <div class="ab-quote">${tr('"Keseimbangan kecil setiap hari, hasil besar di masa depan."', '"A little balance every day, big results in the future."')}</div>
       </div>`;
 
     const form = this.mode === 'login' ? this._loginForm() : this._registerForm();
@@ -29,7 +29,7 @@ const AuthView = {
   // Tombol "Lanjutkan dengan Google" + pemisah (dipakai kedua form)
   _googleSection() {
     return `
-      <div class="auth-divider"><span>atau</span></div>
+      <div class="auth-divider"><span>${tr('atau', 'or')}</span></div>
       <button type="button" class="btn btn-block btn-google" id="googleBtn">
         <svg width="19" height="19" viewBox="0 0 48 48" aria-hidden="true">
           <path fill="#FFC107" d="M43.6 20.1H42V20H24v8h11.3C33.7 32.7 29.2 36 24 36c-6.6 0-12-5.4-12-12s5.4-12 12-12c3.1 0 5.8 1.2 8 3l5.7-5.7C34.3 6 29.4 4 24 4 13 4 4 13 4 24s9 20 20 20 20-9 20-20c0-1.3-.1-2.6-.4-3.9z"/>
@@ -37,63 +37,63 @@ const AuthView = {
           <path fill="#4CAF50" d="M24 44c5.2 0 9.9-2 13.4-5.2l-6.2-5.2C29.2 35.1 26.7 36 24 36c-5.2 0-9.6-3.3-11.3-8l-6.5 5C9.5 39.6 16.2 44 24 44z"/>
           <path fill="#1976D2" d="M43.6 20.1H42V20H24v8h11.3c-.8 2.2-2.2 4.2-4.1 5.6l6.2 5.2C36.9 39.2 44 34 44 24c0-1.3-.1-2.6-.4-3.9z"/>
         </svg>
-        Lanjutkan dengan Google
+        ${tr('Lanjutkan dengan Google', 'Continue with Google')}
       </button>`;
   },
 
   _loginForm() {
     return `
       <div class="auth-form-side">
-        <h2 class="af-title">Selamat datang kembali 👋</h2>
-        <p class="af-sub">Masuk untuk melanjutkan perjalananmu.</p>
+        <h2 class="af-title">${tr('Selamat datang kembali 👋', 'Welcome back 👋')}</h2>
+        <p class="af-sub">${tr('Masuk untuk melanjutkan perjalananmu.', 'Sign in to continue your journey.')}</p>
         <form id="authForm" novalidate>
           <div class="field">
             <label>Email</label>
-            <input type="email" class="input" id="fEmail" placeholder="nama@email.com" required autocomplete="email">
+            <input type="email" class="input" id="fEmail" placeholder="${tr('nama@email.com', 'name@email.com')}" required autocomplete="email">
           </div>
           <div class="field">
-            <label>Kata sandi</label>
+            <label>${tr('Kata sandi', 'Password')}</label>
             <div class="input-group">
               <input type="password" class="input" id="fPass" placeholder="••••••••" required autocomplete="current-password">
               <button type="button" class="suffix-btn" id="togglePass"><ion-icon name="eye-outline"></ion-icon></button>
             </div>
           </div>
           <button type="submit" class="btn btn-primary btn-block btn-lg" id="authSubmit" style="margin-top:8px;">
-            Masuk <ion-icon name="arrow-forward"></ion-icon>
+            ${tr('Masuk', 'Sign In')} <ion-icon name="arrow-forward"></ion-icon>
           </button>
         </form>
         ${this._googleSection()}
-        <p class="af-switch">Belum punya akun? <a id="switchMode">Daftar sekarang</a></p>
+        <p class="af-switch">${tr('Belum punya akun?', "Don't have an account?")} <a id="switchMode">${tr('Daftar sekarang', 'Sign up now')}</a></p>
       </div>`;
   },
 
   _registerForm() {
     return `
       <div class="auth-form-side">
-        <h2 class="af-title">Buat akun baru ✨</h2>
-        <p class="af-sub">Gratis, kurang dari satu menit.</p>
+        <h2 class="af-title">${tr('Buat akun baru ✨', 'Create a new account ✨')}</h2>
+        <p class="af-sub">${tr('Gratis, kurang dari satu menit.', 'Free, takes less than a minute.')}</p>
         <form id="authForm" novalidate>
           <div class="field">
-            <label>Nama lengkap</label>
-            <input type="text" class="input" id="fNama" placeholder="Nama kamu" required autocomplete="name">
+            <label>${tr('Nama lengkap', 'Full name')}</label>
+            <input type="text" class="input" id="fNama" placeholder="${tr('Nama kamu', 'Your name')}" required autocomplete="name">
           </div>
           <div class="field">
             <label>Email</label>
-            <input type="email" class="input" id="fEmail" placeholder="nama@email.com" required autocomplete="email">
+            <input type="email" class="input" id="fEmail" placeholder="${tr('nama@email.com', 'name@email.com')}" required autocomplete="email">
           </div>
           <div class="field">
-            <label>Kata sandi</label>
+            <label>${tr('Kata sandi', 'Password')}</label>
             <div class="input-group">
-              <input type="password" class="input" id="fPass" placeholder="Minimal 6 karakter" required autocomplete="new-password">
+              <input type="password" class="input" id="fPass" placeholder="${tr('Minimal 6 karakter', 'At least 6 characters')}" required autocomplete="new-password">
               <button type="button" class="suffix-btn" id="togglePass"><ion-icon name="eye-outline"></ion-icon></button>
             </div>
           </div>
           <button type="submit" class="btn btn-primary btn-block btn-lg" id="authSubmit" style="margin-top:8px;">
-            Daftar <ion-icon name="arrow-forward"></ion-icon>
+            ${tr('Daftar', 'Sign Up')} <ion-icon name="arrow-forward"></ion-icon>
           </button>
         </form>
         ${this._googleSection()}
-        <p class="af-switch">Sudah punya akun? <a id="switchMode">Masuk</a></p>
+        <p class="af-switch">${tr('Sudah punya akun?', 'Already have an account?')} <a id="switchMode">${tr('Masuk', 'Sign in')}</a></p>
       </div>`;
   },
 
@@ -108,7 +108,7 @@ const AuthView = {
       btn.disabled = true;
       try {
         const u = await DB.loginGoogle();
-        toast(`Selamat datang, ${(u.nama || '').split(' ')[0]}! 🌱`);
+        toast(tr(`Selamat datang, ${(u.nama || '').split(' ')[0]}! 🌱`, `Welcome, ${(u.nama || '').split(' ')[0]}! 🌱`));
         setTimeout(() => location.replace('app.html'), 400);
       } catch (err) {
         toast(err.message, 'error');
@@ -130,19 +130,19 @@ const AuthView = {
       const email = $('#fEmail').value.trim();
       const pass = $('#fPass').value;
 
-      if (!email || !/^\S+@\S+\.\S+$/.test(email)) return toast('Masukkan email yang valid.', 'warning');
-      if (pass.length < 6) return toast('Kata sandi minimal 6 karakter.', 'warning');
+      if (!email || !/^\S+@\S+\.\S+$/.test(email)) return toast(tr('Masukkan email yang valid.', 'Please enter a valid email.'), 'warning');
+      if (pass.length < 6) return toast(tr('Kata sandi minimal 6 karakter.', 'Password must be at least 6 characters.'), 'warning');
 
       btn.disabled = true;
       try {
         if (this.mode === 'register') {
           const nama = $('#fNama').value.trim();
-          if (nama.length < 2) { btn.disabled = false; return toast('Masukkan nama kamu.', 'warning'); }
+          if (nama.length < 2) { btn.disabled = false; return toast(tr('Masukkan nama kamu.', 'Please enter your name.'), 'warning'); }
           await DB.register({ nama, email, password: pass });
-          toast(`Selamat datang di Tumara, ${nama.split(' ')[0]}! 🌱`);
+          toast(tr(`Selamat datang di Tumara, ${nama.split(' ')[0]}! 🌱`, `Welcome to Tumara, ${nama.split(' ')[0]}! 🌱`));
         } else {
           const u = await DB.login(email, pass);
-          toast(`Selamat datang kembali, ${(u.nama || '').split(' ')[0]}!`);
+          toast(tr(`Selamat datang kembali, ${(u.nama || '').split(' ')[0]}!`, `Welcome back, ${(u.nama || '').split(' ')[0]}!`));
         }
         setTimeout(() => location.replace('app.html'), 400); // beri waktu toast tampil
       } catch (err) {
@@ -165,38 +165,38 @@ const OnboardView = {
     const d = this.data;
     $('#onboardCard').innerHTML = `
       <div style="text-align:center;margin-bottom:22px;">
-        <div class="logo-mark" style="margin:0 auto 14px;width:54px;height:54px;font-size:1.6rem;">T</div>
-        <h2 style="font-size:1.4rem;font-weight:800;letter-spacing:-.02em;">Hai, ${esc((u.nama || '').split(' ')[0])}! Kenalan dulu, yuk 🌱</h2>
-        <p style="color:var(--text-3);font-size:.88rem;margin-top:6px;">Data ini dipakai untuk menghitung kebutuhan kalori<br>dan target minummu secara otomatis.</p>
+        <div class="logo-mark" style="margin:0 auto 14px;width:54px;height:54px;"><img src="assets/logo.png" alt="Logo Tumara"></div>
+        <h2 style="font-size:1.4rem;font-weight:800;letter-spacing:-.02em;">${tr(`Hai, ${esc((u.nama || '').split(' ')[0])}! Kenalan dulu, yuk 🌱`, `Hi, ${esc((u.nama || '').split(' ')[0])}! Let's get to know you 🌱`)}</h2>
+        <p style="color:var(--text-3);font-size:.88rem;margin-top:6px;">${tr('Data ini dipakai untuk menghitung kebutuhan kalori<br>dan target minummu secara otomatis.', 'This data is used to automatically calculate<br>your calorie needs and water target.')}</p>
       </div>
 
       <form id="obForm" novalidate>
         <div class="grid grid-2 keep-2" style="gap:12px;">
           <div class="field">
-            <label>Usia</label>
+            <label>${tr('Usia', 'Age')}</label>
             <div class="input-group">
               <input type="number" class="input" id="obUsia" min="10" max="25" placeholder="16" required>
-              <span class="input-unit">tahun</span>
+              <span class="input-unit">${tr('tahun', 'yrs')}</span>
             </div>
           </div>
           <div class="field">
-            <label>Jenis kelamin</label>
+            <label>${tr('Jenis kelamin', 'Gender')}</label>
             <div class="radio-cards" id="obJK">
-              <div class="radio-card ${d.jenisKelamin === 'L' ? 'selected' : ''}" data-val="L"><ion-icon name="male"></ion-icon>Laki-laki</div>
-              <div class="radio-card ${d.jenisKelamin === 'P' ? 'selected' : ''}" data-val="P"><ion-icon name="female"></ion-icon>Perempuan</div>
+              <div class="radio-card ${d.jenisKelamin === 'L' ? 'selected' : ''}" data-val="L"><ion-icon name="male"></ion-icon>${tr('Laki-laki', 'Male')}</div>
+              <div class="radio-card ${d.jenisKelamin === 'P' ? 'selected' : ''}" data-val="P"><ion-icon name="female"></ion-icon>${tr('Perempuan', 'Female')}</div>
             </div>
           </div>
         </div>
         <div class="grid grid-2 keep-2" style="gap:12px;">
           <div class="field">
-            <label>Tinggi badan</label>
+            <label>${tr('Tinggi badan', 'Height')}</label>
             <div class="input-group">
               <input type="number" class="input" id="obTinggi" min="100" max="230" placeholder="165" required>
               <span class="input-unit">cm</span>
             </div>
           </div>
           <div class="field">
-            <label>Berat badan</label>
+            <label>${tr('Berat badan', 'Weight')}</label>
             <div class="input-group">
               <input type="number" class="input" id="obBerat" min="25" max="200" placeholder="55" required>
               <span class="input-unit">kg</span>
@@ -204,22 +204,22 @@ const OnboardView = {
           </div>
         </div>
         <div class="field">
-          <label>Tingkat aktivitas harian</label>
+          <label>${tr('Tingkat aktivitas harian', 'Daily activity level')}</label>
           <select class="select" id="obAktivitas">
             ${Calc.AKTIVITAS.map(a => `<option value="${a.key}" ${a.key === d.aktivitas ? 'selected' : ''}>${a.label}</option>`).join('')}
           </select>
         </div>
         <div class="field">
-          <label>Asal sekolah <span style="font-weight:500;color:var(--text-3)">(opsional)</span></label>
-          <input type="text" class="input" id="obSekolah" placeholder="mis. SMAN 1 Bandung">
+          <label>${tr('Asal sekolah', 'School')} <span style="font-weight:500;color:var(--text-3)">${tr('(opsional)', '(optional)')}</span></label>
+          <input type="text" class="input" id="obSekolah" placeholder="${tr('mis. SMAN 1 Bandung', 'e.g. Bandung High School 1')}">
         </div>
 
         <div class="disclaimer" style="margin:6px 0 18px;">
           <ion-icon name="shield-checkmark-outline"></ion-icon>
-          <span>Tumara membantu membangun kebiasaan sehat, <b>bukan pengganti nasihat tenaga kesehatan</b>. Angka kalori adalah perkiraan kebutuhan energi, bukan target diet.</span>
+          <span>${tr('Tumara membantu membangun kebiasaan sehat, <b>bukan pengganti nasihat tenaga kesehatan</b>. Angka kalori adalah perkiraan kebutuhan energi, bukan target diet.', 'Tumara helps you build healthy habits, <b>not a substitute for medical advice</b>. Calorie numbers are estimated energy needs, not a diet target.')}</span>
         </div>
 
-        <button type="submit" class="btn btn-primary btn-block btn-lg">Mulai Bertumbuh <ion-icon name="leaf"></ion-icon></button>
+        <button type="submit" class="btn btn-primary btn-block btn-lg">${tr('Mulai Bertumbuh', 'Start Growing')} <ion-icon name="leaf"></ion-icon></button>
       </form>`;
 
     $$('#obJK .radio-card').forEach(c => c.onclick = () => {
@@ -230,9 +230,9 @@ const OnboardView = {
     $('#obForm').onsubmit = async e => {
       e.preventDefault();
       const usia = +$('#obUsia').value, tinggi = +$('#obTinggi').value, berat = +$('#obBerat').value;
-      if (!usia || usia < 10 || usia > 25) return toast('Usia harus antara 10–25 tahun.', 'warning');
-      if (!tinggi || tinggi < 100 || tinggi > 230) return toast('Periksa kembali tinggi badanmu (cm).', 'warning');
-      if (!berat || berat < 25 || berat > 200) return toast('Periksa kembali berat badanmu (kg).', 'warning');
+      if (!usia || usia < 10 || usia > 25) return toast(tr('Usia harus antara 10–25 tahun.', 'Age must be between 10–25 years.'), 'warning');
+      if (!tinggi || tinggi < 100 || tinggi > 230) return toast(tr('Periksa kembali tinggi badanmu (cm).', 'Please double-check your height (cm).'), 'warning');
+      if (!berat || berat < 25 || berat > 200) return toast(tr('Periksa kembali berat badanmu (kg).', 'Please double-check your weight (kg).'), 'warning');
 
       const aktivitas = $('#obAktivitas').value;
       const jenisKelamin = this.data.jenisKelamin;
@@ -247,7 +247,8 @@ const OnboardView = {
         targetAir: air.gelas,
         profileComplete: true
       });
-      toast(`Targetmu siap: ±${tdee.toLocaleString('id-ID')} kkal & ${air.gelas} gelas air/hari 💧`);
+      toast(tr(`Targetmu siap: ±${tdee.toLocaleString('id-ID')} kkal & ${air.gelas} gelas air/hari 💧`,
+               `Your targets are ready: ±${tdee.toLocaleString('id-ID')} kcal & ${air.gelas} glasses of water/day 💧`));
       App.afterAuth();
     };
   }

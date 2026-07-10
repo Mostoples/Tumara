@@ -9,7 +9,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:ital,wght@0,300;0,400;0,500;0,600;0,700;0,800;1,400&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="css/style.css">
-  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><defs><linearGradient id='g' x1='0' y1='0' x2='1' y2='1'><stop offset='0' stop-color='%2310b981'/><stop offset='1' stop-color='%238b5cf6'/></linearGradient></defs><rect width='100' height='100' rx='24' fill='url(%23g)'/><text x='50' y='68' font-size='52' font-family='Arial' font-weight='bold' fill='white' text-anchor='middle'>T</text></svg>">
+  <link rel="icon" type="image/png" href="assets/logo.png">
   <script type="module" src="https://unpkg.com/ionicons@7.1.0/dist/ionicons/ionicons.esm.js"></script>
   <script nomodule src="https://unpkg.com/ionicons@7.1.0/dist/ionicons/ionicons.js"></script>
   <style>
@@ -23,22 +23,48 @@
       box-shadow: var(--shadow-sm); transition: transform .15s, box-shadow .2s;
     }
     .back-home:hover { transform: translateY(-2px); box-shadow: var(--shadow); }
+
+    .lang-btn {
+      position: fixed; top: 22px; right: 26px; z-index: 10;
+      display: inline-flex; align-items: center; justify-content: center;
+      width: 42px; height: 42px; border-radius: 50%;
+      font-size: 1.25rem; color: var(--text-2); cursor: pointer;
+      background: var(--surface); border: 1px solid var(--border);
+      box-shadow: var(--shadow-sm); transition: transform .15s, box-shadow .2s;
+    }
+    .lang-btn:hover { transform: translateY(-2px); box-shadow: var(--shadow); }
+    @media (max-width: 860px) { .lang-btn { top: 14px; right: 14px; width: 38px; height: 38px; } }
+
+    @media (max-width: 860px) {
+      .back-home { top: 14px; left: 14px; padding: 8px 14px; font-size: .8rem; }
+      /* Ruang atas untuk tombol kembali & ruang bawah untuk bottom nav */
+      .auth-screen { padding: 72px 18px 110px; }
+    }
   </style>
 </head>
 <body>
 
-  <a class="back-home" href="index.html"><ion-icon name="arrow-back"></ion-icon> Kembali ke beranda</a>
+  <a class="back-home" href="index.html"><ion-icon name="arrow-back"></ion-icon> <span data-en="Back to home">Kembali ke beranda</span></a>
+  <button class="lang-btn" id="langBtn" title="Bahasa / Language"><ion-icon name="language-outline"></ion-icon></button>
 
   <!-- ============ LAYAR AUTH ============ -->
   <div id="authScreen" class="auth-screen">
     <div class="auth-card" id="authCard"><!-- diisi oleh JS --></div>
   </div>
 
+  <!-- Bottom nav (muncul otomatis di layar ≤860px via style.css) -->
+  <nav class="bottom-nav">
+    <a class="bnav-item" href="index.html"><ion-icon name="home-outline"></ion-icon><span data-en="Home">Beranda</span></a>
+    <a class="bnav-item" href="encyclopedia.html"><ion-icon name="book-outline"></ion-icon><span data-en="Encyclopedia">Ensiklopedia</span></a>
+    <a class="bnav-item active" href="auth.html"><ion-icon name="person-circle"></ion-icon><span data-en="Sign in">Masuk</span></a>
+  </nav>
+
   <!-- Modal & Toast root -->
   <div id="modalRoot"></div>
   <div id="toastRoot" class="toast-root"></div>
 
   <script src="js/firebase-config.js"></script>
+  <script src="js/i18n.js"></script>
   <script src="js/utils.js"></script>
   <script src="js/db.js"></script>
   <script src="js/views/auth.js"></script>
@@ -47,11 +73,16 @@
     document.addEventListener('DOMContentLoaded', async () => {
       const tema = localStorage.getItem('tumara_theme') || 'light';
       document.documentElement.dataset.theme = tema;
+      document.getElementById('langBtn').onclick = () => {
+        I18N.toggle();
+        AuthView.render();
+      };
       try {
         const u = await DB.init();
         if (u) { location.replace('app.html'); return; }
       } catch (e) {
-        toast('Gagal terhubung ke server. Periksa koneksi internetmu.', 'error');
+        toast(tr('Gagal terhubung ke server. Periksa koneksi internetmu.',
+                 'Could not connect to the server. Please check your internet connection.'), 'error');
       }
       AuthView.render();
     });

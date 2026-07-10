@@ -2,7 +2,57 @@
 
 > Catatan handoff untuk melanjutkan pengerjaan di sesi Claude Code berikutnya.
 
-## Status: ✅ SEMUA MODUL SELESAI (v1.0)
+## Status: ✅ v1.2 — Cakupan penuh fitur `draff apk (1).pdf`
+
+### Ditambahkan di v1.2 (melengkapi semua item PDF yang feasible)
+- **Kesehatan**: tab **Biometrik** (detak jantung, SpO2, tekanan darah, gula darah, langkah — input manual + kategori), tab **Nutrisi** (log makanan + kalori + panduan Isi Piringku), tab **Obat** (pengingat obat + checklist dosis harian), tab **Mental** (latihan pernapasan box-breathing + mood check-in), tab **Siklus** (menstruasi, khusus akun perempuan, prediksi haid & masa subur), estimasi **kalori terbakar** (MET) di Olahraga.
+- **Ibadah**: tab **Sholat & Kiblat** (jadwal sholat via GPS+Aladhan API, hitung mundur, arah kiblat + kompas, tanggal Hijriyah), **Al-Qur'an Digital** (4 surat pendek Arab+transliterasi+terjemah + link mushaf lengkap), **Quotes & Motivasi**, tab **Panduan** (wudhu/sholat/adab Qur'an), **Catatan Sedekah** di tab Zakat.
+- **Keuangan**: tab **Dompet & Aset** (multiple wallets manual: tunai/bank/e-wallet + aset/investasi emas/saham/reksadana), **kunci PIN** keuangan.
+- **Produktivitas/Planner**: **tugas berulang** (harian/mingguan/bulanan, auto-regenerate) + **label/tag** tugas.
+- **Ensiklopedia**: artikel **"Tahapan Membuat Aplikasi"** (7 tahap SDLC dunia kerja).
+- Koleksi data baru di `js/db.js`: biometrics, foods, menstrual, wallets, assets, sedekah. Helper di `js/calc.js`: caloriesBurned (MET), bpInfo, sugarInfo, menstrualPredict. `version.json` = 1.2.0.
+
+### Keterbatasan web (input manual sebagai gantinya)
+Pengukuran otomatis detak jantung/SpO2 via sensor, sinkronisasi smartwatch/wearable, dan sidik jari asli **tidak mungkin di web** → diganti input manual + kunci PIN. Dashboard drag-drop & template peran "Pengusaha" belum (peran Guru sudah lengkap).
+
+---
+
+## Status: ✅ v1.1 — Sistem Peran + Modul Ibadah + fitur baru (dari `draff apk (1).pdf`)
+
+### Yang ditambahkan di v1.1
+- **Sistem peran** `admin` / `guru` / `siswa` di `js/db.js` (LocalAdapter & FirebaseAdapter paritas).
+  - Login role-aware: admin→`admin.html`, guru→`guru.html`, siswa→`app.html` (helper di `js/roles.js`).
+  - Guard tiap halaman (`guardPage`) + redirect otomatis bila peran tak sesuai.
+  - Admin pertama: daftar `ADMIN_EMAILS` di `js/firebase-config.js` (email itu otomatis jadi admin).
+- **Panel Admin** (`admin.html` + `js/views/admin.js`): kelola akun, **buat akun guru/siswa** (Firebase:
+  pakai secondary app agar admin tak ter-logout; menampilkan kredensial untuk diserahkan), ubah peran, hapus.
+- **Portal Guru** (`guru.html` + `js/views/teacher.js`): Kelas & Siswa (roster + tambah massal),
+  Absensi (kode warna H/S/I/A/D, ekspor CSV), Penilaian (kolom + KKM merah otomatis + rata²
+  kolom yang dipilih + ekspor CSV/PDF), Jurnal mengajar (auto jumlah hadir dari absensi + foto
+  terkompres), Jadwal mengajar. Semua data di subkoleksi milik guru sendiri.
+- **Modul Ibadah siswa** (`js/views/ibadah.js`, rute `ibadah` di `app.js` + nav `app.html`):
+  checklist sholat & amalan (bisa tambah custom), tracker tilawah + target khatam + checklist hafalan,
+  penghitung dzikir + doa harian, kalkulator zakat (penghasilan/maal/fitrah), catatan ibadah.
+- **Fitur pilar yang dilengkapi (dari PDF):**
+  - Kesehatan: tab **Berat & IMT** (log berat, tren, BMI + rentang ideal).
+  - Produktivitas: tab **Kebiasaan** (habit tracker grid 7 hari + streak).
+  - Keuangan: tab **Anggaran** (limit per kategori + peringatan lewat batas), tab **Utang/Piutang**,
+    **ekspor CSV** laporan.
+- **Firestore Rules** (`firestore.rules`) diperbarui: pemilik + admin. Deploy: `firebase deploy --only firestore:rules`.
+- Ikon Ionicons dimuat dari **CDN jsdelivr** (folder lokal `assets/ionicons` dihapus). `version.json` = 1.1.0
+  (auto-refresh mendeteksi versi baru).
+- **Catatan keterbatasan web** (fitur PDF yang butuh hardware): langkah kaki/pedometer, sinkronisasi
+  wearable, sidik jari → belum diimplementasi (butuh sensor perangkat); penilaian foto pekerjaan siswa
+  belum (butuh upload/link). Bisa jadi fase berikutnya.
+
+### Diuji
+Seluruh alur di atas diuji end-to-end dengan Playwright di **mode lokal** (localStorage), 0 error konsol.
+Alur Firebase (secondary-app create user, admin rules) mengikuti logika paralel yang sama — perlu uji
+sekali di lingkungan Firebase nyata + deploy rules sebelum produksi.
+
+---
+
+## Status awal: ✅ SEMUA MODUL SELESAI (v1.0)
 
 Semua file rancangan sudah dibuat dan Firebase sudah AKTIF.
 

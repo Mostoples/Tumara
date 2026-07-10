@@ -49,15 +49,17 @@ const DB = (() => {
       return this._user;
     },
 
-    async register({ nama, email, password }) {
+    async register({ nama, email, password, role = 'siswa' }) {
       email = email.trim().toLowerCase();
       if (this._users().some(u => u.email === email)) {
         throw new Error(tr('Email sudah terdaftar. Silakan masuk.', 'This email is already registered. Please sign in.'));
       }
+      if (typeof ADMIN_EMAILS !== 'undefined' && ADMIN_EMAILS.map(e => e.toLowerCase()).includes(email)) role = 'admin';
       const user = {
-        id: uid(), nama: nama.trim(), email,
+        id: uid(), nama: nama.trim(), email, role,
         passHash: await hashText(password),
-        profileComplete: false,
+        // guru & admin tak perlu onboarding kesehatan siswa
+        profileComplete: role !== 'siswa',
         dibuatPada: new Date().toISOString()
       };
       const users = this._users();
@@ -73,9 +75,59 @@ const DB = (() => {
       const u = this._users().find(x => x.email === email);
       if (!u) throw new Error(tr('Email tidak ditemukan. Belum punya akun?', "Email not found. Don't have an account yet?"));
       if (u.passHash !== await hashText(password)) throw new Error(tr('Kata sandi salah.', 'Incorrect password.'));
+      // Bootstrap admin lewat ADMIN_EMAILS (mode lokal)
+      if (typeof ADMIN_EMAILS !== 'undefined' && ADMIN_EMAILS.includes(email) && u.role !== 'admin') {
+        u.role = 'admin';
+        const users = this._users();
+        const i = users.findIndex(x => x.id === u.id);
+        if (i >= 0) { users[i] = u; this._saveUsers(users); }
+      }
       localStorage.setItem('tumara_session', u.id);
       this._user = u;
       return u;
+    },
+
+    /* ---------- ADMIN (mode lokal) ---------- */
+    async adminListUsers() {
+      return this._users().map(u => { const { passHash, ...safe } = u; return safe; });
+    },
+
+    async adminCreateUser({ nama, email, password, role = 'guru', extra = {} }) {
+      email = email.trim().toLowerCase();
+      if (this._users().some(u => u.email === email)) {
+        throw new Error(tr('Email sudah terdaftar.', 'This email is already registered.'));
+      }
+      const user = {
+        id: uid(), nama: nama.trim(), email, role, ...extra,
+        passHash: await hashText(password),
+        profileComplete: role !== 'siswa',
+        dibuatPada: new Date().toISOString(),
+        dibuatOleh: this._user?.id || null
+      };
+      const users = this._users();
+      users.push(user);
+      this._saveUsers(users);
+      const { passHash, ...safe } = user;
+      return safe;
+    },
+
+    async adminUpdateUser(id, patch) {
+      const users = this._users();
+      const i = users.findIndex(u => u.id === id);
+      if (i === -1) throw new Error('User tidak ditemukan.');
+      if (patch.password) { patch = { ...patch }; patch.passHash = await hashText(patch.password); delete patch.password; }
+      users[i] = { ...users[i], ...patch };
+      this._saveUsers(users);
+      const { passHash, ...safe } = users[i];
+      return safe;
+    },
+
+    async adminDeleteUser(id) {
+      this._saveUsers(this._users().filter(u => u.id !== id));
+      // buang data milik user tsb.
+      Object.keys(localStorage)
+        .filter(k => k.startsWith(`tumara_data_${id}_`))
+        .forEach(k => localStorage.removeItem(k));
     },
 
     async loginGoogle() {
@@ -160,8 +212,20 @@ const DB = (() => {
         import(`https://www.gstatic.com/firebasejs/${V}/firebase-firestore.js`)
       ]);
       const app = appM.initializeApp(FIREBASE_CONFIG);
-      this.fb = { auth: authM.getAuth(app), db: fsM.getFirestore(app), A: authM, F: fsM };
+      const auth = authM.getAuth(app);
+      const db = fsM.getFirestore(app);
+      this._connectEmulator(fsM, authM, db, auth);
+      this.fb = { auth, db, A: authM, F: fsM };
       return this.fb;
+    },
+
+    // Sambungkan ke Firebase Emulator bila flag global disetel (khusus pengujian).
+    // Tidak berpengaruh di produksi (flag tidak ada).
+    _connectEmulator(fsM, authM, db, auth) {
+      const cfg = (typeof window !== 'undefined') && window.__TUMARA_EMULATOR__;
+      if (!cfg) return;
+      try { fsM.connectFirestoreEmulator(db, cfg.host, cfg.fs); } catch (_) {}
+      try { authM.connectAuthEmulator(auth, `http://${cfg.host}:${cfg.auth}`, { disableWarnings: true }); } catch (_) {}
     },
 
     _colRef(coll) {
@@ -169,12 +233,20 @@ const DB = (() => {
       return F.collection(db, 'users', this._user.id, coll);
     },
 
-    // Firestore menolak nilai `undefined` (seluruh tulis akan gagal) —
-    // buang field undefined sebelum dikirim.
+    // Firestore menolak nilai `undefined` di level MANA PUN (seluruh tulis
+    // akan gagal). Bersihkan secara rekursif: objek bersarang, array, map —
+    // sekaligus buang key yang bernilai undefined.
     _clean(obj) {
-      const out = {};
-      for (const k in obj) if (obj[k] !== undefined) out[k] = obj[k];
-      return out;
+      if (Array.isArray(obj)) return obj.filter(v => v !== undefined).map(v => this._clean(v));
+      if (obj && typeof obj === 'object' && !(obj instanceof Date)) {
+        const out = {};
+        for (const k in obj) {
+          if (obj[k] === undefined) continue;
+          out[k] = this._clean(obj[k]);
+        }
+        return out;
+      }
+      return obj;
     },
 
     // Muat profil dari Firestore; bila dokumen belum ada (mis. login Google
@@ -194,11 +266,17 @@ const DB = (() => {
         loginTerakhir: new Date().toISOString()
       };
 
+      // Bootstrap admin: email di ADMIN_EMAILS → role 'admin'
+      const isAdminEmail = typeof ADMIN_EMAILS !== 'undefined'
+        && ADMIN_EMAILS.map(e => e.toLowerCase()).includes((fbUser.email || '').toLowerCase());
+
       if (!existing) {
         const profile = {
           nama: fbUser.displayName || (fbUser.email ? fbUser.email.split('@')[0] : 'Siswa Tumara'),
+          role: isAdminEmail ? 'admin' : 'siswa',
           ...account,
-          profileComplete: false,
+          // admin tidak perlu onboarding kesehatan
+          profileComplete: isAdminEmail,
           dibuatPada: new Date().toISOString()
         };
         await F.setDoc(ref, profile);
@@ -206,6 +284,10 @@ const DB = (() => {
       } else {
         // Dokumen sudah ada → segarkan data akun tanpa menimpa isian profil.
         if (!existing.nama && fbUser.displayName) account.nama = fbUser.displayName;
+        // Naikkan ke admin bila email terdaftar sebagai admin & belum admin
+        if (isAdminEmail && existing.role !== 'admin') account.role = 'admin';
+        // Pastikan selalu ada role (dokumen lama sebelum fitur peran)
+        else if (!existing.role) account.role = 'siswa';
         await F.setDoc(ref, account, { merge: true });
         this._user = { id: fbUser.uid, ...existing, ...account };
       }
@@ -223,7 +305,7 @@ const DB = (() => {
       return this._user;
     },
 
-    async register({ nama, email, password }) {
+    async register({ nama, email, password, role = 'siswa' }) {
       const { auth, A, F, db } = await this._load();
       let cred;
       try {
@@ -231,17 +313,83 @@ const DB = (() => {
       } catch (e) {
         throw new Error(this._msg(e));
       }
+      const isAdminEmail = typeof ADMIN_EMAILS !== 'undefined'
+        && ADMIN_EMAILS.map(e => e.toLowerCase()).includes(email.trim().toLowerCase());
+      const finalRole = isAdminEmail ? 'admin' : role;
       const profile = {
         nama: nama.trim(),
         email: cred.user.email || email.trim(),
+        role: finalRole,
         fotoUrl: '',
         provider: 'password',
-        profileComplete: false,
+        profileComplete: finalRole !== 'siswa',
         dibuatPada: new Date().toISOString()
       };
       await F.setDoc(F.doc(db, 'users', cred.user.uid), profile);
       this._user = { id: cred.user.uid, ...profile };
       return this._user;
+    },
+
+    /* ---------- ADMIN (Firebase) ---------- */
+
+    // Daftar semua pengguna (butuh role admin di Security Rules)
+    async adminListUsers() {
+      const { F, db } = this.fb;
+      const snap = await F.getDocs(F.collection(db, 'users'));
+      return snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    },
+
+    // Buat akun baru TANPA menendang admin dari sesinya, dengan memakai
+    // instance Firebase app kedua (auth terpisah). User baru menulis
+    // dokumen profilnya sendiri (diizinkan Rules), lalu app kedua ditutup.
+    async adminCreateUser({ nama, email, password, role = 'guru', extra = {} }) {
+      const V = '10.12.2';
+      const [appM, authM, fsM] = await Promise.all([
+        import(`https://www.gstatic.com/firebasejs/${V}/firebase-app.js`),
+        import(`https://www.gstatic.com/firebasejs/${V}/firebase-auth.js`),
+        import(`https://www.gstatic.com/firebasejs/${V}/firebase-firestore.js`)
+      ]);
+      const secName = 'secondary-' + Date.now();
+      const secApp = appM.initializeApp(FIREBASE_CONFIG, secName);
+      const secAuth = authM.getAuth(secApp);
+      const secDb = fsM.getFirestore(secApp);
+      this._connectEmulator(fsM, authM, secDb, secAuth);
+      try {
+        let cred;
+        try {
+          cred = await authM.createUserWithEmailAndPassword(secAuth, email.trim(), password);
+        } catch (e) { throw new Error(this._msg(e)); }
+        const profile = {
+          nama: nama.trim(),
+          email: cred.user.email || email.trim(),
+          role, ...extra,
+          fotoUrl: '',
+          provider: 'password',
+          profileComplete: role !== 'siswa',
+          dibuatPada: new Date().toISOString(),
+          dibuatOleh: this._user?.id || null
+        };
+        // ditulis oleh user baru itu sendiri (secAuth) → lolos Rules users/{uid}
+        await fsM.setDoc(fsM.doc(secDb, 'users', cred.user.uid), this._clean(profile));
+        await authM.signOut(secAuth);
+        return { id: cred.user.uid, ...profile };
+      } finally {
+        try { await appM.deleteApp(secApp); } catch (_) {}
+      }
+    },
+
+    async adminUpdateUser(id, patch) {
+      const { F, db } = this.fb;
+      const { password, ...safe } = patch; // password akun Auth tak bisa diubah dari klien
+      await F.setDoc(F.doc(db, 'users', id), this._clean(safe), { merge: true });
+      return { id, ...safe };
+    },
+
+    // Hapus dokumen profil (akun Auth tetap ada — penghapusan Auth butuh
+    // Admin SDK/Cloud Functions; menandai nonaktif sudah cukup untuk sekolah).
+    async adminDeleteUser(id) {
+      const { F, db } = this.fb;
+      await F.deleteDoc(F.doc(db, 'users', id));
     },
 
     async login(email, password) {
@@ -263,22 +411,54 @@ const DB = (() => {
       }
       const provider = new A.GoogleAuthProvider();
       provider.setCustomParameters({ prompt: 'select_account' });
+
+      // Kode yang berarti USER sendiri yang membatalkan — jangan dipaksa
+      // fallback ke redirect, cukup tampilkan pesannya.
+      const userCancelled = new Set(['auth/popup-closed-by-user', 'auth/cancelled-popup-request']);
+
       try {
-        const cred = await A.signInWithPopup(auth, provider);
+        // Timeout jaga-jaga: bila popup macet setelah akun dipilih (mis.
+        // domain Google diblokir VPN/ad-blocker/antivirus di jaringan lokal),
+        // signInWithPopup() bisa menggantung tanpa pernah resolve/reject —
+        // tanpa timeout ini tombol akan disabled selamanya tanpa pesan error.
+        const cred = await this._withTimeout(
+          A.signInWithPopup(auth, provider),
+          20000,
+          tr('Login Google tidak merespons.', 'Google sign-in did not respond in time.')
+        );
         return await this._loadProfile(cred.user); // profil dibuat otomatis bila belum ada
       } catch (e) {
-        // Popup diblokir → fallback redirect satu halaman penuh.
-        // Hasilnya ditangani oleh getRedirectResult() di init().
-        if (e.code === 'auth/popup-blocked') {
-          try {
-            await A.signInWithRedirect(auth, provider);
-            return new Promise(() => {}); // halaman akan berpindah
-          } catch (e2) {
-            throw new Error(this._msg(e2));
-          }
+        if (!e.__timeout && userCancelled.has(e.code)) {
+          throw new Error(this._msg(e));
         }
-        throw new Error(this._msg(e));
+        // Popup gagal/macet/diblokir (timeout, network error, popup-blocked, dll.) →
+        // fallback ke redirect satu halaman penuh, yang tidak bergantung pada
+        // iframe relay (authDomain/__/auth/iframe) yang bisa diblokir jaringan lokal.
+        // Hasilnya ditangani oleh getRedirectResult() di init().
+        toast(tr('Popup Google bermasalah, mencoba metode alternatif (redirect)…',
+                 'Google popup had an issue, trying an alternative method (redirect)…'), 'info');
+        try {
+          await A.signInWithRedirect(auth, provider);
+          return new Promise(() => {}); // halaman akan berpindah
+        } catch (e2) {
+          throw new Error(this._msg(e2));
+        }
       }
+    },
+
+    // Bungkus promise dengan batas waktu; lempar Error dengan pesan siap-pakai bila kelewat.
+    _withTimeout(promise, ms, message) {
+      return new Promise((resolve, reject) => {
+        const t = setTimeout(() => {
+          const err = new Error(message);
+          err.__timeout = true;
+          reject(err);
+        }, ms);
+        promise.then(
+          v => { clearTimeout(t); resolve(v); },
+          e => { clearTimeout(t); reject(e); }
+        );
+      });
     },
 
     async logout() {
@@ -381,7 +561,15 @@ const DB = (() => {
 
   const COLLECTIONS = [
     'health_daily', 'workouts', 'notes', 'tasks',
-    'schedule', 'transactions', 'goals', 'pomodoro'
+    'schedule', 'transactions', 'goals', 'pomodoro',
+    // fitur baru siswa
+    'weights', 'meds', 'habits', 'habit_logs',
+    'ibadah_daily', 'hafalan', 'quran_log', 'ibadah_notes',
+    'budgets', 'debts',
+    // kelengkapan dari rancangan (biometrik, nutrisi, siklus, dompet, aset, sedekah)
+    'biometrics', 'foods', 'menstrual', 'wallets', 'assets', 'sedekah',
+    // data guru (disimpan di subkoleksi guru sendiri)
+    'classes', 'students', 'attendance', 'grades', 'journals'
   ];
 
   const DAILY_DEFAULT = {
@@ -392,6 +580,7 @@ const DB = (() => {
   return {
     get isFirebase() { return adapter === FirebaseAdapter; },
     get user() { return adapter.user; },
+    get role() { return adapter.user?.role || 'siswa'; },
 
     init: () => adapter.init(),
     register: d => adapter.register(d),
@@ -400,6 +589,12 @@ const DB = (() => {
     logout: () => adapter.logout(),
     updateUser: p => adapter.updateUser(p),
     changePassword: (o, n) => adapter.changePassword(o, n),
+
+    // Admin
+    adminListUsers: () => adapter.adminListUsers(),
+    adminCreateUser: d => adapter.adminCreateUser(d),
+    adminUpdateUser: (id, p) => adapter.adminUpdateUser(id, p),
+    adminDeleteUser: id => adapter.adminDeleteUser(id),
 
     list: c => adapter.list(c),
     add: (c, i) => adapter.add(c, i),

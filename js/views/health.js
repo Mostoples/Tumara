@@ -10,22 +10,589 @@ const Health = {
   calcResult: null,
 
   async render(el) {
+    const female = DB.user?.jenisKelamin === 'P';
     el.innerHTML = `
       <div class="tabs">
         <button class="tab ${this.tab === 'today' ? 'active' : ''}" data-tab="today"><ion-icon name="sunny-outline"></ion-icon>${tr('Hari Ini', 'Today')}</button>
-        <button class="tab ${this.tab === 'calc' ? 'active' : ''}" data-tab="calc"><ion-icon name="calculator-outline"></ion-icon>${tr('Kalkulator', 'Calculator')}</button>
+        <button class="tab ${this.tab === 'biometrik' ? 'active' : ''}" data-tab="biometrik"><ion-icon name="pulse-outline"></ion-icon>${tr('Biometrik', 'Biometrics')}</button>
+        <button class="tab ${this.tab === 'nutrisi' ? 'active' : ''}" data-tab="nutrisi"><ion-icon name="nutrition-outline"></ion-icon>${tr('Nutrisi', 'Nutrition')}</button>
         <button class="tab ${this.tab === 'sleep' ? 'active' : ''}" data-tab="sleep"><ion-icon name="moon-outline"></ion-icon>${tr('Tidur', 'Sleep')}</button>
         <button class="tab ${this.tab === 'sport' ? 'active' : ''}" data-tab="sport"><ion-icon name="barbell-outline"></ion-icon>${tr('Olahraga', 'Exercise')}</button>
+        <button class="tab ${this.tab === 'berat' ? 'active' : ''}" data-tab="berat"><ion-icon name="body-outline"></ion-icon>${tr('Berat & IMT', 'Weight & BMI')}</button>
+        <button class="tab ${this.tab === 'obat' ? 'active' : ''}" data-tab="obat"><ion-icon name="medkit-outline"></ion-icon>${tr('Obat', 'Meds')}</button>
+        <button class="tab ${this.tab === 'mental' ? 'active' : ''}" data-tab="mental"><ion-icon name="happy-outline"></ion-icon>${tr('Mental', 'Mental')}</button>
+        ${female ? `<button class="tab ${this.tab === 'siklus' ? 'active' : ''}" data-tab="siklus"><ion-icon name="flower-outline"></ion-icon>${tr('Siklus', 'Cycle')}</button>` : ''}
+        <button class="tab ${this.tab === 'calc' ? 'active' : ''}" data-tab="calc"><ion-icon name="calculator-outline"></ion-icon>${tr('Kalkulator', 'Calculator')}</button>
       </div>
       <div id="healthBody"></div>`;
 
-    $$('.tab', el).forEach(t => t.onclick = () => { this.tab = t.dataset.tab; this.render(el); });
+    $$('.tab', el).forEach(t => t.onclick = () => { this.tab = t.dataset.tab; App.saveTab(this.tab); this.render(el); });
 
     const body = $('#healthBody', el);
     if (this.tab === 'today') await this.renderToday(body);
+    else if (this.tab === 'biometrik') await this.renderBiometrik(body);
+    else if (this.tab === 'nutrisi') await this.renderNutrisi(body);
     else if (this.tab === 'calc') this.renderCalc(body);
     else if (this.tab === 'sleep') this.renderSleep(body);
+    else if (this.tab === 'berat') await this.renderWeight(body);
+    else if (this.tab === 'obat') await this.renderMeds(body);
+    else if (this.tab === 'mental') await this.renderMental(body);
+    else if (this.tab === 'siklus') await this.renderCycle(body);
     else await this.renderSport(body);
+  },
+
+  /* ============ TAB: BIOMETRIK (manual) ============
+     Detak jantung, oksigen darah (SpO2), tekanan darah, gula darah, langkah.
+     Web tidak punya akses sensor → input manual (bisa dari alat ukur/smartwatch). */
+
+  BIO_TYPES: [
+    { key: 'hr',    id: 'Detak jantung',   en: 'Heart rate',    unit: 'bpm',   icon: '❤️',  fields: 1 },
+    { key: 'spo2',  id: 'Oksigen darah',   en: 'Blood oxygen',  unit: '%',     icon: '🫁',  fields: 1 },
+    { key: 'bp',    id: 'Tekanan darah',   en: 'Blood pressure',unit: 'mmHg',  icon: '🩸',  fields: 2 },
+    { key: 'sugar', id: 'Gula darah',      en: 'Blood sugar',   unit: 'mg/dL', icon: '🍬',  fields: 1 },
+    { key: 'steps', id: 'Langkah',         en: 'Steps',         unit: tr('langkah', 'steps'), icon: '👣', fields: 1 }
+  ],
+
+  async renderBiometrik(el) {
+    const logs = (await DB.list('biometrics')).sort((a, b) => (b.waktu || '') < (a.waktu || '') ? -1 : 1);
+    const latestOf = key => logs.find(l => l.jenis === key);
+
+    const card = t => {
+      const last = latestOf(t.key);
+      let nilaiStr = '—', badge = '';
+      if (last) {
+        if (t.key === 'bp') { nilaiStr = `${last.nilai}/${last.nilai2}`; const i = Calc.bpInfo(last.nilai, last.nilai2); if (i) badge = `<span class="badge ${i.badge}">${i.kategori}</span>`; }
+        else if (t.key === 'sugar') { nilaiStr = last.nilai; const i = Calc.sugarInfo(last.nilai); if (i) badge = `<span class="badge ${i.badge}">${i.kategori}</span>`; }
+        else nilaiStr = t.key === 'steps' ? Number(last.nilai).toLocaleString('id-ID') : last.nilai;
+      }
+      return `
+        <div class="card">
+          <div style="display:flex;align-items:center;justify-content:space-between;">
+            <div class="card-title" style="margin:0;">${t.icon} ${tr(t.id, t.en)}</div>
+            <button class="mini-icon-btn" data-add="${t.key}"><ion-icon name="add"></ion-icon></button>
+          </div>
+          <div class="stat-row" style="margin:12px 0 4px;">
+            <span class="stat-num">${nilaiStr}</span><span class="stat-unit">${t.unit}</span>
+          </div>
+          <div style="min-height:22px;">${badge || (last ? '' : `<span style="font-size:.78rem;color:var(--text-3);">${tr('belum ada data', 'no data yet')}</span>`)}</div>
+          ${last ? `<div style="font-size:.74rem;color:var(--text-3);margin-top:4px;">${fmtDate((last.waktu || '').slice(0, 10), { short: true })} ${(last.waktu || '').slice(11, 16)}</div>` : ''}
+        </div>`;
+    };
+
+    el.innerHTML = `
+      <div class="disclaimer" style="margin-bottom:16px;">
+        <ion-icon name="information-circle"></ion-icon>
+        <span>${tr('Masukkan hasil pengukuran dari alat/oximeter/smartwatch-mu secara manual. Tumara menyimpan & memvisualkan trennya. Ini <b>bukan alat medis</b> — untuk keluhan serius temui tenaga kesehatan.', 'Enter measurements from your device/oximeter/smartwatch manually. Tumara stores & visualizes the trend. This is <b>not a medical device</b> — for serious concerns see a health professional.')}</span>
+      </div>
+      <div class="grid grid-3">${this.BIO_TYPES.map(card).join('')}</div>
+
+      ${logs.length ? `
+        <div class="section-head" style="margin-top:20px;"><h2>${tr('Riwayat Pengukuran', 'Measurement History')}</h2></div>
+        <div style="display:flex;flex-direction:column;gap:9px;">
+          ${logs.slice(0, 30).map(l => { const t = this.BIO_TYPES.find(x => x.key === l.jenis) || {}; const val = l.jenis === 'bp' ? `${l.nilai}/${l.nilai2}` : l.nilai; return `
+            <div class="list-item">
+              <div class="item-icon" style="background:var(--health-soft);font-size:1.1rem;">${t.icon || '📈'}</div>
+              <div style="flex:1;"><div style="font-weight:700;font-size:.88rem;">${tr(t.id, t.en)}: ${val} ${t.unit || ''}</div>
+                <div style="font-size:.75rem;color:var(--text-3);">${fmtDate((l.waktu || '').slice(0, 10), { weekday: true })} · ${(l.waktu || '').slice(11, 16)}</div></div>
+              <button class="mini-icon-btn danger" data-del="${l.id}"><ion-icon name="trash-outline"></ion-icon></button>
+            </div>`; }).join('')}
+        </div>` : ''}`;
+
+    $$('[data-add]', el).forEach(b => b.onclick = () => this._bioModal(this.BIO_TYPES.find(t => t.key === b.dataset.add)));
+    $$('[data-del]', el).forEach(b => b.onclick = async () => {
+      await DB.remove('biometrics', b.dataset.del);
+      toast(tr('Data dihapus.', 'Entry deleted.'));
+      App.refresh();
+    });
+  },
+
+  _bioModal(t) {
+    openModal({
+      title: `${t.icon} ${tr(t.id, t.en)}`,
+      body: `
+        ${t.key === 'bp' ? `
+          <div class="grid grid-2 keep-2" style="gap:12px;">
+            <div class="field"><label>${tr('Sistolik', 'Systolic')}</label><div class="input-group"><input type="number" class="input" id="mV1" min="50" max="260" placeholder="120"><span class="input-unit">mmHg</span></div></div>
+            <div class="field"><label>${tr('Diastolik', 'Diastolic')}</label><div class="input-group"><input type="number" class="input" id="mV2" min="30" max="180" placeholder="80"><span class="input-unit">mmHg</span></div></div>
+          </div>` : `
+          <div class="field"><label>${tr(t.id, t.en)}</label><div class="input-group"><input type="number" class="input" id="mV1" min="0" placeholder="${t.key === 'hr' ? '72' : t.key === 'spo2' ? '98' : t.key === 'sugar' ? '95' : '5000'}"><span class="input-unit">${t.unit}</span></div></div>`}
+        <button class="btn btn-primary btn-block" id="mSave"><ion-icon name="checkmark"></ion-icon> ${tr('Simpan', 'Save')}</button>`,
+      onMount: m => {
+        $('#mSave', m).onclick = async () => {
+          const v1 = +$('#mV1', m).value;
+          if (!v1 || v1 <= 0) return toast(tr('Masukkan nilai yang valid.', 'Enter a valid value.'), 'warning');
+          const rec = { jenis: t.key, nilai: v1, waktu: new Date().toISOString() };
+          if (t.key === 'bp') { const v2 = +$('#mV2', m).value; if (!v2) return toast(tr('Isi nilai diastolik.', 'Enter diastolic value.'), 'warning'); rec.nilai2 = v2; }
+          await DB.add('biometrics', rec);
+          if (t.key === 'steps') await DB.saveDaily(todayStr(), { langkah: v1 });
+          closeModal();
+          toast(tr('Tersimpan 📈', 'Saved 📈'));
+          App.refresh();
+        };
+      }
+    });
+  },
+
+  /* ============ TAB: NUTRISI (log makanan + Isi Piringku) ============ */
+
+  async renderNutrisi(el) {
+    const user = DB.user;
+    const foods = (await DB.list('foods')).filter(f => f.tanggal === todayStr());
+    const totalKal = foods.reduce((s, f) => s + (f.kalori || 0), 0);
+    const target = user.targetKalori || 2000;
+    const pct = clamp(Math.round(totalKal / target * 100), 0, 100);
+
+    el.innerHTML = `
+      <div class="grid grid-2" style="align-items:start;">
+        <div class="card">
+          <div style="display:flex;align-items:center;justify-content:space-between;">
+            <div class="card-title" style="margin:0;"><ion-icon name="restaurant" style="color:var(--fin)"></ion-icon>${tr('Log Makanan Hari Ini', "Today's Food Log")}</div>
+            <button class="btn btn-primary btn-sm" id="addFood"><ion-icon name="add"></ion-icon> ${tr('Makanan', 'Food')}</button>
+          </div>
+          <div class="stat-row" style="margin:14px 0 8px;"><span class="stat-num">${totalKal.toLocaleString('id-ID')}</span><span class="stat-unit">${tr(`/ ${target.toLocaleString('id-ID')} kkal`, `/ ${target.toLocaleString('id-ID')} kcal`)}</span></div>
+          <div class="progress"><div class="progress-fill amber" style="width:${pct}%"></div></div>
+          ${foods.length ? `<div style="display:flex;flex-direction:column;gap:8px;margin-top:16px;">
+            ${foods.map(f => `<div class="list-item" style="padding:10px 12px;">
+              <span style="font-size:1.1rem;">${f.emoji || '🍽️'}</span>
+              <div style="flex:1;"><div style="font-weight:700;font-size:.86rem;">${esc(f.nama)}</div><div style="font-size:.74rem;color:var(--text-3);">${esc(f.waktu || '')}</div></div>
+              <span class="badge badge-amber">${f.kalori} kkal</span>
+              <button class="mini-icon-btn danger" data-delf="${f.id}"><ion-icon name="trash-outline"></ion-icon></button>
+            </div>`).join('')}
+          </div>` : `<div style="font-size:.82rem;color:var(--text-3);margin-top:14px;text-align:center;">${tr('Belum ada makanan tercatat hari ini 🍽️', 'No food logged today yet 🍽️')}</div>`}
+        </div>
+
+        <div class="card">
+          <div class="card-title"><ion-icon name="nutrition" style="color:var(--brand)"></ion-icon>${tr('Panduan "Isi Piringku"', '"Fill My Plate" Guide')}</div>
+          <p style="font-size:.85rem;color:var(--text-2);line-height:1.6;margin-top:8px;">${tr('Panduan makan seimbang dari Kemenkes (pengganti "4 Sehat 5 Sempurna"):', 'Balanced-eating guide from the Health Ministry (replaces "4 Healthy 5 Perfect"):')}</p>
+          <div style="display:flex;flex-direction:column;gap:9px;margin-top:12px;">
+            <div class="list-item" style="padding:11px 14px;">🥗 ${tr('½ piring: sayur & buah (⅔ sayur, ⅓ buah)', '½ plate: vegetables & fruit (⅔ veg, ⅓ fruit)')}</div>
+            <div class="list-item" style="padding:11px 14px;">🍚 ${tr('⅓ piring: makanan pokok (nasi, kentang, jagung)', '⅓ plate: staples (rice, potato, corn)')}</div>
+            <div class="list-item" style="padding:11px 14px;">🍗 ${tr('Sisanya: lauk (ayam, ikan, telur, tahu, tempe)', 'The rest: protein (chicken, fish, egg, tofu, tempeh)')}</div>
+            <div class="list-item" style="padding:11px 14px;">💧 ${tr('Cukup air putih · batasi gula, garam & minyak', 'Enough water · limit sugar, salt & oil')}</div>
+          </div>
+        </div>
+      </div>`;
+
+    $('#addFood', el).onclick = () => this._foodModal();
+    $$('[data-delf]', el).forEach(b => b.onclick = async () => {
+      const f = foods.find(x => x.id === b.dataset.delf);
+      await DB.remove('foods', b.dataset.delf);
+      // kurangi kalori harian
+      const d = await DB.getDaily();
+      await DB.saveDaily(todayStr(), { kalori: Math.max(0, (d.kalori || 0) - (f?.kalori || 0)) });
+      toast(tr('Makanan dihapus.', 'Food removed.'));
+      App.refresh();
+    });
+  },
+
+  _foodModal() {
+    const preset = [
+      { nama: 'Nasi + ayam + sayur', emoji: '🍛', kalori: 650 },
+      { nama: 'Nasi goreng', emoji: '🍚', kalori: 550 },
+      { nama: 'Mie ayam / bakso', emoji: '🍜', kalori: 500 },
+      { nama: 'Roti / sandwich', emoji: '🥪', kalori: 300 },
+      { nama: 'Buah potong', emoji: '🍎', kalori: 90 },
+      { nama: 'Gorengan (2 pcs)', emoji: '🍤', kalori: 260 },
+      { nama: 'Susu / teh manis', emoji: '🥛', kalori: 150 }
+    ];
+    openModal({
+      title: tr('Catat Makanan', 'Log Food'),
+      body: `
+        <div class="field">
+          <label>${tr('Pilih cepat', 'Quick pick')}</label>
+          <div style="display:flex;flex-wrap:wrap;gap:7px;" id="foodPreset">
+            ${preset.map((p, i) => `<button type="button" class="chip" data-p="${i}">${p.emoji} ${esc(tr(p.nama, p.nama))} · ${p.kalori}</button>`).join('')}
+          </div>
+        </div>
+        <div class="field"><label>${tr('Nama makanan', 'Food name')}</label><input type="text" class="input" id="mNama" placeholder="${tr('mis. Nasi padang', 'e.g. Fried rice')}"></div>
+        <div class="field"><label>${tr('Perkiraan kalori', 'Estimated calories')}</label><div class="input-group"><input type="number" class="input" id="mKal" min="1" max="3000" placeholder="450"><span class="input-unit">kkal</span></div></div>
+        <button class="btn btn-primary btn-block" id="mSave"><ion-icon name="checkmark"></ion-icon> ${tr('Catat', 'Log')}</button>`,
+      onMount: m => {
+        let emoji = '🍽️';
+        $$('#foodPreset .chip', m).forEach(b => b.onclick = () => {
+          const p = preset[+b.dataset.p];
+          $('#mNama', m).value = p.nama; $('#mKal', m).value = p.kalori; emoji = p.emoji;
+        });
+        $('#mSave', m).onclick = async () => {
+          const nama = $('#mNama', m).value.trim();
+          const kalori = +$('#mKal', m).value;
+          if (!nama) return toast(tr('Isi nama makanan.', 'Enter a food name.'), 'warning');
+          if (!kalori || kalori < 1) return toast(tr('Isi perkiraan kalori.', 'Enter estimated calories.'), 'warning');
+          const jam = new Date().toTimeString().slice(0, 5);
+          await DB.add('foods', { tanggal: todayStr(), nama, kalori, emoji, waktu: jam });
+          const d = await DB.getDaily();
+          await DB.saveDaily(todayStr(), { kalori: (d.kalori || 0) + kalori });
+          closeModal();
+          toast(tr(`${nama} tercatat 🍽️`, `${nama} logged 🍽️`));
+          App.refresh();
+        };
+      }
+    });
+  },
+
+  /* ============ TAB: OBAT (pengingat obat) ============ */
+
+  async renderMeds(el) {
+    const meds = await DB.list('meds');
+    const today = todayStr();
+
+    el.innerHTML = `
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:16px;">
+        <div style="font-size:.88rem;color:var(--text-3);font-weight:600;">${tr('Jadwal & pengingat minum obat/vitamin 💊', 'Medication/vitamin schedule & reminders 💊')}</div>
+        <button class="btn btn-primary btn-sm" id="addMed"><ion-icon name="add"></ion-icon> ${tr('Obat', 'Medicine')}</button>
+      </div>
+      ${meds.length ? `
+        <div style="display:flex;flex-direction:column;gap:12px;">
+          ${meds.map(md => {
+            const taken = (md.riwayat || {})[today] || [];
+            return `
+            <div class="card">
+              <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:10px;">
+                <div style="flex:1;">
+                  <div style="font-weight:800;font-size:1rem;">💊 ${esc(md.nama)}${md.dosis ? ` <span style="font-weight:600;color:var(--text-3);font-size:.85rem;">· ${esc(md.dosis)}</span>` : ''}</div>
+                  ${md.catatan ? `<div style="font-size:.8rem;color:var(--text-3);margin-top:2px;">${esc(md.catatan)}</div>` : ''}
+                </div>
+                <div style="display:flex;gap:4px;">
+                  <button class="mini-icon-btn" data-edit="${md.id}"><ion-icon name="create-outline"></ion-icon></button>
+                  <button class="mini-icon-btn danger" data-del="${md.id}"><ion-icon name="trash-outline"></ion-icon></button>
+                </div>
+              </div>
+              <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px;">
+                ${(md.waktu || []).map(w => {
+                  const done = taken.includes(w);
+                  return `<button class="btn btn-sm ${done ? 'btn-primary' : ''}" data-take="${md.id}" data-w="${w}"><ion-icon name="${done ? 'checkmark-circle' : 'time-outline'}"></ion-icon> ${w}${done ? ' ✓' : ''}</button>`;
+                }).join('') || `<span style="font-size:.8rem;color:var(--text-3);">${tr('Tanpa jadwal jam tertentu', 'No specific schedule')}</span>`}
+              </div>
+            </div>`;
+          }).join('')}
+        </div>` : `
+        <div class="card empty-state">
+          <ion-icon name="medkit-outline"></ion-icon>
+          <div class="es-title">${tr('Belum ada obat terdaftar', 'No medications yet')}</div>
+          <div class="es-sub">${tr('Tambahkan obat/vitamin & jadwal minumnya biar tak terlewat 💊', 'Add meds/vitamins & their schedule so you never miss them 💊')}</div>
+        </div>`}
+      <div class="disclaimer" style="margin-top:18px;"><ion-icon name="information-circle"></ion-icon><span>${tr('Pengingat tampil sebagai notifikasi saat aplikasi terbuka. Selalu ikuti anjuran dosis dari dokter/apoteker.', 'Reminders appear as notifications while the app is open. Always follow dosage advice from your doctor/pharmacist.')}</span></div>`;
+
+    $('#addMed', el).onclick = () => this._medModal();
+    $$('[data-edit]', el).forEach(b => b.onclick = () => this._medModal(meds.find(x => x.id === b.dataset.edit)));
+    $$('[data-del]', el).forEach(b => b.onclick = async () => {
+      if (!await confirmDialog(tr('Hapus obat ini?', 'Delete this medication?'), { danger: true, okText: tr('Hapus', 'Delete') })) return;
+      await DB.remove('meds', b.dataset.del);
+      toast(tr('Obat dihapus.', 'Medication deleted.'));
+      App.refresh();
+    });
+    $$('[data-take]', el).forEach(b => b.onclick = async () => {
+      const md = meds.find(x => x.id === b.dataset.take);
+      const w = b.dataset.w;
+      const riwayat = md.riwayat || {};
+      const arr = riwayat[today] || [];
+      if (arr.includes(w)) riwayat[today] = arr.filter(x => x !== w);
+      else { riwayat[today] = [...arr, w]; toast(tr('Dosis dicatat ✓', 'Dose logged ✓')); }
+      await DB.update('meds', md.id, { riwayat });
+      App.refresh();
+    });
+  },
+
+  _medModal(med = null) {
+    openModal({
+      title: med ? tr('Ubah Obat', 'Edit Medication') : tr('Tambah Obat', 'Add Medication'),
+      body: `
+        <div class="field"><label>${tr('Nama obat / vitamin', 'Medicine / vitamin name')}</label><input type="text" class="input" id="mNama" placeholder="${tr('mis. Vitamin C', 'e.g. Vitamin C')}" value="${esc(med?.nama || '')}"></div>
+        <div class="field"><label>${tr('Dosis', 'Dose')} <span style="font-weight:500;color:var(--text-3)">${tr('(opsional)', '(optional)')}</span></label><input type="text" class="input" id="mDosis" placeholder="${tr('mis. 1 tablet', 'e.g. 1 tablet')}" value="${esc(med?.dosis || '')}"></div>
+        <div class="field"><label>${tr('Jam minum (pisahkan koma)', 'Times (comma separated)')}</label><input type="text" class="input" id="mWaktu" placeholder="07:00, 13:00, 19:00" value="${esc((med?.waktu || []).join(', '))}"></div>
+        <div class="field"><label>${tr('Catatan', 'Note')} <span style="font-weight:500;color:var(--text-3)">${tr('(opsional)', '(optional)')}</span></label><input type="text" class="input" id="mCat" placeholder="${tr('mis. sesudah makan', 'e.g. after meals')}" value="${esc(med?.catatan || '')}"></div>
+        <button class="btn btn-primary btn-block" id="mSave"><ion-icon name="checkmark"></ion-icon> ${tr('Simpan', 'Save')}</button>`,
+      onMount: m => {
+        $('#mSave', m).onclick = async () => {
+          const nama = $('#mNama', m).value.trim();
+          if (!nama) return toast(tr('Isi nama obat.', 'Enter a medicine name.'), 'warning');
+          const waktu = $('#mWaktu', m).value.split(',').map(s => s.trim()).filter(s => /^\d{1,2}:\d{2}$/.test(s));
+          const data = { nama, dosis: $('#mDosis', m).value.trim(), waktu, catatan: $('#mCat', m).value.trim() };
+          if (med) await DB.update('meds', med.id, data);
+          else await DB.add('meds', { ...data, riwayat: {} });
+          closeModal();
+          toast(tr('Obat tersimpan 💊', 'Medication saved 💊'));
+          App.refresh();
+        };
+      }
+    });
+  },
+
+  /* ============ TAB: MENTAL (napas + mood) ============ */
+
+  async renderMental(el) {
+    const moods = (await DB.list('biometrics')).filter(b => b.jenis === 'mood').sort((a, b) => (b.waktu || '') < (a.waktu || '') ? -1 : 1);
+    const moodOpts = [
+      { v: 5, e: '😄', id: 'Senang', en: 'Happy' }, { v: 4, e: '🙂', id: 'Baik', en: 'Good' },
+      { v: 3, e: '😐', id: 'Biasa', en: 'Okay' }, { v: 2, e: '😟', id: 'Cemas', en: 'Anxious' },
+      { v: 1, e: '😢', id: 'Sedih', en: 'Sad' }
+    ];
+    const todayMood = moods.find(m => (m.waktu || '').slice(0, 10) === todayStr());
+
+    el.innerHTML = `
+      <div class="grid grid-2" style="align-items:start;">
+        <div class="card" style="text-align:center;">
+          <div class="card-title" style="justify-content:center;"><ion-icon name="leaf" style="color:var(--brand)"></ion-icon>${tr('Latihan Pernapasan', 'Breathing Exercise')}</div>
+          <div class="card-sub">${tr('Box breathing 4-4-4-4 untuk menenangkan diri', 'Box breathing 4-4-4-4 to calm down')}</div>
+          <div class="breath-wrap"><div class="breath-circle" id="breathCircle"><span id="breathText">${tr('Mulai', 'Start')}</span></div></div>
+          <div style="display:flex;gap:10px;justify-content:center;">
+            <button class="btn btn-primary" id="breathToggle"><ion-icon name="play"></ion-icon> ${tr('Mulai', 'Start')}</button>
+          </div>
+          <div style="font-size:.8rem;color:var(--text-3);margin-top:12px;">${tr('Tarik napas 4 dtk · tahan 4 · buang 4 · tahan 4 — ulangi', 'Inhale 4s · hold 4 · exhale 4 · hold 4 — repeat')}</div>
+        </div>
+
+        <div class="card">
+          <div class="card-title"><ion-icon name="happy-outline" style="color:var(--prod)"></ion-icon>${tr('Suasana Hati Hari Ini', "Today's Mood")}</div>
+          <div style="display:flex;justify-content:space-between;gap:6px;margin-top:16px;">
+            ${moodOpts.map(o => `<button class="mood-btn ${todayMood?.nilai === o.v ? 'sel' : ''}" data-mood="${o.v}" title="${tr(o.id, o.en)}"><span style="font-size:1.7rem;">${o.e}</span><span style="font-size:.68rem;font-weight:700;">${tr(o.id, o.en)}</span></button>`).join('')}
+          </div>
+          ${todayMood ? `<div class="badge badge-purple" style="margin-top:14px;">${tr('Tercatat hari ini:', 'Logged today:')} ${moodOpts.find(o => o.v === todayMood.nilai)?.e}</div>` : ''}
+          <div class="disclaimer" style="margin-top:16px;"><ion-icon name="bulb-outline"></ion-icon><span>${tr('Kalau perasaan berat berlangsung lama, cerita ke orang terpercaya atau guru BK. Bercerita bukan kelemahan. 💚', 'If heavy feelings persist, talk to someone you trust or a counselor. Sharing is not weakness. 💚')}</span></div>
+        </div>
+      </div>
+
+      ${moods.length ? `<div class="section-head" style="margin-top:20px;"><h2>${tr('Riwayat Mood', 'Mood History')}</h2></div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;">
+          ${moods.slice(0, 14).map(m => `<div class="mood-chip" title="${fmtDate((m.waktu || '').slice(0, 10))}">${moodOpts.find(o => o.v === m.nilai)?.e || '🙂'}<span>${fmtDate((m.waktu || '').slice(0, 10), { short: true }).replace(/\s\d{4}$/, '')}</span></div>`).join('')}
+        </div>` : ''}`;
+
+    // mood
+    $$('[data-mood]', el).forEach(b => b.onclick = async () => {
+      const v = +b.dataset.mood;
+      if (todayMood) await DB.update('biometrics', todayMood.id, { nilai: v });
+      else await DB.add('biometrics', { jenis: 'mood', nilai: v, waktu: new Date().toISOString() });
+      toast(tr('Mood tercatat 💚', 'Mood logged 💚'));
+      App.refresh();
+    });
+
+    // breathing animation
+    this._breath = this._breath || { running: false };
+    const circle = $('#breathCircle', el), text = $('#breathText', el), toggle = $('#breathToggle', el);
+    const phases = [
+      { t: tr('Tarik napas', 'Inhale'), s: 4, cls: 'inhale' },
+      { t: tr('Tahan', 'Hold'), s: 4, cls: 'hold' },
+      { t: tr('Buang napas', 'Exhale'), s: 4, cls: 'exhale' },
+      { t: tr('Tahan', 'Hold'), s: 4, cls: 'hold' }
+    ];
+    let pi = 0, sec = 0, timer = null;
+    const stop = () => { this._breath.running = false; clearInterval(timer); timer = null; circle.className = 'breath-circle'; text.textContent = tr('Mulai', 'Start'); toggle.innerHTML = `<ion-icon name="play"></ion-icon> ${tr('Mulai', 'Start')}`; };
+    const tick = () => {
+      const p = phases[pi];
+      if (sec === 0) { circle.className = 'breath-circle ' + p.cls; }
+      text.textContent = `${p.t} ${p.s - sec}`;
+      sec++;
+      if (sec >= p.s) { sec = 0; pi = (pi + 1) % phases.length; }
+    };
+    toggle.onclick = () => {
+      if (this._breath.running) { stop(); return; }
+      this._breath.running = true; pi = 0; sec = 0;
+      toggle.innerHTML = `<ion-icon name="stop"></ion-icon> ${tr('Berhenti', 'Stop')}`;
+      tick(); timer = setInterval(tick, 1000);
+    };
+  },
+
+  /* ============ TAB: SIKLUS MENSTRUASI (khusus wanita) ============ */
+
+  async renderCycle(el) {
+    const logs = (await DB.list('menstrual')).sort((a, b) => (b.mulai || '') < (a.mulai || '') ? -1 : 1);
+    const cycleLen = DB.user?.cycleLen || 28;
+    const periodLen = DB.user?.periodLen || 5;
+    const last = logs[0];
+    const pred = last ? Calc.menstrualPredict(last.mulai, cycleLen, periodLen) : null;
+    const hariLagi = pred ? daysUntil(pred.next) : null;
+
+    el.innerHTML = `
+      <div class="card" style="background:linear-gradient(135deg,#db2777,#ec4899);color:#fff;">
+        <div class="card-title" style="color:#fff;"><ion-icon name="flower-outline"></ion-icon>${tr('Prediksi Siklus', 'Cycle Prediction')}</div>
+        ${pred ? `
+          <div style="display:flex;gap:20px;flex-wrap:wrap;margin-top:12px;">
+            <div><div style="font-size:.78rem;opacity:.85;font-weight:600;">${tr('Perkiraan haid berikutnya', 'Next period (est.)')}</div>
+              <div style="font-size:1.3rem;font-weight:800;">${fmtDate(pred.next, { short: true })}</div>
+              <div style="font-size:.8rem;opacity:.9;">${hariLagi >= 0 ? tr(`${hariLagi} hari lagi`, `in ${hariLagi} days`) : tr('mungkin sudah dimulai', 'may have started')}</div></div>
+            <div><div style="font-size:.78rem;opacity:.85;font-weight:600;">${tr('Perkiraan masa subur', 'Fertile window (est.)')}</div>
+              <div style="font-size:1rem;font-weight:700;">${fmtDate(pred.fertileStart, { short: true })} – ${fmtDate(pred.fertileEnd, { short: true })}</div></div>
+          </div>` : `<p style="margin-top:10px;opacity:.92;font-size:.88rem;">${tr('Catat tanggal mulai haid untuk melihat prediksi.', 'Log your period start date to see predictions.')}</p>`}
+      </div>
+
+      <div style="display:flex;gap:10px;margin:16px 0;flex-wrap:wrap;">
+        <button class="btn btn-primary" id="addCycle"><ion-icon name="add"></ion-icon> ${tr('Catat Mulai Haid', 'Log Period Start')}</button>
+        <button class="btn" id="cycleSetting"><ion-icon name="options-outline"></ion-icon> ${tr('Panjang siklus', 'Cycle length')}: ${cycleLen} ${tr('hari', 'days')}</button>
+      </div>
+
+      ${logs.length ? `
+        <div class="section-head"><h2>${tr('Riwayat', 'History')}</h2></div>
+        <div style="display:flex;flex-direction:column;gap:9px;">
+          ${logs.map((l, i) => {
+            const prev = logs[i + 1];
+            const gap = prev ? Math.round((new Date(l.mulai) - new Date(prev.mulai)) / 86400000) : null;
+            return `<div class="list-item">
+              <div class="item-icon" style="background:rgba(236,72,153,.14);color:#ec4899;">🌸</div>
+              <div style="flex:1;"><div style="font-weight:700;font-size:.88rem;">${fmtDate(l.mulai, { weekday: true })}</div>
+                ${gap ? `<div style="font-size:.75rem;color:var(--text-3);">${tr(`${gap} hari dari siklus sebelumnya`, `${gap} days from previous cycle`)}</div>` : ''}</div>
+              <button class="mini-icon-btn danger" data-del="${l.id}"><ion-icon name="trash-outline"></ion-icon></button>
+            </div>`;
+          }).join('')}
+        </div>` : ''}
+      <div class="disclaimer" style="margin-top:18px;"><ion-icon name="information-circle"></ion-icon><span>${tr('Prediksi bersifat perkiraan berdasarkan rata-rata siklus — bisa berubah karena stres, aktivitas, dll. Bukan alat kontrasepsi.', 'Predictions are estimates based on average cycles — they can shift due to stress, activity, etc. Not a contraceptive method.')}</span></div>`;
+
+    $('#addCycle', el).onclick = () => {
+      openModal({
+        title: tr('Catat Mulai Haid', 'Log Period Start'),
+        body: `<div class="field"><label>${tr('Tanggal mulai', 'Start date')}</label><input type="date" class="input" id="mTgl" value="${todayStr()}"></div>
+          <button class="btn btn-primary btn-block" id="mSave"><ion-icon name="checkmark"></ion-icon> ${tr('Simpan', 'Save')}</button>`,
+        onMount: m => { $('#mSave', m).onclick = async () => {
+          await DB.add('menstrual', { mulai: $('#mTgl', m).value || todayStr() });
+          closeModal(); toast(tr('Tercatat 🌸', 'Logged 🌸')); App.refresh();
+        }; }
+      });
+    };
+    $('#cycleSetting', el).onclick = () => {
+      openModal({
+        title: tr('Pengaturan Siklus', 'Cycle Settings'),
+        body: `<div class="grid grid-2 keep-2" style="gap:12px;">
+            <div class="field"><label>${tr('Panjang siklus', 'Cycle length')}</label><div class="input-group"><input type="number" class="input" id="mCyc" min="20" max="40" value="${cycleLen}"><span class="input-unit">${tr('hari', 'days')}</span></div></div>
+            <div class="field"><label>${tr('Lama haid', 'Period length')}</label><div class="input-group"><input type="number" class="input" id="mPer" min="2" max="10" value="${periodLen}"><span class="input-unit">${tr('hari', 'days')}</span></div></div>
+          </div><button class="btn btn-primary btn-block" id="mSave"><ion-icon name="checkmark"></ion-icon> ${tr('Simpan', 'Save')}</button>`,
+        onMount: m => { $('#mSave', m).onclick = async () => {
+          await DB.updateUser({ cycleLen: clamp(+$('#mCyc', m).value || 28, 20, 40), periodLen: clamp(+$('#mPer', m).value || 5, 2, 10) });
+          closeModal(); toast(tr('Pengaturan disimpan.', 'Settings saved.')); App.refresh();
+        }; }
+      });
+    };
+    $$('[data-del]', el).forEach(b => b.onclick = async () => {
+      await DB.remove('menstrual', b.dataset.del);
+      toast(tr('Dihapus.', 'Deleted.')); App.refresh();
+    });
+  },
+
+  /* ============ TAB: BERAT & IMT ============ */
+
+  async renderWeight(el) {
+    const user = DB.user;
+    const logs = (await DB.list('weights')).sort((a, b) => (a.tanggal || '') < (b.tanggal || '') ? -1 : 1);
+    const last = logs[logs.length - 1];
+    const beratKini = last ? last.berat : (user.berat || 0);
+    const tinggi = user.tinggi || 0;
+    const bmi = tinggi ? Calc.bmi(beratKini, tinggi) : 0;
+    const info = tinggi ? Calc.bmiInfo(bmi) : null;
+    const ideal = tinggi ? Calc.idealRange(tinggi) : null;
+
+    // grafik tren berat (maks 12 titik terakhir)
+    const recent = logs.slice(-12);
+    const barItems = recent.map(l => ({ label: fmtDate(l.tanggal, { short: true }).replace(/\s\d{4}$/, ''), value: l.berat }));
+
+    // selisih dari catatan sebelumnya
+    let delta = null;
+    if (logs.length >= 2) delta = +(logs[logs.length - 1].berat - logs[logs.length - 2].berat).toFixed(1);
+
+    el.innerHTML = `
+      <div class="grid grid-2" style="align-items:start;">
+        <div class="card">
+          <div class="card-title"><ion-icon name="body-outline" style="color:var(--health)"></ion-icon>${tr('Berat & IMT Terkini', 'Current Weight & BMI')}</div>
+          ${tinggi ? `
+            <div style="display:flex;align-items:center;gap:20px;margin:16px 0;flex-wrap:wrap;">
+              <div style="text-align:center;">
+                <div style="font-size:2.2rem;font-weight:800;">${beratKini || '-'}<span style="font-size:1rem;color:var(--text-3);"> kg</span></div>
+                ${delta !== null ? `<div style="font-size:.8rem;font-weight:700;color:${delta > 0 ? 'var(--fin)' : delta < 0 ? 'var(--brand)' : 'var(--text-3)'};">${delta > 0 ? '▲ +' : delta < 0 ? '▼ ' : ''}${delta !== 0 ? delta + ' kg' : tr('tetap', 'no change')}</div>` : ''}
+              </div>
+              <div style="flex:1;min-width:120px;">
+                <div style="display:flex;align-items:baseline;gap:8px;"><span style="font-size:1.6rem;font-weight:800;color:${info.warna};">${bmi}</span><span class="badge ${info.badge}">${info.kategori}</span></div>
+                <div style="font-size:.78rem;color:var(--text-3);margin-top:4px;">${tr(`Berat ideal: ${ideal.min}–${ideal.max} kg`, `Ideal weight: ${ideal.min}–${ideal.max} kg`)}</div>
+              </div>
+            </div>
+            <p style="font-size:.84rem;color:var(--text-2);line-height:1.6;">${info.pesan}</p>` : `
+            <div class="empty-state" style="padding:24px 10px;">
+              <ion-icon name="body-outline"></ion-icon>
+              <div class="es-title">${tr('Lengkapi tinggi badan dulu', 'Add your height first')}</div>
+              <div class="es-sub">${tr('Isi di menu Profil untuk menghitung IMT', 'Fill it in the Profile menu to compute BMI')}</div>
+            </div>`}
+          <button class="btn btn-primary btn-block" id="addWeight" style="margin-top:12px;"><ion-icon name="add"></ion-icon> ${tr('Catat Berat Badan', 'Log Weight')}</button>
+        </div>
+
+        <div class="card">
+          <div class="card-title"><ion-icon name="bar-chart" style="color:var(--health)"></ion-icon>${tr('Tren Berat Badan', 'Weight Trend')}</div>
+          ${barItems.length ? `<div style="margin-top:12px;">${barChartSVG(barItems, { color: 'var(--health)', fmtVal: v => v })}</div>` : `
+            <div class="empty-state" style="padding:24px 10px;">
+              <ion-icon name="bar-chart-outline"></ion-icon>
+              <div class="es-title">${tr('Belum ada catatan berat', 'No weight logs yet')}</div>
+              <div class="es-sub">${tr('Catat berkala untuk melihat perkembangan 📈', 'Log regularly to see your progress 📈')}</div>
+            </div>`}
+        </div>
+      </div>
+
+      ${logs.length ? `
+        <div class="section-head" style="margin-top:20px;"><h2>${tr('Riwayat', 'History')}</h2></div>
+        <div style="display:flex;flex-direction:column;gap:9px;">
+          ${logs.slice().reverse().map(l => `
+            <div class="list-item">
+              <div class="item-icon" style="background:var(--health-soft);color:var(--health);"><ion-icon name="body-outline"></ion-icon></div>
+              <div style="flex:1;">
+                <div style="font-weight:700;font-size:.9rem;">${l.berat} kg ${tinggi ? `<span style="font-weight:600;color:var(--text-3);font-size:.8rem;">· IMT ${Calc.bmi(l.berat, tinggi)}</span>` : ''}</div>
+                <div style="font-size:.78rem;color:var(--text-3);">${fmtDate(l.tanggal, { weekday: true })}</div>
+              </div>
+              <button class="mini-icon-btn danger" data-del="${l.id}"><ion-icon name="trash-outline"></ion-icon></button>
+            </div>`).join('')}
+        </div>` : ''}
+
+      <div class="disclaimer" style="margin-top:18px;">
+        <ion-icon name="information-circle"></ion-icon>
+        <span>${tr('IMT adalah indikator umum, bukan diagnosis. Untuk remaja yang masih bertumbuh, konsultasikan dengan tenaga kesehatan bila ragu.', 'BMI is a general indicator, not a diagnosis. For growing teenagers, consult a health professional if unsure.')}</span>
+      </div>`;
+
+    $('#addWeight', el).onclick = () => this._weightModal(beratKini);
+    $$('[data-del]', el).forEach(b => b.onclick = async () => {
+      if (!await confirmDialog(tr('Hapus catatan berat ini?', 'Delete this weight log?'), { danger: true, okText: tr('Hapus', 'Delete') })) return;
+      await DB.remove('weights', b.dataset.del);
+      toast(tr('Catatan dihapus.', 'Log deleted.'));
+      App.refresh();
+    });
+  },
+
+  _weightModal(current) {
+    openModal({
+      title: tr('Catat Berat Badan', 'Log Weight'),
+      body: `
+        <div class="grid grid-2 keep-2" style="gap:12px;">
+          <div class="field">
+            <label>${tr('Berat badan', 'Weight')}</label>
+            <div class="input-group"><input type="number" class="input" id="mBerat" min="20" max="250" step="0.1" value="${current || ''}"><span class="input-unit">kg</span></div>
+          </div>
+          <div class="field">
+            <label>${tr('Tanggal', 'Date')}</label>
+            <input type="date" class="input" id="mTanggal" value="${todayStr()}">
+          </div>
+        </div>
+        <label style="display:flex;align-items:center;gap:10px;font-size:.85rem;font-weight:600;color:var(--text-2);cursor:pointer;margin:4px 0 18px;">
+          <input type="checkbox" id="mUpdateProfil" checked style="width:17px;height:17px;accent-color:var(--brand);">
+          ${tr('Perbarui berat di profil & hitung ulang target kalori', 'Update profile weight & recalculate calorie target')}
+        </label>
+        <button class="btn btn-primary btn-block" id="mSave"><ion-icon name="checkmark"></ion-icon> ${tr('Simpan', 'Save')}</button>`,
+      onMount: m => {
+        $('#mSave', m).onclick = async () => {
+          const berat = +$('#mBerat', m).value;
+          const tanggal = $('#mTanggal', m).value || todayStr();
+          if (!berat || berat < 20 || berat > 250) return toast(tr('Masukkan berat yang valid.', 'Enter a valid weight.'), 'warning');
+          // satu catatan per tanggal
+          const all = await DB.list('weights');
+          const ex = all.find(w => w.tanggal === tanggal);
+          if (ex) await DB.update('weights', ex.id, { berat });
+          else await DB.set('weights', tanggal, { tanggal, berat });
+          if ($('#mUpdateProfil', m).checked) {
+            const u = DB.user;
+            const patch = { berat };
+            if (u.tinggi && u.usia) {
+              const tdee = Calc.tdee(Calc.bmr({ jenisKelamin: u.jenisKelamin || 'L', berat, tinggi: u.tinggi, usia: u.usia }), u.aktivitas || 'ringan');
+              patch.targetKalori = tdee;
+              patch.targetAir = Calc.waterTarget(berat).gelas;
+            }
+            await DB.updateUser(patch);
+          }
+          closeModal();
+          toast(tr('Berat badan tercatat 📈', 'Weight logged 📈'));
+          App.refresh();
+        };
+      }
+    });
   },
 
   /* ============ TAB: HARI INI ============ */
@@ -36,6 +603,15 @@ const Health = {
     const all = await DB.list('health_daily');
     const targetAir = user.targetAir || 8;
     const targetKalori = user.targetKalori || 2000;
+
+    // Air minum: gelas target (checklist) vs gelas ekstra yang ditambah sendiri.
+    // 1 gelas = 250 ml. `daily.air` = total gelas diminum; `daily.airExtra` =
+    // gelas ekstra di luar target (hanya ini yang bisa dikurangi tombol −).
+    const ML_PER_GELAS = 250;
+    const extraAir = daily.airExtra || 0;
+    const checkedAir = clamp((daily.air || 0) - extraAir, 0, targetAir); // gelas target yang tercentang
+    const cupCount = targetAir + extraAir;                                // total gelas yang ditampilkan
+    const literTarget = Calc.waterTarget(user.berat || 55).liter;
     const pctKalori = clamp(Math.round((daily.kalori / targetKalori) * 100), 0, 100);
 
     const streakRokok = this._streak(all, 'bebasRokok');
@@ -47,19 +623,33 @@ const Health = {
         <!-- AIR MINUM -->
         <div class="card">
           <div class="card-title"><ion-icon name="water" style="color:var(--info)"></ion-icon>${tr('Pengingat Minum', 'Water Reminder')}</div>
-          <div class="card-sub">${tr(`Target: ${targetAir} gelas (± ${Calc.waterTarget(user.berat || 55).liter} liter) / hari`, `Target: ${targetAir} glasses (± ${Calc.waterTarget(user.berat || 55).liter} liter) / day`)}</div>
+          <div class="card-sub">${tr(`Target: ${targetAir} gelas (± ${literTarget} liter) / hari · 1 gelas = ${ML_PER_GELAS} ml`, `Target: ${targetAir} glasses (± ${literTarget} liter) / day · 1 glass = ${ML_PER_GELAS} ml`)}</div>
           <div class="water-cups" id="waterCups">
-            ${Array.from({ length: targetAir }, (_, i) => `
-              <button class="water-cup ${i < daily.air ? 'filled' : ''}" data-i="${i}" title="${tr(`Gelas ke-${i + 1}`, `Glass ${i + 1}`)}">
-                <ion-icon name="${i < daily.air ? 'water' : 'water-outline'}"></ion-icon>
-              </button>`).join('')}
+            ${Array.from({ length: cupCount }, (_, i) => {
+              const isExtra = i >= targetAir;
+              // Gelas target terisi sampai jumlah tercentang; gelas tambahan selalu terisi.
+              const filled = isExtra ? true : (i < checkedAir);
+              const title = isExtra
+                ? tr(`Gelas tambahan (${ML_PER_GELAS} ml)`, `Extra glass (${ML_PER_GELAS} ml)`)
+                : tr(`Gelas ke-${i + 1} (${ML_PER_GELAS} ml)`, `Glass ${i + 1} (${ML_PER_GELAS} ml)`);
+              return `
+              <button class="water-cup ${filled ? 'filled' : ''} ${isExtra ? 'extra' : ''}" data-i="${i}" title="${title}">
+                <ion-icon name="${filled ? 'water' : 'water-outline'}"></ion-icon>
+              </button>`;
+            }).join('')}
           </div>
-          <div style="display:flex;align-items:center;justify-content:space-between;">
-            <div class="stat-row"><span class="stat-num" style="color:var(--info)">${daily.air}</span><span class="stat-unit">${tr(`/ ${targetAir} gelas`, `/ ${targetAir} glasses`)}</span></div>
-            <div style="display:flex;gap:8px;">
-              <button class="btn btn-sm" id="waterMinus"><ion-icon name="remove"></ion-icon></button>
-              <button class="btn btn-sm btn-primary" id="waterPlus"><ion-icon name="add"></ion-icon> ${tr('Gelas', 'Glass')}</button>
+          <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;">
+            <div class="stat-row">
+              <span class="stat-num" style="color:var(--info)">${daily.air || 0}</span>
+              <span class="stat-unit">${tr(`gelas · ${((daily.air || 0) * ML_PER_GELAS).toLocaleString('id-ID')} ml`, `glasses · ${((daily.air || 0) * ML_PER_GELAS).toLocaleString('id-ID')} ml`)}</span>
             </div>
+            <div style="display:flex;gap:8px;">
+              <button class="btn btn-sm" id="waterMinus" ${extraAir <= 0 ? 'disabled' : ''} title="${tr('Kurangi gelas tambahan', 'Remove extra glass')}"><ion-icon name="remove"></ion-icon></button>
+              <button class="btn btn-sm btn-primary" id="waterPlus" title="${tr('Tambah gelas', 'Add a glass')}"><ion-icon name="add"></ion-icon> ${tr('Gelas', 'Glass')}</button>
+            </div>
+          </div>
+          <div style="font-size:.78rem;color:var(--text-3);margin-top:8px;">
+            ${tr(`Target ${checkedAir}/${targetAir} gelas${extraAir ? ` · +${extraAir} gelas tambahan` : ''}`, `Target ${checkedAir}/${targetAir} glasses${extraAir ? ` · +${extraAir} extra` : ''}`)}
           </div>
           ${daily.air >= targetAir ? `<div class="badge badge-blue" style="margin-top:12px;">${tr('🎉 Target minum hari ini tercapai!', '🎉 Water goal hit for today!')}</div>` : ''}
         </div>
@@ -122,16 +712,28 @@ const Health = {
       </div>`;
 
     /* --- interaksi air --- */
-    const setAir = async n => {
-      await DB.saveDaily(todayStr(), { air: clamp(n, 0, 30) });
+    // Simpan total gelas (air) & jumlah gelas tambahan (airExtra) sekaligus.
+    const setWater = async (air, extra) => {
+      await DB.saveDaily(todayStr(), { air: clamp(air, 0, 60), airExtra: clamp(extra, 0, 40) });
       this.render($('#view'));
     };
     $$('#waterCups .water-cup', el).forEach(c => c.onclick = () => {
       const i = +c.dataset.i;
-      setAir(i + 1 === daily.air ? i : i + 1); // klik gelas terakhir yg terisi = batalkan
+      if (i < targetAir) {
+        // Gelas target → checklist (klik gelas terakhir yang tercentang = batalkan)
+        const nc = (i + 1 === checkedAir ? i : i + 1);
+        setWater(nc + extraAir, extraAir);
+      } else {
+        // Gelas tambahan → kurangi dari titik ini (klik yang terakhir = hapus satu)
+        const j = i - targetAir;
+        const ne = (j + 1 === extraAir ? j : j + 1);
+        setWater(checkedAir + ne, ne);
+      }
     });
-    $('#waterPlus', el).onclick = () => setAir(daily.air + 1);
-    $('#waterMinus', el).onclick = () => setAir(daily.air - 1);
+    // + menambah gelas baru (ekstra), bukan menceklist gelas target yang ada
+    $('#waterPlus', el).onclick = () => setWater((daily.air || 0) + 1, extraAir + 1);
+    // − hanya mengurangi gelas tambahan; gelas target tidak bisa dikurangi lewat sini
+    $('#waterMinus', el).onclick = () => { if (extraAir > 0) setWater((daily.air || 0) - 1, extraAir - 1); };
 
     /* --- interaksi kalori --- */
     $$('[data-kal]', el).forEach(b => b.onclick = async () => {
@@ -216,7 +818,7 @@ const Health = {
             <div class="grid grid-2 keep-2" style="gap:12px;">
               <div class="field">
                 <label>${tr('Usia', 'Age')}</label>
-                <div class="input-group"><input type="number" class="input" id="cUsia" min="10" max="25" value="${u.usia || ''}"><span class="input-unit">${tr('th', 'yrs')}</span></div>
+                <div class="input-group"><input type="number" class="input" id="cUsia" value="${u.usia || ''}"><span class="input-unit">${tr('th', 'yrs')}</span></div>
               </div>
               <div class="field">
                 <label>${tr('Jenis kelamin', 'Sex')}</label>
@@ -421,9 +1023,9 @@ const Health = {
     const senin = new Date(now);
     senin.setDate(now.getDate() - ((now.getDay() + 6) % 7));
     const seninStr = todayStr(senin);
-    const menitMingguIni = workouts
-      .filter(w => w.tanggal >= seninStr && w.tanggal <= todayStr())
-      .reduce((s, w) => s + w.durasi, 0);
+    const mingguIni = workouts.filter(w => w.tanggal >= seninStr && w.tanggal <= todayStr());
+    const menitMingguIni = mingguIni.reduce((s, w) => s + w.durasi, 0);
+    const kaloriMingguIni = mingguIni.reduce((s, w) => s + Calc.caloriesBurned(w.jenis, w.durasi, user.berat), 0);
     const pct = clamp(Math.round(menitMingguIni / targetMingguan * 100), 0, 100);
 
     el.innerHTML = `
@@ -435,8 +1037,9 @@ const Health = {
             <span class="stat-num">${menitMingguIni}</span>
             <span class="stat-unit">${tr(`/ ${targetMingguan} menit minggu ini`, `/ ${targetMingguan} minutes this week`)}</span>
           </div>
-          <div class="progress" style="margin-bottom:16px;"><div class="progress-fill" style="width:${pct}%"></div></div>
-          ${pct >= 100 ? `<div class="badge badge-green" style="margin-bottom:14px;">${tr('🏆 Target minggu ini tercapai!', '🏆 Weekly target reached!')}</div>` : ''}
+          <div class="progress" style="margin-bottom:12px;"><div class="progress-fill" style="width:${pct}%"></div></div>
+          <div class="badge badge-amber" style="margin-bottom:14px;">🔥 ${tr(`± ${kaloriMingguIni.toLocaleString('id-ID')} kkal terbakar minggu ini`, `± ${kaloriMingguIni.toLocaleString('id-ID')} kcal burned this week`)}</div>
+          ${pct >= 100 ? `<div class="badge badge-green" style="margin-bottom:14px;margin-left:6px;">${tr('🏆 Target minggu ini tercapai!', '🏆 Weekly target reached!')}</div>` : ''}
           <div style="display:flex;gap:10px;">
             <button class="btn btn-primary" id="addWorkout" style="flex:1;"><ion-icon name="add"></ion-icon> ${tr('Catat Latihan', 'Log Workout')}</button>
             <button class="btn" id="editTarget"><ion-icon name="options-outline"></ion-icon></button>
@@ -465,6 +1068,7 @@ const Health = {
                 <div style="font-size:.77rem;color:var(--text-3);">${fmtDate(w.tanggal, { weekday: true })}</div>
               </div>
               <span class="badge badge-green">${tr(`${w.durasi} menit`, `${w.durasi} minutes`)}</span>
+              <span class="badge badge-amber">🔥 ${Calc.caloriesBurned(w.jenis, w.durasi, user.berat)} kkal</span>
               <button class="mini-icon-btn danger" data-del="${w.id}"><ion-icon name="trash-outline"></ion-icon></button>
             </div>`).join('')}
         </div>` : `

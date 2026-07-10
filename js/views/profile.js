@@ -5,6 +5,9 @@
 
 const Profile = {
 
+  // Data diri default mode tampilan (tidak bisa diedit) sampai tombol edit ditekan.
+  _editing: false,
+
   _inisial(nama) {
     return (nama || '?').trim().split(/\s+/).map(w => w[0]).slice(0, 2).join('').toUpperCase();
   },
@@ -20,6 +23,8 @@ const Profile = {
   async render(el) {
     const u = DB.user;
     const isDark = document.documentElement.dataset.theme === 'dark';
+    const ed = this._editing;                      // mode edit data diri aktif?
+    const dis = ed ? '' : 'disabled';              // atribut untuk menonaktifkan input
 
     el.innerHTML = `
       <!-- HEADER PROFIL -->
@@ -36,20 +41,28 @@ const Profile = {
 
         <!-- DATA DIRI -->
         <div class="card">
-          <div class="card-title"><ion-icon name="person" style="color:var(--brand)"></ion-icon>${tr('Data Diri', 'Personal Data')}</div>
-          <div class="card-sub">${tr('Dipakai untuk menghitung target kalori &amp; air minum.', 'Used to calculate your calorie &amp; water targets.')}</div>
+          <div class="card-title">
+            <ion-icon name="person" style="color:var(--brand)"></ion-icon>${tr('Data Diri', 'Personal Data')}
+            <button type="button" class="mini-icon-btn ${ed ? 'active' : ''}" id="pfEditToggle" style="margin-left:auto;"
+              title="${ed ? tr('Batalkan edit', 'Cancel editing') : tr('Edit data diri', 'Edit personal data')}">
+              <ion-icon name="${ed ? 'close' : 'create-outline'}"></ion-icon>
+            </button>
+          </div>
+          <div class="card-sub">${ed
+            ? tr('Ubah datamu lalu simpan untuk menghitung ulang target.', 'Edit your data then save to recalculate targets.')
+            : tr('Dipakai untuk menghitung target kalori &amp; air minum. Tekan ikon edit untuk mengubah.', 'Used to calculate your calorie &amp; water targets. Tap the edit icon to change.')}</div>
           <form id="pfForm" novalidate style="margin-top:16px;">
             <div class="grid grid-2 keep-2" style="gap:12px;">
               <div class="field">
                 <label>${tr('Usia', 'Age')}</label>
                 <div class="input-group">
-                  <input type="number" class="input" id="pfUsia" min="10" max="25" value="${u.usia || ''}">
+                  <input type="number" class="input" id="pfUsia" value="${u.usia || ''}" ${dis}>
                   <span class="input-unit">${tr('tahun', 'yrs')}</span>
                 </div>
               </div>
               <div class="field">
                 <label>${tr('Jenis kelamin', 'Gender')}</label>
-                <div class="radio-cards" id="pfJK">
+                <div class="radio-cards ${ed ? '' : 'is-locked'}" id="pfJK">
                   <div class="radio-card ${u.jenisKelamin !== 'P' ? 'selected' : ''}" data-val="L"><ion-icon name="male"></ion-icon>${tr('Laki-laki', 'Male')}</div>
                   <div class="radio-card ${u.jenisKelamin === 'P' ? 'selected' : ''}" data-val="P"><ion-icon name="female"></ion-icon>${tr('Perempuan', 'Female')}</div>
                 </div>
@@ -59,29 +72,29 @@ const Profile = {
               <div class="field">
                 <label>${tr('Tinggi badan', 'Height')}</label>
                 <div class="input-group">
-                  <input type="number" class="input" id="pfTinggi" min="100" max="230" value="${u.tinggi || ''}">
+                  <input type="number" class="input" id="pfTinggi" min="100" max="230" value="${u.tinggi || ''}" ${dis}>
                   <span class="input-unit">cm</span>
                 </div>
               </div>
               <div class="field">
                 <label>${tr('Berat badan', 'Weight')}</label>
                 <div class="input-group">
-                  <input type="number" class="input" id="pfBerat" min="25" max="200" value="${u.berat || ''}">
+                  <input type="number" class="input" id="pfBerat" min="25" max="200" value="${u.berat || ''}" ${dis}>
                   <span class="input-unit">kg</span>
                 </div>
               </div>
             </div>
             <div class="field">
               <label>${tr('Tingkat aktivitas harian', 'Daily activity level')}</label>
-              <select class="select" id="pfAktivitas">
+              <select class="select" id="pfAktivitas" ${dis}>
                 ${Calc.AKTIVITAS.map(a => `<option value="${a.key}" ${a.key === (u.aktivitas || 'ringan') ? 'selected' : ''}>${a.label}</option>`).join('')}
               </select>
             </div>
             <div class="field">
               <label>${tr('Asal sekolah', 'School')} <span style="font-weight:500;color:var(--text-3)">${tr('(opsional)', '(optional)')}</span></label>
-              <input type="text" class="input" id="pfSekolah" placeholder="${tr('mis. SMAN 1 Bandung', 'e.g. Bandung High School 1')}" value="${esc(u.sekolah || '')}">
+              <input type="text" class="input" id="pfSekolah" placeholder="${tr('mis. SMAN 1 Bandung', 'e.g. Bandung High School 1')}" value="${esc(u.sekolah || '')}" ${dis}>
             </div>
-            <button type="submit" class="btn btn-primary btn-block"><ion-icon name="checkmark"></ion-icon> ${tr('Simpan &amp; Hitung Ulang Target', 'Save &amp; Recalculate Targets')}</button>
+            ${ed ? `<button type="submit" class="btn btn-primary btn-block"><ion-icon name="checkmark"></ion-icon> ${tr('Simpan &amp; Hitung Ulang Target', 'Save &amp; Recalculate Targets')}</button>` : ''}
           </form>
         </div>
 
@@ -129,6 +142,14 @@ const Profile = {
           <div class="card">
             <div class="card-title"><ion-icon name="shield-checkmark" style="color:var(--fin)"></ion-icon>${tr('Akun &amp; Data', 'Account &amp; Data')}</div>
             <div style="margin-top:8px;">
+              <div class="setting-row" style="cursor:pointer;" id="pfInstall" data-pwa-install hidden>
+                <ion-icon name="download-outline" style="font-size:1.2rem;color:var(--brand);"></ion-icon>
+                <div class="sr-text">
+                  <div class="sr-title">${tr('Pasang aplikasi', 'Install app')}</div>
+                  <div class="sr-sub">${tr('Tambahkan Tumara ke layar utama', 'Add Tumara to your home screen')}</div>
+                </div>
+                <ion-icon name="chevron-forward" style="color:var(--text-3);"></ion-icon>
+              </div>
               <div class="setting-row" style="cursor:pointer;" id="pfPass">
                 <ion-icon name="key-outline" style="font-size:1.2rem;color:var(--text-3);"></ion-icon>
                 <div class="sr-text"><div class="sr-title">${tr('Ganti kata sandi', 'Change password')}</div></div>
@@ -139,14 +160,6 @@ const Profile = {
                 <div class="sr-text">
                   <div class="sr-title">${tr('Ekspor data', 'Export data')}</div>
                   <div class="sr-sub">${tr('Unduh semua datamu (JSON)', 'Download all your data (JSON)')}</div>
-                </div>
-                <ion-icon name="chevron-forward" style="color:var(--text-3);"></ion-icon>
-              </div>
-              <div class="setting-row" style="cursor:pointer;" id="pfReset">
-                <ion-icon name="trash-outline" style="font-size:1.2rem;color:var(--danger);"></ion-icon>
-                <div class="sr-text">
-                  <div class="sr-title" style="color:var(--danger);">${tr('Hapus semua data', 'Delete all data')}</div>
-                  <div class="sr-sub">${tr('Transaksi, tugas, catatan, dll. — tidak bisa dibatalkan', "Transactions, tasks, notes, etc. — can't be undone")}</div>
                 </div>
                 <ion-icon name="chevron-forward" style="color:var(--text-3);"></ion-icon>
               </div>
@@ -169,16 +182,26 @@ const Profile = {
       </div>`;
 
     /* --- data diri --- */
+    // Tombol ikon edit: aktif/nonaktifkan mode ubah lalu render ulang.
+    $('#pfEditToggle', el).onclick = () => {
+      this._editing = !this._editing;
+      App.refresh();
+    };
+
     let jk = u.jenisKelamin === 'P' ? 'P' : 'L';
-    $$('#pfJK .radio-card', el).forEach(c => c.onclick = () => {
-      jk = c.dataset.val;
-      $$('#pfJK .radio-card', el).forEach(x => x.classList.toggle('selected', x === c));
-    });
+    // Pilihan jenis kelamin hanya bisa diubah saat mode edit aktif.
+    if (this._editing) {
+      $$('#pfJK .radio-card', el).forEach(c => c.onclick = () => {
+        jk = c.dataset.val;
+        $$('#pfJK .radio-card', el).forEach(x => x.classList.toggle('selected', x === c));
+      });
+    }
 
     $('#pfForm', el).onsubmit = async e => {
       e.preventDefault();
+      if (!this._editing) return; // pengaman: tak ada penyimpanan di mode tampilan
       const usia = +$('#pfUsia', el).value, tinggi = +$('#pfTinggi', el).value, berat = +$('#pfBerat', el).value;
-      if (!usia || usia < 10 || usia > 25) return toast(tr('Usia harus antara 10–25 tahun.', 'Age must be between 10–25 years.'), 'warning');
+      if (!usia) return toast(tr('Masukkan usia kamu.', 'Please enter your age.'), 'warning');
       if (!tinggi || tinggi < 100 || tinggi > 230) return toast(tr('Periksa kembali tinggi badanmu (cm).', 'Please double-check your height (cm).'), 'warning');
       if (!berat || berat < 25 || berat > 200) return toast(tr('Periksa kembali berat badanmu (kg).', 'Please double-check your weight (kg).'), 'warning');
 
@@ -193,6 +216,7 @@ const Profile = {
       });
       toast(tr(`Tersimpan! Target baru: ±${tdee.toLocaleString('id-ID')} kkal & ${air.gelas} gelas air/hari 💧`,
                `Saved! New targets: ±${tdee.toLocaleString('id-ID')} kcal & ${air.gelas} glasses of water/day 💧`));
+      this._editing = false; // kembali ke mode tampilan setelah simpan
       App.refresh();
     };
 
@@ -201,18 +225,37 @@ const Profile = {
 
     $('#pfReminder', el).onchange = async e => {
       const aktif = e.target.checked;
-      if (aktif && 'Notification' in window && Notification.permission === 'default') {
-        await Notification.requestPermission();
-      }
-      await DB.updateUser({ reminderAir: aktif, reminderInterval: +$('#pfInterval', el).value });
-      $('#pfIntervalRow', el).style.display = aktif ? '' : 'none';
-      if (aktif) {
-        App.startWaterReminder();
-        toast(tr(`Oke! Kamu akan diingatkan minum tiap ${$('#pfInterval', el).value} menit 💧`,
-                 `Okay! You'll be reminded to drink every ${$('#pfInterval', el).value} minutes 💧`));
-      } else {
+      const menit = +$('#pfInterval', el).value;
+
+      if (!aktif) {
+        await DB.updateUser({ reminderAir: false, reminderInterval: menit });
+        $('#pfIntervalRow', el).style.display = 'none';
         App.stopWaterReminder();
-        toast(tr('Pengingat minum dimatikan.', 'Water reminder turned off.'), 'info');
+        return toast(tr('Pengingat minum dimatikan.', 'Water reminder turned off.'), 'info');
+      }
+
+      // Minta izin notifikasi bila belum ditentukan.
+      let perm = ('Notification' in window) ? Notification.permission : 'unsupported';
+      if (perm === 'default') {
+        try { perm = await Notification.requestPermission(); } catch (_) { perm = 'denied'; }
+      }
+
+      await DB.updateUser({ reminderAir: true, reminderInterval: menit });
+      $('#pfIntervalRow', el).style.display = '';
+      App.startWaterReminder();
+
+      if (perm === 'granted') {
+        // Notifikasi uji agar pengguna langsung tahu pengingat berfungsi.
+        App.notify(tr(`Pengingat minum aktif ✅ Kamu akan diingatkan tiap ${menit} menit.`,
+                      `Water reminder is on ✅ You'll be reminded every ${menit} minutes.`));
+        toast(tr(`Oke! Notifikasi minum aktif tiap ${menit} menit 💧`,
+                 `Okay! Water notifications on every ${menit} minutes 💧`));
+      } else if (perm === 'denied') {
+        toast(tr('Notifikasi diblokir browser. Aktifkan izin notifikasi untuk situs ini agar pengingat muncul — sementara pengingat hanya tampil di dalam app.',
+                 'Notifications are blocked by the browser. Allow notification permission for this site so reminders can appear — for now reminders only show inside the app.'), 'warning');
+      } else {
+        toast(tr('Browser ini tidak mendukung notifikasi. Pengingat hanya tampil di dalam app.',
+                 'This browser does not support notifications. Reminders will only show inside the app.'), 'info');
       }
     };
 
@@ -223,21 +266,14 @@ const Profile = {
     };
 
     /* --- akun --- */
+    // Selaraskan tombol "Pasang aplikasi" dengan status PWA (klik ditangani pwa.js).
+    if (window.PWA) PWA.sync();
+
     $('#pfPass', el).onclick = () => this._passwordModal();
 
     $('#pfExport', el).onclick = async () => {
       downloadJSON(await DB.exportAll(), 'tumara-data.json');
       toast(tr('Data berhasil diekspor 📦', 'Data exported successfully 📦'));
-    };
-
-    $('#pfReset', el).onclick = async () => {
-      if (!await confirmDialog(
-        tr('Semua transaksi, tugas, catatan, jadwal, dan riwayat kesehatanmu akan dihapus permanen. Yakin?',
-           'All your transactions, tasks, notes, schedule, and health history will be permanently deleted. Are you sure?'),
-        { title: tr('Hapus semua data', 'Delete all data'), danger: true, okText: tr('Hapus semuanya', 'Delete everything') })) return;
-      await DB.resetData();
-      toast(tr('Semua data telah dihapus.', 'All data has been deleted.'), 'info');
-      App.refresh();
     };
 
     $('#pfLogout', el).onclick = async () => {

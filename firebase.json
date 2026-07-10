@@ -1,14 +1,51 @@
 {
-    "firestore": {
+  "firestore": {
     "rules": "firestore.rules"
   },
   "hosting": {
     "public": ".",
+    "predeploy": [
+      "node -e \"const fs=require('fs');const v=new Date().toISOString().replace(/[-:T]/g,'').slice(0,14);fs.writeFileSync('version.json',JSON.stringify({version:v}));console.log('version.json ->',v)\""
+    ],
     "ignore": [
       "firebase.json",
       "**/.*",
       "**/node_modules/**",
       "*.md"
+    ],
+    "headers": [
+      {
+        "source": "**/*.@(html|js|css|json)",
+        "headers": [
+          {
+            "key": "Cache-Control",
+            "value": "no-cache"
+          }
+        ]
+      },
+      {
+        "source": "assets/**",
+        "headers": [
+          {
+            "key": "Cache-Control",
+            "value": "public, max-age=86400"
+          }
+        ]
+      }
     ]
+  },
+  "emulators": {
+    "auth": {
+      "host": "127.0.0.1",
+      "port": 9099
+    },
+    "firestore": {
+      "host": "127.0.0.1",
+      "port": 8080
+    },
+    "ui": {
+      "enabled": false
+    },
+    "singleProjectMode": true
   }
 }

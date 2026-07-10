@@ -7,22 +7,31 @@
    Pastikan di console.firebase.google.com (project: tumara-id):
    1. "Authentication" → metode Email/Password sudah diaktifkan.
    2. "Cloud Firestore" sudah dibuat (region terdekat, mis. asia-southeast).
-   3. Firestore Security Rules diatur seperti ini:
-   ------------------------------------------------------------
-   rules_version = '2';
-   service cloud.firestore {
-     match /databases/{database}/documents {
-       match /users/{uid}/{document=**} {
-         allow read, write: if request.auth != null && request.auth.uid == uid;
-       }
-     }
-   }
-   ------------------------------------------------------------
+   3. Firestore Security Rules: deploy isi file `firestore.rules`
+      (mendukung peran admin/guru/siswa). Jalankan:
+        firebase deploy --only firestore:rules
+   4. Admin pertama: tambahkan email admin di ADMIN_EMAILS bawah,
+      lalu daftar/masuk dengan email itu → otomatis jadi admin dan
+      diarahkan ke admin.html untuk membuat akun guru & siswa.
+
    Bila ingin kembali ke mode lokal (localStorage, tanpa internet),
    cukup ubah USE_FIREBASE menjadi false.
    ============================================================ */
 
 const USE_FIREBASE = true;
+
+/* ------------------------------------------------------------
+   ADMIN — daftar email yang otomatis berperan sebagai admin.
+   Login dengan salah satu email di bawah → akun otomatis
+   ditandai role 'admin' (menulis dokumennya sendiri, diizinkan
+   Security Rules) dan diarahkan ke admin.html. Ini cara mem-
+   bootstrap admin pertama tanpa perlu mengedit Firestore manual.
+   Tambahkan email admin sekolahmu di sini (huruf kecil).
+   ------------------------------------------------------------ */
+const ADMIN_EMAILS = [
+  'admin@tumara.com',
+  'admin@tumara.id'
+];
 
 const FIREBASE_CONFIG = {
   apiKey: "AIzaSyC3CdFoskGzBvFnMA309xU6FStWYapxgsE",

@@ -13,6 +13,7 @@ const App = {
     health:       [() => tr('Kesehatan', 'Health'),               () => tr('Tubuh sehat, semangat kuat 💪', 'Healthy body, strong spirit 💪')],
     productivity: [() => tr('Produktivitas', 'Productivity'),     () => tr('Tugas, catatan, jadwal & fokus', 'Tasks, notes, schedule & focus')],
     finance:      [() => tr('Keuangan', 'Finance'),               () => tr('Uang saku terpantau, nabung jalan terus', 'Allowance tracked, savings on track')],
+    ibadah:       [() => tr('Ibadah', 'Worship'),                 () => tr('Sholat, Al-Qur\'an, dzikir & zakat', 'Prayer, Qur\'an, dhikr & zakat')],
     encyclopedia: [() => tr('Ensiklopedia', 'Encyclopedia'),      () => tr('Pengetahuan seputar sehat, belajar & uang', 'Knowledge on health, study & money')],
     profile:      [() => tr('Profil', 'Profile'),                 () => tr('Data diri & pengaturan aplikasi', 'Personal data & app settings')]
   },
@@ -22,6 +23,7 @@ const App = {
     health:       () => Health,
     productivity: () => Prod,
     finance:      () => Fin,
+    ibadah:       () => Ibadah,
     encyclopedia: () => Ency,
     profile:      () => Profile
   },
@@ -35,7 +37,11 @@ const App = {
                'Could not connect to the server. Please check your internet connection.'), 'error');
       return;
     }
-    DB.user ? this.afterAuth() : this.showAuth();
+    if (!DB.user) return this.showAuth();
+    // app.html hanya untuk siswa; admin & guru diarahkan ke halamannya.
+    const role = DB.user.role || 'siswa';
+    if (role !== 'siswa') { location.replace(roleHome(role)); return; }
+    this.afterAuth();
   },
 
   /* ---------- pergantian layar ---------- */
@@ -72,8 +78,25 @@ const App = {
         <div class="u-school">${esc(u.sekolah || u.email)}</div>
       </div>`;
 
-    // navigasi (sidebar + bottom nav)
-    $$('.nav-link, .bnav-item').forEach(a => a.onclick = () => this.navigate(a.dataset.route));
+    // navigasi (sidebar + bottom nav + menu kolom "lainnya")
+    $$('.nav-link, .bnav-item, .bnav-sheet-item').forEach(a => a.onclick = () => this.navigate(a.dataset.route));
+
+    // Tombol tengah bottom-nav: buka/tutup menu route lainnya
+    const moreBtn = $('#bnavMore');
+    if (moreBtn) {
+      moreBtn.onclick = (e) => { e.stopPropagation(); this.toggleMoreSheet(); };
+      // Tutup saat menyentuh area lain (pasang sekali saja)
+      if (!this._moreSheetBound) {
+        this._moreSheetBound = true;
+        document.addEventListener('click', (e) => {
+          const sheet = $('#bnavSheet'), btn = $('#bnavMore');
+          if (sheet && sheet.classList.contains('open') &&
+              !sheet.contains(e.target) && !btn.contains(e.target)) {
+            this.toggleMoreSheet(false);
+          }
+        });
+      }
+    }
 
     // tema, bahasa & profil
     $('#themeToggle').onclick = () => this.toggleTheme();
@@ -82,25 +105,97 @@ const App = {
     $('#topAvatar').onclick = () => this.navigate('profile');
     $('#sidebarUser').onclick = () => this.navigate('profile');
 
-    this.navigate('dashboard');
+    this._observeTabs();
+
+    // Rute awal mengikuti URL hash (mis. #health atau #health/sleep) agar
+    // refresh tetap di halaman & tab yang sama, bukan selalu balik ke Beranda.
+    const fromHash = (location.hash || '').replace(/^#/, '');
+    const route0 = fromHash.split('/')[0];
+    this.navigate(this.VIEWS[route0] ? fromHash : 'dashboard');
     if (u.reminderAir) this.startWaterReminder();
+  },
+
+  /* ---------- auto-center tab aktif (mobile) ---------- */
+
+  // Setiap kali view dirender ulang (klik tab / navigate / refresh), geser
+  // tab bar yang overflow agar tab aktif berada di tengah — tak perlu geser manual.
+  _observeTabs() {
+    if (this._tabObserver) return;
+    const view = $('#view');
+    if (!view) return;
+    this._tabObserver = new MutationObserver(() => this._centerActiveTabs());
+    this._tabObserver.observe(view, { childList: true });
+    this._centerActiveTabs();
+  },
+
+  _centerActiveTabs() {
+    requestAnimationFrame(() => {
+      $$('#view .tabs').forEach(bar => {
+        if (bar.scrollWidth <= bar.clientWidth + 4) return; // tidak overflow → biarkan
+        const active = bar.querySelector('.tab.active');
+        if (!active) return;
+        const target = active.offsetLeft + active.offsetWidth / 2 - bar.clientWidth / 2;
+        bar.scrollTo({ left: Math.max(0, target), behavior: 'smooth' });
+      });
+    });
   },
 
   /* ---------- navigasi & render ---------- */
 
-  navigate(route) {
-    if (!this.VIEWS[route]) route = 'dashboard';
+  navigate(routeSpec) {
+    // routeSpec bisa 'health' atau 'health/sleep' (rute + tab, dari URL hash saat refresh).
+    let [route, tab] = String(routeSpec).split('/');
+    if (!this.VIEWS[route]) { route = 'dashboard'; tab = undefined; }
     this.route = route;
 
-    $$('.nav-link, .bnav-item').forEach(a =>
+    const view = this.VIEWS[route]();
+    // Bila tab diberikan (mis. dari hash saat refresh) & view mengenal konsep tab, pulihkan.
+    if (tab && typeof view.tab !== 'undefined') view.tab = tab;
+
+    // Tulis hash: rute + tab aktif view (bila ada) agar bertahan saat refresh.
+    this._writeHash(route, typeof view.tab !== 'undefined' ? view.tab : undefined);
+
+    $$('.nav-link, .bnav-item, .bnav-sheet-item').forEach(a =>
       a.classList.toggle('active', a.dataset.route === route));
+
+    // Tandai tombol tengah bila route aktif ada di dalam menu "lainnya", lalu tutup menu.
+    const moreBtn = $('#bnavMore');
+    if (moreBtn) {
+      const inSheet = !!$('#bnavSheet')?.querySelector(`.bnav-sheet-item[data-route="${route}"]`);
+      moreBtn.classList.toggle('has-active', inSheet);
+    }
+    this.toggleMoreSheet(false);
 
     const [judul, sub] = this.TITLES[route];
     $('#pageTitle').textContent = judul();
     $('#pageSub').textContent = sub();
 
-    this.VIEWS[route]().render($('#view'));
+    view.render($('#view'));
     window.scrollTo({ top: 0 });
+  },
+
+  // Buka/tutup menu kolom "lainnya" di bottom-nav (mobile).
+  // Tanpa argumen → toggle; toggleMoreSheet(true/false) → paksa buka/tutup.
+  toggleMoreSheet(open) {
+    const sheet = $('#bnavSheet'), btn = $('#bnavMore');
+    if (!sheet || !btn) return;
+    const show = open === undefined ? !sheet.classList.contains('open') : open;
+    sheet.classList.toggle('open', show);
+    btn.classList.toggle('open', show);
+    // Ikon grid (banyak bagian) ↔ silang (tutup)
+    const icon = $('#bnavMoreIcon');
+    if (icon) icon.setAttribute('name', show ? 'close' : 'apps');
+  },
+
+  // Sinkronkan URL hash (tanpa menambah riwayat).
+  _writeHash(route, tab) {
+    const h = tab ? `${route}/${tab}` : route;
+    if ((location.hash || '').replace(/^#/, '') !== h) history.replaceState(null, '', '#' + h);
+  },
+
+  // Dipanggil view saat tab berpindah agar tab aktif ikut tersimpan di URL.
+  saveTab(tab) {
+    this._writeHash(this.route, tab);
   },
 
   // render ulang view rute aktif (dipanggil view setelah simpan/hapus)
@@ -138,16 +233,24 @@ const App = {
 
   /* ---------- pengingat minum ---------- */
 
+  // Kirim notifikasi browser bila diizinkan; kembalikan true bila terkirim.
+  notify(body, { title = 'Tumara 💧' } = {}) {
+    if ('Notification' in window && Notification.permission === 'granted') {
+      try {
+        new Notification(title, { body, icon: 'assets/logo.png', tag: 'tumara-water' });
+        return true;
+      } catch (_) { /* sebagian browser mobile butuh service worker — abaikan */ }
+    }
+    return false;
+  },
+
   startWaterReminder() {
     this.stopWaterReminder();
     const menit = DB.user?.reminderInterval || 60;
     this._reminderId = setInterval(() => {
       const pesan = tr('Waktunya minum 💧 Satu gelas dulu, yuk!', 'Time to hydrate 💧 Grab a glass of water!');
-      if ('Notification' in window && Notification.permission === 'granted') {
-        new Notification('Tumara', { body: pesan });
-      } else {
-        toast(pesan, 'info');
-      }
+      // Notifikasi browser bila diizinkan; jika tidak, tampilkan toast dalam app.
+      if (!this.notify(pesan)) toast(pesan, 'info');
     }, menit * 60 * 1000);
   },
 

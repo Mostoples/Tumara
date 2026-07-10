@@ -14,18 +14,160 @@ const Prod = {
       <div class="tabs">
         <button class="tab ${this.tab === 'tugas' ? 'active' : ''}" data-tab="tugas"><ion-icon name="checkbox-outline"></ion-icon>${tr('Tugas', 'Tasks')}</button>
         <button class="tab ${this.tab === 'catatan' ? 'active' : ''}" data-tab="catatan"><ion-icon name="document-text-outline"></ion-icon>${tr('Catatan', 'Notes')}</button>
+        <button class="tab ${this.tab === 'kebiasaan' ? 'active' : ''}" data-tab="kebiasaan"><ion-icon name="repeat-outline"></ion-icon>${tr('Kebiasaan', 'Habits')}</button>
         <button class="tab ${this.tab === 'jadwal' ? 'active' : ''}" data-tab="jadwal"><ion-icon name="calendar-outline"></ion-icon>${tr('Jadwal', 'Schedule')}</button>
         <button class="tab ${this.tab === 'fokus' ? 'active' : ''}" data-tab="fokus"><ion-icon name="timer-outline"></ion-icon>${tr('Fokus', 'Focus')}</button>
       </div>
       <div id="prodBody"></div>`;
 
-    $$('.tab', el).forEach(t => t.onclick = () => { this.tab = t.dataset.tab; this.render(el); });
+    $$('.tab', el).forEach(t => t.onclick = () => { this.tab = t.dataset.tab; App.saveTab(this.tab); this.render(el); });
 
     const body = $('#prodBody', el);
     if (this.tab === 'tugas') await this.renderTasks(body);
     else if (this.tab === 'catatan') await this.renderNotes(body);
+    else if (this.tab === 'kebiasaan') await this.renderHabits(body);
     else if (this.tab === 'jadwal') await this.renderSchedule(body);
     else this.renderPomo(body);
+  },
+
+  /* ============ TAB: HABIT TRACKER ============ */
+
+  async renderHabits(el) {
+    const [habits, logs] = await Promise.all([DB.list('habits'), DB.list('habit_logs')]);
+    const doneSet = new Set(logs.map(l => l.habitId + '|' + l.tanggal));
+
+    // 7 hari terakhir (kolom), hari ini di paling kanan
+    const days = [];
+    for (let i = 6; i >= 0; i--) { const d = new Date(); d.setDate(d.getDate() - i); days.push(todayStr(d)); }
+
+    const streakOf = (habitId) => {
+      let s = 0;
+      for (let i = 0; ; i++) { const d = new Date(); d.setDate(d.getDate() - i); if (doneSet.has(habitId + '|' + todayStr(d))) s++; else break; }
+      return s;
+    };
+
+    el.innerHTML = `
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:16px;">
+        <div style="font-size:.88rem;color:var(--text-3);font-weight:600;">${tr('Bangun rutinitas positif — centang tiap hari 🔥', 'Build positive routines — check off each day 🔥')}</div>
+        <button class="btn btn-prod btn-sm" id="addHabit"><ion-icon name="add"></ion-icon> ${tr('Kebiasaan Baru', 'New Habit')}</button>
+      </div>
+
+      ${habits.length ? `
+        <div class="table-wrap">
+          <table class="data-table">
+            <thead><tr>
+              <th style="min-width:150px;position:sticky;left:0;background:var(--surface-2);">${tr('Kebiasaan', 'Habit')}</th>
+              ${days.map(d => { const dt = parseDate(d); const today = d === todayStr(); return `<th class="center" style="min-width:42px;${today ? 'color:var(--prod);' : ''}">${HARI[dt.getDay()].slice(0, 1)}<br><span style="font-size:.7rem;font-weight:600;">${dt.getDate()}</span></th>`; }).join('')}
+              <th class="center">🔥</th>
+              <th></th>
+            </tr></thead>
+            <tbody>
+              ${habits.map(h => `
+                <tr>
+                  <td style="position:sticky;left:0;background:var(--surface);"><b>${h.emoji || '⭐'} ${esc(h.nama)}</b></td>
+                  ${days.map(d => { const on = doneSet.has(h.id + '|' + d); return `<td class="center"><button class="habit-dot ${on ? 'on' : ''}" data-hb="${h.id}" data-d="${d}">${on ? '✓' : ''}</button></td>`; }).join('')}
+                  <td class="center"><b>${streakOf(h.id)}</b></td>
+                  <td class="center"><button class="mini-icon-btn danger" data-delh="${h.id}"><ion-icon name="trash-outline"></ion-icon></button></td>
+                </tr>`).join('')}
+            </tbody>
+          </table>
+        </div>` : `
+        <div class="card empty-state">
+          <ion-icon name="repeat-outline"></ion-icon>
+          <div class="es-title">${tr('Belum ada kebiasaan', 'No habits yet')}</div>
+          <div class="es-sub">${tr('Mulai kecil: minum air, baca buku, olahraga 10 menit 🌱', 'Start small: drink water, read a book, exercise 10 min 🌱')}</div>
+        </div>`}`;
+
+    $('#addHabit', el).onclick = () => this._habitModal();
+    $$('[data-hb]', el).forEach(b => b.onclick = async () => {
+      const habitId = b.dataset.hb, tanggal = b.dataset.d, key = habitId + '|' + tanggal;
+      const existing = logs.find(l => l.habitId === habitId && l.tanggal === tanggal);
+      if (existing) await DB.remove('habit_logs', existing.id);
+      else await DB.add('habit_logs', { habitId, tanggal });
+      App.refresh();
+    });
+    $$('[data-delh]', el).forEach(b => b.onclick = async () => {
+      if (!await confirmDialog(tr('Hapus kebiasaan ini beserta riwayatnya?', 'Delete this habit and its history?'), { danger: true, okText: tr('Hapus', 'Delete') })) return;
+      const hid = b.dataset.delh;
+      await DB.remove('habits', hid);
+      await Promise.all(logs.filter(l => l.habitId === hid).map(l => DB.remove('habit_logs', l.id)));
+      toast(tr('Kebiasaan dihapus.', 'Habit deleted.'));
+      App.refresh();
+    });
+  },
+
+  // Ikon populer (tampil di awal) + koleksi lengkap (muncul saat "lebih banyak").
+  HABIT_EMOJI_POPULER: ['💧', '📚', '🏃', '🧘', '🥗', '😴', '✍️', '🙏', '🎯', '💪', '🌙'],
+  HABIT_EMOJI_SEMUA: [
+    // Kesehatan & tubuh
+    '💧', '🥗', '🍎', '🥦', '🏃', '🚴', '🏊', '🧘', '💪', '🚶', '😴', '🌙', '☀️', '🦷', '💊', '🚭', '🚰', '🧴',
+    // Belajar & kerja
+    '📚', '📖', '✍️', '📝', '📓', '🧠', '💻', '🔬', '🎓', '🖊️', '📅', '⏰', '🗂️', '🔖',
+    // Spiritual & pikiran
+    '🙏', '🕌', '📿', '❤️', '🌱', '😊', '🧎', '☪️',
+    // Olahraga & hobi
+    '⚽', '🏀', '🎸', '🎨', '🎹', '📷', '♟️', '🎮', '🧗', '🎵',
+    // Rumah & rutinitas
+    '🧹', '🛏️', '🧺', '🌿', '♻️', '🐾', '💵', '🍵', '☕',
+    // Umum
+    '🎯', '🔥', '⭐', '✅', '🏆'
+  ],
+
+  _habitModal() {
+    let emoji = '🎯';
+    let expanded = false;
+
+    // Gambar ulang daftar ikon sesuai status "lebih banyak" & ikon terpilih.
+    const renderPicker = (m) => {
+      const box = $('#mEmoji', m);
+      // Saat ringkas, pastikan ikon terpilih tetap terlihat walau di luar daftar populer.
+      const list = expanded
+        ? this.HABIT_EMOJI_SEMUA
+        : [...new Set([emoji, ...this.HABIT_EMOJI_POPULER])];
+      box.style.maxHeight = expanded ? '190px' : 'none';
+      box.style.overflowY = expanded ? 'auto' : 'visible';
+      box.innerHTML =
+        list.map(e => `<button type="button" class="emoji-pick ${e === emoji ? 'sel' : ''}" data-e="${e}">${e}</button>`).join('')
+        + `<button type="button" class="emoji-pick" id="mEmojiMore" title="${expanded ? tr('Lebih sedikit', 'Show less') : tr('Lebih banyak ikon', 'More icons')}" style="display:inline-flex;align-items:center;justify-content:center;color:var(--prod);">
+             <ion-icon name="${expanded ? 'chevron-up' : 'ellipsis-horizontal'}"></ion-icon>
+           </button>`;
+
+      $$('.emoji-pick', box).forEach(b => {
+        if (b.id === 'mEmojiMore') {
+          b.onclick = () => { expanded = !expanded; renderPicker(m); };
+          return;
+        }
+        b.onclick = () => {
+          emoji = b.dataset.e;
+          $$('.emoji-pick', box).forEach(x => x.classList.toggle('sel', x.dataset.e === emoji));
+        };
+      });
+    };
+
+    openModal({
+      title: tr('Kebiasaan Baru', 'New Habit'),
+      body: `
+        <div class="field">
+          <label>${tr('Nama kebiasaan', 'Habit name')}</label>
+          <input type="text" class="input" id="mNama" placeholder="${tr('mis. Minum 8 gelas air', 'e.g. Drink 8 glasses of water')}">
+        </div>
+        <div class="field">
+          <label>${tr('Ikon', 'Icon')}</label>
+          <div id="mEmoji" style="display:flex;flex-wrap:wrap;gap:8px;"></div>
+        </div>
+        <button class="btn btn-prod btn-block" id="mSave"><ion-icon name="checkmark"></ion-icon> ${tr('Tambah Kebiasaan', 'Add Habit')}</button>`,
+      onMount: m => {
+        renderPicker(m);
+        $('#mSave', m).onclick = async () => {
+          const nama = $('#mNama', m).value.trim();
+          if (!nama) return toast(tr('Isi nama kebiasaan.', 'Enter a habit name.'), 'warning');
+          await DB.add('habits', { nama, emoji });
+          closeModal();
+          toast(tr('Kebiasaan ditambahkan 🔥', 'Habit added 🔥'));
+          App.refresh();
+        };
+      }
+    });
   },
 
   /* ============ TAB: TUGAS ============ */
@@ -60,6 +202,8 @@ const Prod = {
                 <div style="font-weight:700;font-size:.92rem;" class="${t.status === 'selesai' ? 'task-title-done' : ''}">${esc(t.judul)}</div>
                 <div style="display:flex;gap:8px;align-items:center;margin-top:4px;flex-wrap:wrap;">
                   ${t.mapel ? `<span class="badge badge-purple">${esc(t.mapel)}</span>` : ''}
+                  ${t.label ? `<span class="badge badge-blue"># ${esc(t.label)}</span>` : ''}
+                  ${t.ulang && t.ulang !== 'tidak' ? `<span class="badge badge-gray"><ion-icon name="repeat-outline"></ion-icon> ${t.ulang === 'harian' ? tr('Harian', 'Daily') : t.ulang === 'mingguan' ? tr('Mingguan', 'Weekly') : tr('Bulanan', 'Monthly')}</span>` : ''}
                   ${t.tenggat && t.status !== 'selesai' ? deadlineBadge(t.tenggat) : t.tenggat ? `<span class="badge badge-gray">${fmtDate(t.tenggat, { short: true })}</span>` : ''}
                   ${t.prioritas === 'tinggi' ? `<span class="badge badge-red">${tr('Prioritas tinggi', 'High priority')}</span>` : ''}
                 </div>
@@ -80,7 +224,18 @@ const Prod = {
       const t = tasks.find(x => x.id === b.dataset.toggle);
       const done = t.status !== 'selesai';
       await DB.update('tasks', t.id, { status: done ? 'selesai' : 'aktif' });
-      if (done) toast(tr('Tugas selesai — mantap! 🎉', 'Task done — nice work! 🎉'));
+      if (done) {
+        toast(tr('Tugas selesai — mantap! 🎉', 'Task done — nice work! 🎉'));
+        // Tugas berulang: buat otomatis occurrence berikutnya
+        if (t.ulang && t.ulang !== 'tidak') {
+          const base = t.tenggat ? parseDate(t.tenggat) : parseDate(todayStr());
+          if (t.ulang === 'harian') base.setDate(base.getDate() + 1);
+          else if (t.ulang === 'mingguan') base.setDate(base.getDate() + 7);
+          else base.setMonth(base.getMonth() + 1);
+          await DB.add('tasks', { judul: t.judul, mapel: t.mapel || '', label: t.label || '', prioritas: t.prioritas || 'sedang', ulang: t.ulang, tenggat: todayStr(base), status: 'aktif' });
+          toast(tr('Tugas berulang berikutnya dibuat 🔁', 'Next recurring task created 🔁'), 'info');
+        }
+      }
       App.refresh();
     });
     $$('[data-edit]', el).forEach(b => b.onclick = () => this.openTaskModal(tasks.find(x => x.id === b.dataset.edit)));
@@ -101,9 +256,15 @@ const Prod = {
           <label>${tr('Judul tugas', 'Task title')}</label>
           <input type="text" class="input" id="mJudul" placeholder="${tr('mis. Kerjakan LKS Matematika hal. 42', 'e.g. Do the math workbook p. 42')}" value="${esc(task?.judul || '')}">
         </div>
-        <div class="field">
-          <label>${tr('Mata pelajaran', 'Subject')} <span style="font-weight:500;color:var(--text-3)">${tr('(opsional)', '(optional)')}</span></label>
-          <input type="text" class="input" id="mMapel" placeholder="${tr('mis. Matematika', 'e.g. Math')}" value="${esc(task?.mapel || '')}">
+        <div class="grid grid-2 keep-2" style="gap:12px;">
+          <div class="field">
+            <label>${tr('Mata pelajaran', 'Subject')} <span style="font-weight:500;color:var(--text-3)">${tr('(opsional)', '(optional)')}</span></label>
+            <input type="text" class="input" id="mMapel" placeholder="${tr('mis. Matematika', 'e.g. Math')}" value="${esc(task?.mapel || '')}">
+          </div>
+          <div class="field">
+            <label>${tr('Label/Tag', 'Label/Tag')} <span style="font-weight:500;color:var(--text-3)">${tr('(opsional)', '(optional)')}</span></label>
+            <input type="text" class="input" id="mLabel" placeholder="${tr('mis. Pribadi, Sekolah', 'e.g. Personal, School')}" value="${esc(task?.label || '')}">
+          </div>
         </div>
         <div class="grid grid-2 keep-2" style="gap:12px;">
           <div class="field">
@@ -117,6 +278,12 @@ const Prod = {
             </select>
           </div>
         </div>
+        <div class="field">
+          <label>${tr('Ulangi (tugas berulang)', 'Repeat (recurring task)')}</label>
+          <select class="select" id="mUlang">
+            ${[['tidak', tr('Tidak berulang', 'Does not repeat')], ['harian', tr('Setiap hari', 'Daily')], ['mingguan', tr('Setiap minggu', 'Weekly')], ['bulanan', tr('Setiap bulan', 'Monthly')]].map(([v, l]) => `<option value="${v}" ${(task?.ulang || 'tidak') === v ? 'selected' : ''}>${l}</option>`).join('')}
+          </select>
+        </div>
         <button class="btn btn-prod btn-block" id="mSave"><ion-icon name="checkmark"></ion-icon> ${task ? tr('Simpan Perubahan', 'Save Changes') : tr('Tambah Tugas', 'Add Task')}</button>`,
       onMount: m => {
         $('#mSave', m).onclick = async () => {
@@ -124,8 +291,10 @@ const Prod = {
           if (!judul) return toast(tr('Judul tugas tidak boleh kosong.', 'Task title can\'t be empty.'), 'warning');
           const data = {
             judul, mapel: $('#mMapel', m).value.trim(),
+            label: $('#mLabel', m).value.trim(),
             tenggat: $('#mTenggat', m).value,
-            prioritas: $('#mPrioritas', m).value
+            prioritas: $('#mPrioritas', m).value,
+            ulang: $('#mUlang', m).value
           };
           if (task) await DB.update('tasks', task.id, data);
           else await DB.add('tasks', { ...data, status: 'aktif' });

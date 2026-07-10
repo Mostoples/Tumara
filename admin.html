@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Tumara — Admin</title>
+  <meta name="description" content="Panel admin Tumara: kelola akun guru & siswa.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:ital,wght@0,300;0,400;0,500;0,600;0,700;0,800;1,400&display=swap" rel="stylesheet">
+  <script>document.documentElement.dataset.theme = localStorage.getItem('tumara_theme') || 'light';</script>
+  <link rel="stylesheet" href="css/style.css">
+  <link rel="icon" type="image/png" href="assets/logo.png">
+  <script type="module" src="https://cdn.jsdelivr.net/npm/ionicons@7.4.0/dist/ionicons/ionicons.esm.js"></script>
+  <script nomodule src="https://cdn.jsdelivr.net/npm/ionicons@7.4.0/dist/ionicons/ionicons.js"></script>
+  <script src="js/version-check.js"></script>
+</head>
+<body>
+
+  <div id="portalShell" class="portal-shell hidden">
+    <header class="portal-topbar">
+      <div class="portal-brand">
+        <span class="logo-mark"><img src="assets/logo.png" alt="Logo Tumara"></span>
+        <div>
+          <div class="logo-text">Tumara <span class="portal-tag">Admin</span></div>
+          <div class="portal-sub" id="adminEmail"></div>
+        </div>
+      </div>
+      <div class="portal-actions">
+        <button class="icon-btn" id="themeBtn" title="Ganti tema"><ion-icon name="moon-outline"></ion-icon></button>
+        <button class="btn btn-sm btn-soft-danger" id="logoutBtn"><ion-icon name="log-out-outline"></ion-icon> <span data-en="Sign out">Keluar</span></button>
+      </div>
+    </header>
+    <main class="portal-main"><div id="view"></div></main>
+  </div>
+
+  <div id="modalRoot"></div>
+  <div id="toastRoot" class="toast-root"></div>
+
+  <script src="js/firebase-config.js"></script>
+  <script src="js/i18n.js"></script>
+  <script src="js/utils.js"></script>
+  <script src="js/db.js"></script>
+  <script src="js/roles.js"></script>
+  <script src="js/views/admin.js"></script>
+  <script>
+    document.addEventListener('DOMContentLoaded', async () => {
+      const u = await guardPage(['admin']);
+      if (!u) return;
+      document.getElementById('portalShell').classList.remove('hidden');
+      document.getElementById('adminEmail').textContent = u.email || '';
+      const setTheme = t => {
+        document.documentElement.dataset.theme = t;
+        localStorage.setItem('tumara_theme', t);
+        const ic = document.querySelector('#themeBtn ion-icon');
+        if (ic) ic.setAttribute('name', t === 'dark' ? 'sunny-outline' : 'moon-outline');
+        if (DB.user && DB.user.tema !== t) DB.updateUser({ tema: t }).catch(() => {});
+      };
+      setTheme(u.tema || localStorage.getItem('tumara_theme') || 'light');
+      document.getElementById('themeBtn').onclick = () =>
+        setTheme(document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark');
+      document.getElementById('logoutBtn').onclick = async () => {
+        if (!await confirmDialog(tr('Keluar dari akun admin?', 'Sign out of admin?'), { title: tr('Keluar', 'Sign out'), okText: tr('Ya, keluar', 'Yes, sign out') })) return;
+        await DB.logout();
+        location.replace('auth.html');
+      };
+      AdminView.render(document.getElementById('view'));
+    });
+  </script>
+</body>
+</html>

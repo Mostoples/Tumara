@@ -10,8 +10,9 @@
   <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:ital,wght@0,300;0,400;0,500;0,600;0,700;0,800;1,400&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="css/style.css">
   <link rel="icon" type="image/png" href="assets/logo.png">
-  <script type="module" src="assets/ionicons/ionicons.esm.js"></script>
-  <script nomodule src="assets/ionicons/ionicons.js"></script>
+  <script type="module" src="https://cdn.jsdelivr.net/npm/ionicons@7.4.0/dist/ionicons/ionicons.esm.js"></script>
+  <script nomodule src="https://cdn.jsdelivr.net/npm/ionicons@7.4.0/dist/ionicons/ionicons.js"></script>
+  <script src="js/version-check.js"></script>
   <style>
     .back-home {
       position: fixed; top: 22px; left: 26px; z-index: 10;
@@ -60,9 +61,10 @@
   <script src="js/i18n.js"></script>
   <script src="js/utils.js"></script>
   <script src="js/db.js"></script>
+  <script src="js/roles.js"></script>
   <script src="js/views/auth.js"></script>
   <script>
-    // Bootstrap halaman auth: sudah login → langsung ke aplikasi.
+    // Bootstrap halaman auth: sudah login → arahkan sesuai peran.
     document.addEventListener('DOMContentLoaded', async () => {
       const tema = localStorage.getItem('tumara_theme') || 'light';
       document.documentElement.dataset.theme = tema;
@@ -72,7 +74,7 @@
       };
       try {
         const u = await DB.init();
-        if (u) { location.replace('app.html'); return; }
+        if (u) { location.replace(roleHome(u.role)); return; }
       } catch (e) {
         toast(tr('Gagal terhubung ke server. Periksa koneksi internetmu.',
                  'Could not connect to the server. Please check your internet connection.'), 'error');

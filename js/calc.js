@@ -41,6 +41,50 @@ const Calc = {
       pesan: tr('Mulai perlahan dari kebiasaan kecil, dan bicarakan dengan tenaga kesehatan bila perlu.', 'Start slowly with small habits, and talk to a health professional if needed.') };
   },
 
+  // Estimasi kalori terbakar = MET × berat(kg) × durasi(jam)
+  MET: {
+    'Jalan kaki': 3.5, 'Lari': 9.8, 'Bersepeda': 7.5, 'Renang': 8.0,
+    'Futsal / Sepak bola': 7.0, 'Basket': 6.5, 'Badminton': 5.5,
+    'Workout / Gym': 6.0, 'Senam / Yoga': 3.0, 'Lainnya': 4.0
+  },
+  caloriesBurned(jenis, durasiMenit, berat = 55) {
+    const met = this.MET[jenis] || 4.0;
+    return Math.round(met * (berat || 55) * (durasiMenit / 60));
+  },
+
+  // Kategori tekanan darah (mmHg) — pedoman umum AHA
+  bpInfo(sys, dia) {
+    if (!sys || !dia) return null;
+    if (sys < 90 || dia < 60) return { kategori: tr('Rendah (hipotensi)', 'Low (hypotension)'), badge: 'badge-blue' };
+    if (sys < 120 && dia < 80) return { kategori: tr('Normal', 'Normal'), badge: 'badge-green' };
+    if (sys < 130 && dia < 80) return { kategori: tr('Meningkat', 'Elevated'), badge: 'badge-amber' };
+    if (sys < 140 || dia < 90) return { kategori: tr('Hipertensi tk.1', 'Hypertension st.1'), badge: 'badge-amber' };
+    return { kategori: tr('Hipertensi tk.2', 'Hypertension st.2'), badge: 'badge-red' };
+  },
+
+  // Kategori gula darah sewaktu (mg/dL) — pedoman umum
+  sugarInfo(mgdl) {
+    if (!mgdl) return null;
+    if (mgdl < 70) return { kategori: tr('Rendah', 'Low'), badge: 'badge-blue' };
+    if (mgdl < 140) return { kategori: tr('Normal', 'Normal'), badge: 'badge-green' };
+    if (mgdl < 200) return { kategori: tr('Waspada', 'Caution'), badge: 'badge-amber' };
+    return { kategori: tr('Tinggi', 'High'), badge: 'badge-red' };
+  },
+
+  // Prediksi siklus menstruasi dari tanggal mulai terakhir & panjang siklus
+  menstrualPredict(lastStart, cycleLen = 28, periodLen = 5) {
+    if (!lastStart) return null;
+    const start = new Date(lastStart + 'T00:00:00');
+    const next = new Date(start); next.setDate(start.getDate() + cycleLen);
+    const nextEnd = new Date(next); nextEnd.setDate(next.getDate() + periodLen - 1);
+    // masa subur: ovulasi ± hari ke (cycleLen-14), jendela 5 hari sebelum + 1 sesudah
+    const ovul = new Date(start); ovul.setDate(start.getDate() + (cycleLen - 14));
+    const fertileStart = new Date(ovul); fertileStart.setDate(ovul.getDate() - 3);
+    const fertileEnd = new Date(ovul); fertileEnd.setDate(ovul.getDate() + 1);
+    const iso = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    return { next: iso(next), nextEnd: iso(nextEnd), ovulasi: iso(ovul), fertileStart: iso(fertileStart), fertileEnd: iso(fertileEnd) };
+  },
+
   // Rentang berat ideal (BMI 18.5 – 24.9)
   idealRange(tinggi) {
     const m = tinggi / 100;

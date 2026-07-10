@@ -224,11 +224,78 @@ function beep(freq = 830, duration = 0.18, count = 2) {
   } catch (_) { /* audio tidak tersedia — abaikan */ }
 }
 
-function downloadJSON(obj, filename) {
-  const blob = new Blob([JSON.stringify(obj, null, 2)], { type: 'application/json' });
+// Pemicu unduhan yang andal lintas-browser.
+// Anchor HARUS ada di DOM (Firefox/Safari), dan objek URL baru dilepas
+// setelah jeda — melepas terlalu cepat membatalkan unduhan di beberapa
+// browser (Firefox & sebagian Chrome/PWA), membuat ekspor gagal senyap.
+function triggerDownload(blob, filename) {
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
-  a.href = url; a.download = filename;
+  a.href = url;
+  a.download = filename;
+  a.rel = 'noopener';
+  a.style.display = 'none';
+  document.body.appendChild(a);
   a.click();
-  URL.revokeObjectURL(url);
+  setTimeout(() => { a.remove(); URL.revokeObjectURL(url); }, 1500);
+}
+
+function downloadJSON(obj, filename) {
+  triggerDownload(
+    new Blob([JSON.stringify(obj, null, 2)], { type: 'application/json' }),
+    filename
+  );
+}
+
+// Ekspor CSV standar (RFC 4180): pemisah koma, baris dipisah CRLF, dan
+// BOM UTF-8 agar Excel/Sheets membaca karakter (Rp, é, dll.) dengan benar.
+// Sel yang mengandung koma/kutip/baris-baru dibungkus tanda kutip.
+function downloadCSV(rows, filename) {
+  const esc = v => {
+    const s = String(v ?? '');
+    return /[",\r\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+  };
+  const csv = rows.map(r => r.map(esc).join(',')).join('\r\n');
+  const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8;' });
+  triggerDownload(blob, filename);
+}
+
+// Kompres gambar (File) → data URL JPEG kecil untuk disimpan di Firestore.
+// maxDim membatasi sisi terpanjang; quality 0–1.
+function compressImage(file, { maxDim = 800, quality = 0.6 } = {}) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    const reader = new FileReader();
+    reader.onload = () => { img.src = reader.result; };
+    reader.onerror = reject;
+    img.onload = () => {
+      let { width, height } = img;
+      if (width > height && width > maxDim) { height = Math.round(height * maxDim / width); width = maxDim; }
+      else if (height > maxDim) { width = Math.round(width * maxDim / height); height = maxDim; }
+      const canvas = document.createElement('canvas');
+      canvas.width = width; canvas.height = height;
+      canvas.getContext('2d').drawImage(img, 0, 0, width, height);
+      resolve(canvas.toDataURL('image/jpeg', quality));
+    };
+    img.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
+
+// Cetak sepotong HTML lewat jendela baru (untuk unduhan PDF via dialog cetak browser).
+function printHTML(title, innerHTML) {
+  const w = window.open('', '_blank');
+  if (!w) { toast(tr('Izinkan pop-up untuk mencetak/unduh PDF.', 'Allow pop-ups to print/download PDF.'), 'warning'); return; }
+  w.document.write(`<!DOCTYPE html><html><head><meta charset="utf-8"><title>${title}</title>
+    <style>
+      *{box-sizing:border-box;} body{font-family:Arial,Helvetica,sans-serif;color:#111;padding:28px;font-size:12px;}
+      h1,h2,h3{margin:0 0 6px;} table{width:100%;border-collapse:collapse;margin-top:10px;}
+      th,td{border:1px solid #999;padding:6px 8px;text-align:left;} th{background:#eee;}
+      .red{color:#c00;font-weight:bold;} .center{text-align:center;} .muted{color:#555;}
+      @media print{.no-print{display:none;}}
+    </style></head><body>${innerHTML}
+    <div class="no-print" style="margin-top:20px;text-align:center;">
+      <button onclick="window.print()" style="padding:8px 18px;font-size:14px;cursor:pointer;">🖨️ Cetak / Simpan PDF</button>
+    </div></body></html>`);
+  w.document.close();
 }

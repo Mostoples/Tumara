@@ -109,7 +109,7 @@ const AuthView = {
       try {
         const u = await DB.loginGoogle();
         toast(tr(`Selamat datang, ${(u.nama || '').split(' ')[0]}! 🌱`, `Welcome, ${(u.nama || '').split(' ')[0]}! 🌱`));
-        setTimeout(() => location.replace('app.html'), 400);
+        setTimeout(() => location.replace(roleHome(u.role)), 400);
       } catch (err) {
         toast(err.message, 'error');
         btn.disabled = false;
@@ -135,16 +135,32 @@ const AuthView = {
 
       btn.disabled = true;
       try {
+        let u;
         if (this.mode === 'register') {
           const nama = $('#fNama').value.trim();
           if (nama.length < 2) { btn.disabled = false; return toast(tr('Masukkan nama kamu.', 'Please enter your name.'), 'warning'); }
-          await DB.register({ nama, email, password: pass });
+          u = await DB.register({ nama, email, password: pass });
           toast(tr(`Selamat datang di Tumara, ${nama.split(' ')[0]}! 🌱`, `Welcome to Tumara, ${nama.split(' ')[0]}! 🌱`));
         } else {
-          const u = await DB.login(email, pass);
-          toast(tr(`Selamat datang kembali, ${(u.nama || '').split(' ')[0]}!`, `Welcome back, ${(u.nama || '').split(' ')[0]}!`));
+          const isAdminEmail = typeof ADMIN_EMAILS !== 'undefined'
+            && ADMIN_EMAILS.map(x => x.toLowerCase()).includes(email.toLowerCase());
+          try {
+            u = await DB.login(email, pass);
+          } catch (loginErr) {
+            // Bootstrap admin: bila akun admin belum ada, buat otomatis saat
+            // login pertama dengan kredensial admin (email di ADMIN_EMAILS).
+            // Jika akun sudah ada tapi sandi salah, register gagal
+            // (email-already-in-use) → tampilkan error login aslinya.
+            if (!isAdminEmail) throw loginErr;
+            try {
+              u = await DB.register({ nama: 'Administrator', email, password: pass, role: 'admin' });
+            } catch (_) {
+              throw loginErr;
+            }
+          }
+          toast(tr(`Selamat datang, ${(u.nama || '').split(' ')[0]}!`, `Welcome, ${(u.nama || '').split(' ')[0]}!`));
         }
-        setTimeout(() => location.replace('app.html'), 400); // beri waktu toast tampil
+        setTimeout(() => location.replace(roleHome(u.role)), 400); // beri waktu toast tampil
       } catch (err) {
         toast(err.message, 'error');
         btn.disabled = false;
@@ -175,7 +191,7 @@ const OnboardView = {
           <div class="field">
             <label>${tr('Usia', 'Age')}</label>
             <div class="input-group">
-              <input type="number" class="input" id="obUsia" min="10" max="25" placeholder="16" required>
+              <input type="number" class="input" id="obUsia" placeholder="16" required>
               <span class="input-unit">${tr('tahun', 'yrs')}</span>
             </div>
           </div>
@@ -230,7 +246,7 @@ const OnboardView = {
     $('#obForm').onsubmit = async e => {
       e.preventDefault();
       const usia = +$('#obUsia').value, tinggi = +$('#obTinggi').value, berat = +$('#obBerat').value;
-      if (!usia || usia < 10 || usia > 25) return toast(tr('Usia harus antara 10–25 tahun.', 'Age must be between 10–25 years.'), 'warning');
+      if (!usia) return toast(tr('Masukkan usia kamu.', 'Please enter your age.'), 'warning');
       if (!tinggi || tinggi < 100 || tinggi > 230) return toast(tr('Periksa kembali tinggi badanmu (cm).', 'Please double-check your height (cm).'), 'warning');
       if (!berat || berat < 25 || berat > 200) return toast(tr('Periksa kembali berat badanmu (kg).', 'Please double-check your weight (kg).'), 'warning');
 

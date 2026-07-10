@@ -297,14 +297,16 @@ const Ency = {
 
   /* ---------- bookmark (tersimpan per akun di users/{uid}) ---------- */
 
+  _hasDB() { return typeof DB !== 'undefined' && DB.user; },
+
   _bookmarks() {
-    const remote = DB.user?.bookmarkArtikel;
+    const remote = this._hasDB() ? DB.user.bookmarkArtikel : null;
     if (Array.isArray(remote)) return remote;
     // Migrasi sekali dari versi lama (localStorage) ke profil akun.
     let lokal = [];
     try { lokal = JSON.parse(localStorage.getItem('tumara_ency_bm') || '[]'); }
     catch (_) { lokal = []; }
-    if (DB.user) {
+    if (this._hasDB()) {
       DB.updateUser({ bookmarkArtikel: lokal })
         .then(() => localStorage.removeItem('tumara_ency_bm'))
         .catch(() => {});
@@ -317,8 +319,12 @@ const Ency = {
     const i = bm.indexOf(id);
     if (i >= 0) { bm.splice(i, 1); toast(tr('Dihapus dari artikel tersimpan', 'Removed from saved articles'), 'info'); }
     else { bm.push(id); toast(tr('Artikel disimpan 🔖', 'Article saved 🔖')); }
-    try { await DB.updateUser({ bookmarkArtikel: bm }); }
-    catch (_) { toast(tr('Gagal menyimpan bookmark. Periksa koneksimu.', 'Could not save bookmark. Check your connection.'), 'error'); }
+    if (this._hasDB()) {
+      try { await DB.updateUser({ bookmarkArtikel: bm }); }
+      catch (_) { toast(tr('Gagal menyimpan bookmark. Periksa koneksimu.', 'Could not save bookmark. Check your connection.'), 'error'); }
+    } else {
+      localStorage.setItem('tumara_ency_bm', JSON.stringify(bm));
+    }
   },
 
   /* ---------- render ---------- */
@@ -397,7 +403,7 @@ const Ency = {
       q2.focus();
       q2.setSelectionRange(q2.value.length, q2.value.length);
     };
-    $$('[data-chip]', el).forEach(c => c.onclick = () => { this.tab = c.dataset.chip; this.renderList(el); });
+    $$('[data-chip]', el).forEach(c => c.onclick = () => { this.tab = c.dataset.chip; if (typeof App !== 'undefined') App.saveTab(this.tab); this.renderList(el); });
     $$('[data-bm]', el).forEach(b => b.onclick = async e => {
       e.stopPropagation();
       await this._toggleBookmark(b.dataset.bm);
@@ -479,3 +485,42 @@ const Ency = {
     });
   }
 };
+
+
+/* Artikel tambahan: tahapan membuat aplikasi (dari rancangan APK).
+   Dilampirkan di luar objek agar tidak mengganggu pemformat berkas. */
+Ency.ARTIKEL.push({
+  id: 'tahapan-membuat-apk', kategori: 'prod', emoji: '🛠️', menit: 5,
+  judul: 'Tahapan Membuat Aplikasi (Ala Dunia Kerja)',
+  ringkasan: '7 tahap membangun aplikasi dari ide sampai rilis — sama seperti alur developer profesional.',
+  tags: ['coding', 'aplikasi', 'apk', 'pemrograman', 'developer', 'flowchart', 'testing'],
+  isi: [
+    { p: 'Membuat aplikasi bukan cuma soal menulis kode. Developer profesional mengikuti tahapan (SDLC) yang rapi agar hasilnya berkualitas dan tidak berantakan. Berikut 7 tahapnya:' },
+    { h: '1. Analisis Kebutuhan & Ide (Requirement Analysis)', p: 'Menentukan ide, tujuan aplikasi, target pengguna, dan fitur utama. Pertanyaan kunci: masalah apa yang dipecahkan, siapa yang memakai, dan fitur inti apa yang wajib ada.' },
+    { h: '2. Perancangan (Desain UI/UX & Sistem)', list: [
+      'UI (User Interface): membuat mockup/wireframe tampilan layar (mis. dengan Figma atau Adobe XD)',
+      'UX (User Experience): merancang alur pengguna (user journey)',
+      'Teknikal: merancang basis data (ERD) dan arsitektur aplikasi'
+    ] },
+    { h: '3. Flowchart & Algoritma (Logika Pemrograman)', list: [
+      'Flowchart: menggambar diagram alur proses aplikasi dengan simbol standar',
+      'Algoritma: menulis langkah-langkah sistematis — termasuk percabangan (if-else) dan perulangan (looping)'
+    ] },
+    { h: '4. Pengembangan (Coding/Implementasi)', list: [
+      'Menulis kode program berdasarkan flowchart & desain',
+      'Memakai IDE seperti Android Studio (Java/Kotlin) atau framework (React Native/Flutter)',
+      'Backend & database: menghubungkan aplikasi dengan database (mis. Firebase, MySQL)'
+    ] },
+    { h: '5. Pengujian (Testing & Debugging)', list: [
+      'Alpha testing: pengujian internal oleh developer',
+      'Beta testing: pengujian oleh pengguna terbatas',
+      'Memastikan tidak ada bug/error (white box atau black box testing)'
+    ] },
+    { h: '6. Peluncuran (Deployment & Publishing)', list: [
+      'Mengubah proyek menjadi berkas APK atau AAB (Android App Bundle)',
+      'Mengunggah aplikasi ke Google Play Store melalui Play Console'
+    ] },
+    { h: '7. Pemeliharaan (Maintenance & Update)', p: 'Memantau kinerja aplikasi, memperbaiki bug pasca-rilis, dan memperbarui fitur sesuai umpan balik pengguna. Aplikasi yang baik terus berkembang.' },
+    { h: 'Kaitannya dengan Tumara', p: 'Aplikasi Tumara yang kamu pakai ini dibangun mengikuti tahapan yang sama: dari analisis kebutuhan siswa, desain UI, pengembangan dengan HTML/CSS/JavaScript & Firebase, hingga pengujian dan pemeliharaan berkelanjutan.' }
+  ]
+});

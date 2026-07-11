@@ -9,6 +9,10 @@
 
 const Ibadah = {
   tab: 'hari',   // 'hari' | 'quran' | 'dzikir' | 'zakat' | 'catatan'
+  _lastDate: null,          // tanggal (lokal) saat render terakhir — untuk deteksi pergantian hari
+  _dayInterval: null,       // interval pengecek pergantian hari
+  _dayWatchInstalled: false,// penanda agar watcher hanya dipasang sekali
+  _dayHostEl: null,         // elemen #view untuk render ulang saat hari berganti
 
   // 5 sholat fardhu (selalu ada)
   FARDHU: [
@@ -30,6 +34,10 @@ const Ibadah = {
   ],
 
   async render(el) {
+    // Catat tanggal (lokal) saat render & pasang watcher pergantian hari
+    this._lastDate = todayStr();
+    this._watchDayChange(el);
+
     el.innerHTML = `
       <div class="tabs">
         <button class="tab ${this.tab === 'hari' ? 'active' : ''}" data-tab="hari"><ion-icon name="checkbox-outline"></ion-icon>${tr('Hari Ini', 'Today')}</button>
@@ -52,6 +60,43 @@ const Ibadah = {
     else if (this.tab === 'panduan') this.renderPanduan(body);
     else if (this.tab === 'zakat') await this.renderZakat(body);
     else await this.renderNotes(body);
+  },
+
+  // Pantau pergantian hari (tengah malam) berbasis JAM LOKAL PERANGKAT.
+  // Karena todayStr() memakai waktu lokal device, reset otomatis mengikuti
+  // zona waktu siswa (WIB/WITA/WIT) tanpa konfigurasi tambahan: siswa di
+  // Papua (WIT) reset saat 00:00 WIT, siswa di Jawa (WIB) saat 00:00 WIB —
+  // selama jam & zona waktu HP-nya benar.
+  //
+  // Tidak memakai satu setTimeout panjang ke tengah malam karena timer
+  // panjang tidak andal (di-throttle saat tab background / perangkat tidur,
+  // sering tak jalan tepat 00:00). Sebagai gantinya:
+  //   1) interval ringan tiap 30 dtk yang membandingkan tanggal, dan
+  //   2) event 'visibilitychange' + 'focus' agar pergantian hari langsung
+  //      tertangkap begitu siswa membuka kembali aplikasi dari background.
+  // Watcher dipasang SEKALI saja (idempoten) agar tidak menumpuk.
+  _watchDayChange(el) {
+    this._dayHostEl = el; // selalu tunjuk ke #view terkini untuk render ulang
+
+    const checkRollover = () => {
+      const now = todayStr();
+      if (now === this._lastDate) return;         // masih hari yang sama
+      // Hari sudah berganti → reset data harian ibadah
+      this._lastDate = now;
+      this.dzikirCount = {};                       // penghitung tasbih ikut nol
+      this._sholatCache = null;                    // paksa muat ulang jadwal sholat hari baru
+      if (App.route === 'ibadah') {
+        toast(tr('Hari baru dimulai — data ibadah diperbarui 🌙', 'New day started — worship data refreshed 🌙'), 'info');
+        this.render(this._dayHostEl);
+      }
+    };
+
+    if (this._dayWatchInstalled) return;           // sudah terpasang, cukup perbarui host di atas
+    this._dayWatchInstalled = true;
+    this._dayInterval = setInterval(checkRollover, 30000);
+    const onWake = () => { if (document.visibilityState === 'visible') checkRollover(); };
+    document.addEventListener('visibilitychange', onWake);
+    window.addEventListener('focus', onWake);
   },
 
   /* ============ TAB: SHOLAT & KIBLAT ============

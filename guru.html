@@ -11,31 +11,108 @@
   <script>document.documentElement.dataset.theme = localStorage.getItem('tumara_theme') || 'light';</script>
   <link rel="stylesheet" href="css/style.css">
   <link rel="icon" type="image/png" href="assets/logo.png">
+  <!-- PWA -->
+  <link rel="manifest" href="manifest.json">
+  <meta name="theme-color" content="#059669">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-title" content="Tumara Guru">
+  <link rel="apple-touch-icon" href="assets/icons/icon-192.png">
   <script type="module" src="https://cdn.jsdelivr.net/npm/ionicons@7.4.0/dist/ionicons/ionicons.esm.js"></script>
   <script nomodule src="https://cdn.jsdelivr.net/npm/ionicons@7.4.0/dist/ionicons/ionicons.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="js/version-check.js"></script>
+  <script src="js/pwa.js"></script>
 </head>
 <body>
 
-  <div id="portalShell" class="portal-shell hidden">
-    <header class="portal-topbar">
-      <div class="portal-brand">
-        <span class="logo-mark"><img src="assets/logo.png" alt="Logo Tumara"></span>
+  <!-- ============ SHELL APLIKASI GURU ============ -->
+  <div id="guruShell" class="app-shell hidden">
+
+    <aside class="sidebar">
+      <div class="sidebar-logo">
+        <div class="logo-mark"><img src="assets/logo.png" alt="Logo Tumara"></div>
         <div>
           <div class="logo-text">Tumara <span class="portal-tag">Guru</span></div>
-          <div class="portal-sub" id="guruName"></div>
+          <div class="logo-tag">Tumbuh & seimbang</div>
         </div>
       </div>
-      <div class="portal-actions">
-        <button class="icon-btn" id="themeBtn" title="Ganti tema"><ion-icon name="moon-outline"></ion-icon></button>
-        <button class="icon-btn" id="passBtn" title="Ganti kata sandi"><ion-icon name="key-outline"></ion-icon></button>
-        <button class="btn btn-sm btn-soft-danger" id="logoutBtn"><ion-icon name="log-out-outline"></ion-icon> <span data-en="Sign out">Keluar</span></button>
+
+      <nav class="sidebar-nav" id="guruSidebarNav">
+        <a class="nav-link" data-route="beranda"><ion-icon name="home-outline"></ion-icon><span data-en="Home">Beranda</span></a>
+        <a class="nav-link" data-route="kelas"><ion-icon name="people-outline"></ion-icon><span data-en="Classes & Students">Kelas & Siswa</span></a>
+        <a class="nav-link" data-route="absensi"><ion-icon name="checkbox-outline"></ion-icon><span data-en="Attendance">Absensi</span></a>
+        <a class="nav-link" data-route="nilai"><ion-icon name="clipboard-outline"></ion-icon><span data-en="Grades">Penilaian</span></a>
+        <a class="nav-link" data-route="jurnal"><ion-icon name="document-text-outline"></ion-icon><span data-en="Journal">Jurnal Mengajar</span></a>
+        <a class="nav-link" data-route="jadwal"><ion-icon name="calendar-outline"></ion-icon><span data-en="Schedule">Jadwal Mengajar</span></a>
+        <a class="nav-link" data-route="tugaskelas"><ion-icon name="paper-plane-outline"></ion-icon><span data-en="Class Tasks">Tugas Kelas</span></a>
+        <a class="nav-link" data-route="jadwalkelas"><ion-icon name="school-outline"></ion-icon><span data-en="Class Schedule">Jadwal Kelas</span></a>
+        <a class="nav-link" data-route="ibadah"><ion-icon name="moon-outline"></ion-icon><span data-en="Student Worship">Ibadah Siswa</span></a>
+        <a class="nav-link" data-route="kesehatan"><ion-icon name="heart-outline"></ion-icon><span data-en="Student Health">Kesehatan Siswa</span></a>
+      </nav>
+
+      <div class="sidebar-footer">
+        <button class="theme-toggle" id="themeBtn" title="Ganti tema" data-en-title="Switch theme">
+          <ion-icon name="moon-outline" id="themeIcon"></ion-icon>
+          <span id="themeLabel">Mode gelap</span>
+        </button>
+        <div class="user-dropdown-wrap" id="sidebarUserWrap">
+          <div class="sidebar-user" id="sidebarUser"></div>
+          <div class="dropdown-menu">
+            <button class="dropdown-item" id="ddPass2"><ion-icon name="key-outline"></ion-icon> <span data-en="Change password">Ganti kata sandi</span></button>
+            <button class="dropdown-item danger" id="ddLogout2"><ion-icon name="log-out-outline"></ion-icon> <span data-en="Sign out">Keluar</span></button>
+          </div>
+        </div>
       </div>
-    </header>
-    <main class="portal-main"><div id="view"></div></main>
+    </aside>
+
+    <main class="main-area">
+      <header class="topbar">
+        <div>
+          <h1 class="topbar-title" id="pageTitle">Kelas & Siswa</h1>
+          <div class="topbar-sub" id="pageSub"></div>
+        </div>
+        <div class="topbar-actions">
+          <button class="icon-btn" id="topLangBtn" title="Bahasa / Language"><ion-icon name="language-outline"></ion-icon></button>
+          <button class="icon-btn" id="topThemeBtn" title="Ganti tema" data-en-title="Switch theme"><ion-icon name="moon-outline"></ion-icon></button>
+          <button class="icon-btn" id="topGuruBtn" title="Data Guru" data-en-title="Teacher info"><ion-icon name="person-circle-outline"></ion-icon></button>
+          <button class="icon-btn" id="topPassBtn" title="Ganti kata sandi" data-en-title="Change password"><ion-icon name="key-outline"></ion-icon></button>
+          <div class="user-dropdown-wrap" id="topAvatarWrap">
+            <button class="avatar-btn" id="topAvatar" title="Profil" data-en-title="Profile"></button>
+            <div class="dropdown-menu">
+              <button class="dropdown-item" id="ddPass"><ion-icon name="key-outline"></ion-icon> <span data-en="Change password">Ganti kata sandi</span></button>
+              <button class="dropdown-item danger" id="ddLogout"><ion-icon name="log-out-outline"></ion-icon> <span data-en="Sign out">Keluar</span></button>
+            </div>
+          </div>
+        </div>
+      </header>
+      <div class="view-wrap"><div id="view"></div></div>
+    </main>
+
+    <!-- Bottom nav untuk mobile (≤860px) -->
+    <nav class="bottom-nav" id="bottomNav">
+      <a class="bnav-item" data-route="beranda"><ion-icon name="home-outline"></ion-icon><span data-en="Home">Beranda</span></a>
+      <a class="bnav-item" data-route="absensi"><ion-icon name="checkbox-outline"></ion-icon><span data-en="Attendance">Absen</span></a>
+
+      <button class="bnav-more" id="bnavMore" aria-label="Menu lainnya" title="Menu lainnya" data-en-title="More menu">
+        <span class="bnav-more-fab"><ion-icon name="apps" id="bnavMoreIcon"></ion-icon></span>
+      </button>
+
+      <a class="bnav-item" data-route="nilai"><ion-icon name="clipboard-outline"></ion-icon><span data-en="Grades">Nilai</span></a>
+      <a class="bnav-item" data-route="jurnal"><ion-icon name="document-text-outline"></ion-icon><span data-en="Journal">Jurnal</span></a>
+
+      <div class="bnav-sheet" id="bnavSheet">
+        <a class="bnav-sheet-item" data-route="kelas"><ion-icon name="people-outline"></ion-icon><span data-en="Classes & Students">Kelas & Siswa</span></a>
+        <a class="bnav-sheet-item" data-route="jadwal"><ion-icon name="calendar-outline"></ion-icon><span data-en="Schedule">Jadwal Mengajar</span></a>
+        <a class="bnav-sheet-item" data-route="tugaskelas"><ion-icon name="paper-plane-outline"></ion-icon><span data-en="Class Tasks">Tugas Kelas</span></a>
+        <a class="bnav-sheet-item" data-route="jadwalkelas"><ion-icon name="school-outline"></ion-icon><span data-en="Class Schedule">Jadwal Kelas</span></a>
+        <a class="bnav-sheet-item" data-route="ibadah"><ion-icon name="moon-outline"></ion-icon><span data-en="Worship">Ibadah Siswa</span></a>
+        <a class="bnav-sheet-item" data-route="kesehatan"><ion-icon name="heart-outline"></ion-icon><span data-en="Student Health">Kesehatan Siswa</span></a>
+      </div>
+    </nav>
   </div>
 
+  <!-- Modal & Toast root -->
   <div id="modalRoot"></div>
   <div id="toastRoot" class="toast-root"></div>
 
@@ -50,25 +127,141 @@
     document.addEventListener('DOMContentLoaded', async () => {
       const u = await guardPage(['guru']);
       if (!u) return;
-      document.getElementById('portalShell').classList.remove('hidden');
-      document.getElementById('guruName').textContent = (u.nama || u.email || '') + (u.mapel ? ' · ' + u.mapel : '');
+
+      document.getElementById('guruShell').classList.remove('hidden');
+
+      // Set nama guru di sidebar & topbar avatar
+      const avatarHTML = Teacher._avatarHTML(u);
+      document.getElementById('sidebarUser').innerHTML = `
+        <div class="avatar">${avatarHTML}</div>
+        <div style="min-width:0;">
+          <div class="u-name">${esc(u.nama)}</div>
+          <div class="u-school">${esc(u.mapel || u.sekolah || u.email)}</div>
+        </div>`;
+      document.getElementById('topAvatar').innerHTML = avatarHTML;
+
+      // Tema
       const setTheme = t => {
         document.documentElement.dataset.theme = t;
         localStorage.setItem('tumara_theme', t);
-        const ic = document.querySelector('#themeBtn ion-icon');
-        if (ic) ic.setAttribute('name', t === 'dark' ? 'sunny-outline' : 'moon-outline');
+        const ic = document.querySelectorAll('#themeIcon, #topThemeBtn ion-icon');
+        ic.forEach(i => i.setAttribute('name', t === 'dark' ? 'sunny-outline' : 'moon-outline'));
+        const label = document.getElementById('themeLabel');
+        if (label) label.textContent = t === 'dark' ? tr('Mode terang', 'Light mode') : tr('Mode gelap', 'Dark mode');
         if (DB.user && DB.user.tema !== t) DB.updateUser({ tema: t }).catch(() => {});
       };
       setTheme(u.tema || localStorage.getItem('tumara_theme') || 'light');
-      document.getElementById('themeBtn').onclick = () =>
-        setTheme(document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark');
-      document.getElementById('passBtn').onclick = () => Teacher._passwordModal();
-      document.getElementById('logoutBtn').onclick = async () => {
-        if (!await confirmDialog(tr('Keluar dari akun guru?', 'Sign out of teacher account?'), { title: tr('Keluar', 'Sign out'), okText: tr('Ya, keluar', 'Yes, sign out') })) return;
-        await DB.logout();
-        location.replace('auth.html');
+
+      // Tab "Jadwal Kelas" hanya untuk wali kelas (punya waliKelasId).
+      // Sembunyikan nav-nya bila bukan wali; jika sedang di tab itu, pindahkan.
+      const refreshGuruNav = () => {
+        const isWali = !!(DB.user && DB.user.waliKelasId);
+        document.querySelectorAll('[data-route="jadwalkelas"]').forEach(a => { a.style.display = isWali ? '' : 'none'; });
+        if (!isWali && Teacher.tab === 'jadwalkelas') Teacher.tab = 'kelas';
       };
-      Teacher.render(document.getElementById('view'));
+
+      // Navigation logic
+      const updateView = () => {
+        refreshGuruNav();
+        Teacher.render(document.getElementById('view'));
+        // update active state in all nav elements
+        document.querySelectorAll('#guruSidebarNav .nav-link, .bnav-item, .bnav-sheet-item').forEach(x =>
+          x.classList.toggle('active', x.dataset.route === Teacher.tab)
+        );
+        // update More button highlight if active route is in sheet
+        const moreBtn = document.getElementById('bnavMore');
+        if (moreBtn) {
+          const inSheet = !!document.getElementById('bnavSheet')?.querySelector(`.bnav-sheet-item[data-route="${Teacher.tab}"]`);
+          moreBtn.classList.toggle('has-active', inSheet);
+        }
+        // update page title & subtitle
+        const titles = {
+          beranda:  [tr('Beranda', 'Home'),                        tr('Ringkasan & menu portal guru', 'Overview & teacher menu')],
+          kelas:    [tr('Kelas & Siswa', 'Classes & Students'),    tr('Daftar kelas yang kamu ampu', 'Your class list')],
+          absensi:  [tr('Absensi', 'Attendance'),                  tr('Kehadiran siswa per pertemuan', 'Student attendance per meeting')],
+          nilai:    [tr('Penilaian', 'Grades'),                    tr('Nilai & gradebook per kelas', 'Grades & gradebook per class')],
+          jurnal:   [tr('Jurnal Mengajar', 'Teaching Journal'),  tr('Catatan materi & kegiatan per pertemuan', 'Material & activity notes per meeting')],
+          jadwal:     [tr('Jadwal Mengajar', 'Teaching Schedule'),  tr('Jam mengajar mingguan', 'Weekly teaching hours')],
+          tugaskelas: [tr('Tugas Kelas', 'Class Tasks'),           tr('Kirim tugas ke siswa per kelas', 'Send tasks to students per class')],
+          jadwalkelas:[tr('Jadwal Kelas', 'Class Schedule'),       tr('Wali kelas mengirim jadwal ke siswa', 'Homeroom teacher sends schedule to students')],
+          ibadah:   [tr('Ibadah Siswa', 'Student Worship'),      tr('Pantauan amalan ibadah harian siswa', 'Monitoring student daily worship')],
+          kesehatan:[tr('Kesehatan Siswa', 'Student Health'),    tr('Pantauan kesehatan harian siswa', 'Monitoring student daily health')]
+        };
+        const [judul, sub] = titles[Teacher.tab] || [Teacher.tab, ''];
+        document.getElementById('pageTitle').textContent = judul;
+        document.getElementById('pageSub').textContent = sub;
+        window.scrollTo({ top: 0 });
+      };
+
+      // Event listeners untuk topbar & sidebar
+      document.getElementById('themeBtn').onclick = () => setTheme(document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark');
+      document.getElementById('topThemeBtn').onclick = () => setTheme(document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark');
+      document.getElementById('topLangBtn').onclick = () => { I18N.toggle(); setTheme(document.documentElement.dataset.theme || 'light'); updateView(); };
+      document.getElementById('topPassBtn').onclick = () => Teacher._passwordModal();
+      document.getElementById('topGuruBtn').onclick = () => Teacher._setupModal(() => { refreshGuruNav(); updateView(); });
+
+      // Dropdown menu avatar topbar & sidebar
+      const toggleDropdown = (wrapId) => {
+        const wrap = document.getElementById(wrapId);
+        if (!wrap) return;
+        // Tutup dropdown lain
+        document.querySelectorAll('.user-dropdown-wrap.open').forEach(w => { if (w.id !== wrapId) w.classList.remove('open'); });
+        wrap.classList.toggle('open');
+      };
+      document.getElementById('topAvatarWrap').onclick = (e) => { e.stopPropagation(); toggleDropdown('topAvatarWrap'); };
+      document.getElementById('sidebarUserWrap').onclick = (e) => { e.stopPropagation(); toggleDropdown('sidebarUserWrap'); };
+
+      // Tutup semua dropdown saat klik di luar
+      document.addEventListener('click', () => {
+        document.querySelectorAll('.user-dropdown-wrap.open').forEach(w => w.classList.remove('open'));
+      });
+      // Cegah penutupan saat klik di dalam dropdown menu
+      document.querySelectorAll('.dropdown-menu').forEach(m => m.onclick = (e) => e.stopPropagation());
+
+      // Dropdown items: ganti sandi & logout
+      const setupDropdownActions = (passId, logoutId) => {
+        document.getElementById(passId)?.addEventListener('click', () => {
+          document.querySelectorAll('.user-dropdown-wrap.open').forEach(w => w.classList.remove('open'));
+          Teacher._passwordModal();
+        });
+        document.getElementById(logoutId)?.addEventListener('click', async () => {
+          document.querySelectorAll('.user-dropdown-wrap.open').forEach(w => w.classList.remove('open'));
+          if (!await confirmDialog(tr('Keluar dari akun guru?', 'Sign out of teacher account?'), { title: tr('Keluar', 'Sign out'), okText: tr('Ya, keluar', 'Yes, sign out') })) return;
+          await DB.logout();
+          location.replace('auth.html');
+        });
+      };
+      setupDropdownActions('ddPass', 'ddLogout');
+      setupDropdownActions('ddPass2', 'ddLogout2');
+
+      document.querySelectorAll('#guruSidebarNav .nav-link, .bnav-item, .bnav-sheet-item').forEach(a => {
+        a.onclick = (e) => {
+          Teacher.tab = a.dataset.route;
+          Teacher.toggleMoreSheet(false);
+          updateView();
+        };
+      });
+
+      // Bottom nav "More" sheet toggle
+      const moreBtn = document.getElementById('bnavMore');
+      if (moreBtn) {
+        moreBtn.onclick = (e) => { e.stopPropagation(); Teacher.toggleMoreSheet(); };
+        document.addEventListener('click', (e) => {
+          const sheet = document.getElementById('bnavSheet'), btn = document.getElementById('bnavMore');
+          if (sheet && sheet.classList.contains('open') &&
+              !sheet.contains(e.target) && !btn.contains(e.target)) {
+            Teacher.toggleMoreSheet(false);
+          }
+        });
+      }
+
+      // Initial render
+      updateView();
+
+      // Form "Data Guru" otomatis saat guru pertama login (belum setup).
+      if (!DB.user.guruSetup) {
+        Teacher._setupModal(() => { refreshGuruNav(); updateView(); });
+      }
     });
   </script>
 </body>

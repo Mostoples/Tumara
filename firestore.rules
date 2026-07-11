@@ -37,6 +37,69 @@ service cloud.firestore {
       match /{document=**} {
         allow read, write: if request.auth != null && (request.auth.uid == uid || isAdmin());
       }
+
+      // Guru boleh MEMBACA subkoleksi ibadah siswa (ibadah_daily, quran_log, hafalan) untuk pemantauan.
+      match /ibadah_daily/{id} {
+        allow read: if isGuru();
+      }
+      match /quran_log/{id} {
+        allow read: if isGuru();
+      }
+      match /hafalan/{id} {
+        allow read: if isGuru();
+      }
+
+      // Guru boleh MEMBACA subkoleksi kesehatan siswa untuk pemantauan kesehatan di kelas.
+      // Akses read-only; guru tidak boleh mengubah data kesehatan siswa.
+      match /health_daily/{id} {
+        allow read: if isGuru();
+      }
+      match /workouts/{id} {
+        allow read: if isGuru();
+      }
+      match /biometrics/{id} {
+        allow read: if isGuru();
+      }
+      match /weights/{id} {
+        allow read: if isGuru();
+      }
+      match /meds/{id} {
+        allow read: if isGuru();
+      }
+      match /foods/{id} {
+        allow read: if isGuru();
+      }
+      match /menstrual/{id} {
+        allow read: if isGuru();
+      }
+    }
+
+    // Data induk sekolah (dikelola admin): daftar kelas & roster siswa
+    // (nama + NIS). Dibaca semua pengguna terautentikasi (guru memilih kelas
+    // yang diampu & melihat rosternya); hanya admin yang boleh menulis.
+    match /school_classes/{id} {
+      allow read: if request.auth != null;
+      allow write: if isAdmin();
+    }
+    match /school_roster/{id} {
+      allow read: if request.auth != null;
+      allow write: if isAdmin();
+    }
+
+    // Tugas kelas: dikirim guru (pengampu), diterima siswa. Dibaca semua
+    // pengguna terautentikasi; ditulis guru (cakupan kelas dijaga di UI).
+    match /class_tasks/{id} {
+      allow read: if request.auth != null;
+      allow write: if isGuru();
+    }
+
+    // Jadwal kelas: satu dokumen per kelas (id = classId). Dibaca semua
+    // pengguna terautentikasi; HANYA wali kelas (guru dengan waliKelasId
+    // sama dengan classId) yang boleh menulis.
+    match /class_schedule/{classId} {
+      allow read: if request.auth != null;
+      allow write: if isGuru()
+        && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.waliKelasId == classId;
     }
   }
 }

@@ -99,6 +99,13 @@ const DB = (() => {
         .map(u => { const { passHash, ...safe } = u; return safe; });
     },
 
+    // Siswa yang sudah login & memilih kelas ini (kelasId) saat onboarding.
+    async listStudentsByClass(classId) {
+      return this._users()
+        .filter(u => (u.role || 'siswa') === 'siswa' && u.kelasId === classId)
+        .map(u => { const { passHash, ...safe } = u; return safe; });
+    },
+
     async adminCreateUser({ nama, email, password, role = 'guru', extra = {} }) {
       email = email.trim().toLowerCase();
       if (this._users().some(u => u.email === email)) {
@@ -170,6 +177,12 @@ const DB = (() => {
 
     async list(coll) { return this._read(coll); },
 
+    // Guru: baca data siswa berdasarkan uid (mode lokal)
+    async listStudentData(studentUid, coll) {
+      const key = `tumara_data_${studentUid}_${coll}`;
+      return JSON.parse(localStorage.getItem(key) || '[]');
+    },
+
     async add(coll, item) {
       const arr = this._read(coll);
       const rec = { id: uid(), ...item };
@@ -199,6 +212,45 @@ const DB = (() => {
 
     async remove(coll, id) {
       this._write(coll, this._read(coll).filter(x => x.id !== id));
+    },
+
+    /* ---------- koleksi GLOBAL sekolah (kelas & roster, dikelola admin) ----------
+       Tidak terikat user tertentu: dipakai bersama admin (tulis) & guru (baca). */
+    _gkey(coll) { return `tumara_school_${coll}`; },
+    _gread(coll) { return JSON.parse(localStorage.getItem(this._gkey(coll)) || '[]'); },
+    _gwrite(coll, arr) { localStorage.setItem(this._gkey(coll), JSON.stringify(arr)); },
+
+    async gList(coll) { return this._gread(coll); },
+    async gListWhere(coll, field, value) { return this._gread(coll).filter(x => x[field] === value); },
+    async gAdd(coll, item) {
+      const arr = this._gread(coll);
+      const rec = { id: uid(), ...item };
+      arr.push(rec);
+      this._gwrite(coll, arr);
+      return rec;
+    },
+    async gAddMany(coll, items) {
+      const arr = this._gread(coll);
+      const recs = items.map(it => ({ id: uid(), ...it }));
+      arr.push(...recs);
+      this._gwrite(coll, arr);
+      return recs;
+    },
+    // Upsert (samakan dengan FirebaseAdapter yang memakai setDoc merge):
+    // buat dokumen bila belum ada, gabungkan bila sudah ada.
+    async gUpdate(coll, id, patch) {
+      const arr = this._gread(coll);
+      const i = arr.findIndex(x => x.id === id);
+      if (i === -1) { const rec = { id, ...patch }; arr.push(rec); this._gwrite(coll, arr); return rec; }
+      arr[i] = { ...arr[i], ...patch };
+      this._gwrite(coll, arr);
+      return arr[i];
+    },
+    async gRemove(coll, id) {
+      this._gwrite(coll, this._gread(coll).filter(x => x.id !== id));
+    },
+    async gGet(coll, id) {
+      return this._gread(coll).find(x => x.id === id) || null;
     },
 
     async resetData(collections) {
@@ -355,6 +407,16 @@ const DB = (() => {
     async listStudents() {
       const { F, db } = this.fb;
       const qy = F.query(F.collection(db, 'users'), F.where('role', '==', 'siswa'));
+      const snap = await F.getDocs(qy);
+      return snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    },
+
+    // Siswa yang sudah login & memilih kelas ini (kelasId) saat onboarding.
+    // Butuh composite index Firestore (role asc, kelasId asc) — Firebase akan
+    // menautkan pembuatannya otomatis saat query pertama dijalankan.
+    async listStudentsByClass(classId) {
+      const { F, db } = this.fb;
+      const qy = F.query(F.collection(db, 'users'), F.where('role', '==', 'siswa'), F.where('kelasId', '==', classId));
       const snap = await F.getDocs(qy);
       return snap.docs.map(d => ({ id: d.id, ...d.data() }));
     },
@@ -520,6 +582,14 @@ const DB = (() => {
       return snap.docs.map(d => ({ id: d.id, ...d.data() }));
     },
 
+    // Guru: baca data subkoleksi siswa tertentu di Firestore
+    async listStudentData(studentUid, coll) {
+      const { F, db } = this.fb;
+      const ref = F.collection(db, 'users', studentUid, coll);
+      const snap = await F.getDocs(ref);
+      return snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    },
+
     async add(coll, item) {
       const { F } = this.fb;
       const id = uid();
@@ -543,6 +613,68 @@ const DB = (() => {
     async remove(coll, id) {
       const { F } = this.fb;
       await F.deleteDoc(F.doc(this._colRef(coll), id));
+    },
+
+    /* ---------- koleksi GLOBAL sekolah (top-level, dikelola admin) ----------
+       Berbeda dari _colRef (subkoleksi user): ini koleksi top-level `coll`
+       yang dibaca guru & admin, ditulis hanya admin (lihat firestore.rules). */
+    _gColRef(coll) {
+      const { F, db } = this.fb;
+      return F.collection(db, coll);
+    },
+
+    async gList(coll) {
+      const { F } = this.fb;
+      const snap = await F.getDocs(this._gColRef(coll));
+      return snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    },
+
+    async gListWhere(coll, field, value) {
+      const { F } = this.fb;
+      const qy = F.query(this._gColRef(coll), F.where(field, '==', value));
+      const snap = await F.getDocs(qy);
+      return snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    },
+
+    async gAdd(coll, item) {
+      const { F } = this.fb;
+      const id = uid();
+      await F.setDoc(F.doc(this._gColRef(coll), id), this._clean(item));
+      return { id, ...item };
+    },
+
+    // Tambah banyak dokumen sekaligus (import massal) via writeBatch,
+    // dipecah per 500 operasi sesuai batas Firestore.
+    async gAddMany(coll, items) {
+      const { F, db } = this.fb;
+      const recs = items.map(it => ({ id: uid(), ...it }));
+      for (let i = 0; i < recs.length; i += 500) {
+        const batch = F.writeBatch(db);
+        for (const rec of recs.slice(i, i + 500)) {
+          const { id, ...data } = rec;
+          batch.set(F.doc(this._gColRef(coll), id), this._clean(data));
+        }
+        await batch.commit();
+      }
+      return recs;
+    },
+
+    async gUpdate(coll, id, patch) {
+      const { F } = this.fb;
+      await F.setDoc(F.doc(this._gColRef(coll), id), this._clean(patch), { merge: true });
+      return { id, ...patch };
+    },
+
+    async gRemove(coll, id) {
+      const { F } = this.fb;
+      await F.deleteDoc(F.doc(this._gColRef(coll), id));
+    },
+
+    // Baca satu dokumen global by id (mis. class_schedule/{classId}).
+    async gGet(coll, id) {
+      const { F } = this.fb;
+      const snap = await F.getDoc(F.doc(this._gColRef(coll), id));
+      return snap.exists() ? { id: snap.id, ...snap.data() } : null;
     },
 
     async resetData(collections) {
@@ -617,15 +749,28 @@ const DB = (() => {
     // Admin
     adminListUsers: () => adapter.adminListUsers(),
     listStudents: () => adapter.listStudents(),
+    listStudentsByClass: (id) => adapter.listStudentsByClass(id),
     adminCreateUser: d => adapter.adminCreateUser(d),
     adminUpdateUser: (id, p) => adapter.adminUpdateUser(id, p),
     adminDeleteUser: id => adapter.adminDeleteUser(id),
+
+    // Guru: baca subkoleksi siswa tertentu (untuk melihat ibadah/data siswa)
+    listStudentData: (studentUid, coll) => adapter.listStudentData(studentUid, coll),
 
     list: c => adapter.list(c),
     add: (c, i) => adapter.add(c, i),
     update: (c, id, p) => adapter.update(c, id, p),
     set: (c, id, i) => adapter.set(c, id, i),
     remove: (c, id) => adapter.remove(c, id),
+
+    // Koleksi global sekolah (kelas & roster, dikelola admin; guru baca)
+    gList: c => adapter.gList(c),
+    gListWhere: (c, f, v) => adapter.gListWhere(c, f, v),
+    gAdd: (c, i) => adapter.gAdd(c, i),
+    gAddMany: (c, items) => adapter.gAddMany(c, items),
+    gUpdate: (c, id, p) => adapter.gUpdate(c, id, p),
+    gRemove: (c, id) => adapter.gRemove(c, id),
+    gGet: (c, id) => adapter.gGet(c, id),
 
     // Catatan kesehatan harian (satu record per tanggal)
     async getDaily(tanggal = todayStr()) {

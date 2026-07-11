@@ -26,6 +26,13 @@ const Profile = {
     const ed = this._editing;                      // mode edit data diri aktif?
     const dis = ed ? '' : 'disabled';              // atribut untuk menonaktifkan input
 
+    // Daftar kelas sekolah (untuk memilih/mengubah kelas siswa).
+    let classes = [];
+    try {
+      classes = (await DB.gList('school_classes'))
+        .sort((a, b) => (a.urutan ?? 999999) - (b.urutan ?? 999999) || (a.nama || '').localeCompare(b.nama || ''));
+    } catch (_) { classes = []; }
+
     el.innerHTML = `
       <!-- HEADER PROFIL -->
       <div class="card profile-head">
@@ -89,6 +96,21 @@ const Profile = {
               <select class="select" id="pfAktivitas" ${dis}>
                 ${Calc.AKTIVITAS.map(a => `<option value="${a.key}" ${a.key === (u.aktivitas || 'ringan') ? 'selected' : ''}>${a.label}</option>`).join('')}
               </select>
+            </div>
+            <div class="grid grid-2 keep-2" style="gap:12px;">
+              <div class="field">
+                <label>${tr('Kelas', 'Class')}</label>
+                ${classes.length ? `
+                <select class="select" id="pfKelas" ${dis}>
+                  <option value="">${tr('— Pilih kelas —', '— Choose class —')}</option>
+                  ${classes.map(c => `<option value="${esc(c.id)}" ${c.id === u.kelasId ? 'selected' : ''}>${esc(c.nama)}</option>`).join('')}
+                </select>` : `
+                <input type="text" class="input" disabled value="${u.kelasNama ? esc(u.kelasNama) : tr('Belum ada kelas', 'No classes yet')}">`}
+              </div>
+              <div class="field">
+                <label>NIS</label>
+                <input type="text" class="input" id="pfNis" inputmode="numeric" maxlength="20" placeholder="${tr('No. Induk Siswa', 'Student ID')}" value="${esc(u.nis || '')}" ${dis}>
+              </div>
             </div>
             <div class="field">
               <label>${tr('Asal sekolah', 'School')} <span style="font-weight:500;color:var(--text-3)">${tr('(opsional)', '(optional)')}</span></label>
@@ -195,6 +217,8 @@ const Profile = {
         jk = c.dataset.val;
         $$('#pfJK .radio-card', el).forEach(x => x.classList.toggle('selected', x === c));
       });
+      const nisEl = $('#pfNis', el);
+      if (nisEl) nisEl.oninput = () => { nisEl.value = nisEl.value.replace(/\D/g, '').slice(0, 20); };
     }
 
     $('#pfForm', el).onsubmit = async e => {
@@ -209,11 +233,19 @@ const Profile = {
       const tdee = Calc.tdee(Calc.bmr({ jenisKelamin: jk, berat, tinggi, usia }), aktivitas);
       const air = Calc.waterTarget(berat);
 
-      await DB.updateUser({
+      // Kelas & NIS (bila daftar kelas tersedia) — penautan ke roster guru.
+      const kelasSel = $('#pfKelas', el);
+      const patch = {
         usia, jenisKelamin: jk, tinggi, berat, aktivitas,
         sekolah: $('#pfSekolah', el).value.trim(),
         targetKalori: tdee, targetAir: air.gelas
-      });
+      };
+      if (kelasSel) {
+        patch.kelasId = kelasSel.value;
+        patch.kelasNama = classes.find(c => c.id === kelasSel.value)?.nama || '';
+        patch.nis = ($('#pfNis', el).value || '').replace(/\D/g, '').slice(0, 20);
+      }
+      await DB.updateUser(patch);
       toast(tr(`Tersimpan! Target baru: ±${tdee.toLocaleString('id-ID')} kkal & ${air.gelas} gelas air/hari 💧`,
                `Saved! New targets: ±${tdee.toLocaleString('id-ID')} kcal & ${air.gelas} glasses of water/day 💧`));
       this._editing = false; // kembali ke mode tampilan setelah simpan

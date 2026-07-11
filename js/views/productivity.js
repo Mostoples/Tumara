@@ -172,77 +172,77 @@ const Prod = {
 
   /* ============ TAB: TUGAS ============ */
 
-  async renderTasks(el) {
-    const tasks = await DB.list('tasks');
-    const sortKey = t => (t.tenggat || '9999-99-99');
-    let shown = tasks.slice().sort((a, b) => sortKey(a) < sortKey(b) ? -1 : 1);
-    if (this.taskFilter === 'aktif') shown = shown.filter(t => t.status !== 'selesai');
-    else if (this.taskFilter === 'selesai') shown = shown.filter(t => t.status === 'selesai');
+  // Empty-state bila siswa belum mengatur kelasnya (kelasId) — tugas & jadwal
+  // datang dari kelas, jadi butuh kelas dulu.
+  _needKelas() {
+    return `<div class="card empty-state">
+      <ion-icon name="school-outline"></ion-icon>
+      <div class="es-title">${tr('Kelasmu belum diatur', 'Your class is not set')}</div>
+      <div class="es-sub">${tr('Atur kelas & NIS di menu Profil agar bisa menerima tugas & jadwal dari guru.', 'Set your class & NIS in Profile to receive tasks & schedule from your teachers.')}</div>
+      <button class="btn btn-prod btn-sm" id="goProfil" style="margin-top:14px;"><ion-icon name="person-outline"></ion-icon> ${tr('Ke Profil', 'Go to Profile')}</button>
+    </div>`;
+  },
+  _bindNeedKelas(el) {
+    const b = $('#goProfil', el);
+    if (b) b.onclick = () => App.navigate('profile');
+  },
 
-    const doneCount = tasks.filter(t => t.status === 'selesai').length;
+  // Tugas kini DIKIRIM GURU (koleksi class_tasks per kelas). Siswa hanya
+  // menerima & boleh mencentang selesai (progres pribadi di profil.tugasSelesai).
+  async renderTasks(el) {
+    const kelasId = DB.user?.kelasId;
+    if (!kelasId) { el.innerHTML = this._needKelas(); this._bindNeedKelas(el); return; }
+
+    const tasks = (await DB.gListWhere('class_tasks', 'classId', kelasId))
+      .sort((a, b) => (a.tenggat || '9999-99-99') < (b.tenggat || '9999-99-99') ? -1 : 1);
+    const done = new Set(DB.user?.tugasSelesai || []);
+    const isDone = t => done.has(t.id);
+
+    let shown = tasks;
+    if (this.taskFilter === 'aktif') shown = tasks.filter(t => !isDone(t));
+    else if (this.taskFilter === 'selesai') shown = tasks.filter(t => isDone(t));
+
+    const doneCount = tasks.filter(isDone).length;
     const filterLabel = { aktif: tr('Aktif', 'Active'), selesai: tr('Selesai', 'Done'), semua: tr('Semua', 'All') };
 
     el.innerHTML = `
-      <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:16px;">
-        <div style="display:flex;gap:8px;">
-          ${['aktif', 'selesai', 'semua'].map(f => `
-            <button class="chip ${this.taskFilter === f ? 'active' : ''}" data-filter="${f}">
-              ${filterLabel[f]}${f === 'selesai' && doneCount ? ` (${doneCount})` : ''}
-            </button>`).join('')}
-        </div>
-        <button class="btn btn-prod btn-sm" id="addTask"><ion-icon name="add"></ion-icon> ${tr('Tugas Baru', 'New Task')}</button>
+      <div style="font-size:.82rem;color:var(--text-3);margin-bottom:12px;"><ion-icon name="school-outline" style="vertical-align:-2px;"></ion-icon> ${tr('Tugas dari gurumu — centang bila sudah selesai.', 'Tasks from your teachers — check them off when done.')}</div>
+      <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:16px;">
+        ${['aktif', 'selesai', 'semua'].map(f => `
+          <button class="chip ${this.taskFilter === f ? 'active' : ''}" data-filter="${f}">
+            ${filterLabel[f]}${f === 'selesai' && doneCount ? ` (${doneCount})` : ''}
+          </button>`).join('')}
       </div>
 
       ${shown.length ? `
         <div style="display:flex;flex-direction:column;gap:10px;">
           ${shown.map(t => `
             <div class="list-item">
-              <button class="task-check ${t.status === 'selesai' ? 'done' : ''}" data-toggle="${t.id}"><ion-icon name="checkmark"></ion-icon></button>
+              <button class="task-check ${isDone(t) ? 'done' : ''}" data-toggle="${t.id}"><ion-icon name="checkmark"></ion-icon></button>
               <div style="flex:1;min-width:0;">
-                <div style="font-weight:700;font-size:.92rem;" class="${t.status === 'selesai' ? 'task-title-done' : ''}">${esc(t.judul)}</div>
+                <div style="font-weight:700;font-size:.92rem;" class="${isDone(t) ? 'task-title-done' : ''}">${esc(t.judul)}</div>
                 <div style="display:flex;gap:8px;align-items:center;margin-top:4px;flex-wrap:wrap;">
                   ${t.mapel ? `<span class="badge badge-purple">${esc(t.mapel)}</span>` : ''}
-                  ${t.label ? `<span class="badge badge-blue"># ${esc(t.label)}</span>` : ''}
-                  ${t.ulang && t.ulang !== 'tidak' ? `<span class="badge badge-gray"><ion-icon name="repeat-outline"></ion-icon> ${t.ulang === 'harian' ? tr('Harian', 'Daily') : t.ulang === 'mingguan' ? tr('Mingguan', 'Weekly') : tr('Bulanan', 'Monthly')}</span>` : ''}
-                  ${t.tenggat && t.status !== 'selesai' ? deadlineBadge(t.tenggat) : t.tenggat ? `<span class="badge badge-gray">${fmtDate(t.tenggat, { short: true })}</span>` : ''}
+                  ${t.tenggat && !isDone(t) ? deadlineBadge(t.tenggat) : t.tenggat ? `<span class="badge badge-gray">${fmtDate(t.tenggat, { short: true })}</span>` : ''}
                   ${t.prioritas === 'tinggi' ? `<span class="badge badge-red">${tr('Prioritas tinggi', 'High priority')}</span>` : ''}
+                  ${t.guruNama ? `<span class="badge badge-gray"><ion-icon name="person-outline"></ion-icon> ${esc(t.guruNama)}</span>` : ''}
                 </div>
               </div>
-              <button class="mini-icon-btn" data-edit="${t.id}"><ion-icon name="create-outline"></ion-icon></button>
-              <button class="mini-icon-btn danger" data-del="${t.id}"><ion-icon name="trash-outline"></ion-icon></button>
             </div>`).join('')}
         </div>` : `
         <div class="card empty-state">
           <ion-icon name="${this.taskFilter === 'selesai' ? 'trophy-outline' : 'checkbox-outline'}"></ion-icon>
-          <div class="es-title">${this.taskFilter === 'selesai' ? tr('Belum ada tugas selesai', 'No finished tasks yet') : tr('Tidak ada tugas di sini', 'No tasks here')}</div>
-          <div class="es-sub">${this.taskFilter === 'aktif' ? tr('Semua beres! Tambah rencana belajar baru? ✨', 'All clear! Add a new study plan? ✨') : tr('Selesaikan tugas untuk mengisi daftar ini 💪', 'Finish some tasks to fill this list 💪')}</div>
+          <div class="es-title">${this.taskFilter === 'selesai' ? tr('Belum ada tugas selesai', 'No finished tasks yet') : tr('Belum ada tugas dari guru', 'No tasks from teachers yet')}</div>
+          <div class="es-sub">${tr('Tugas yang dikirim gurumu akan muncul di sini 📚', 'Tasks sent by your teachers will appear here 📚')}</div>
         </div>`}`;
 
     $$('[data-filter]', el).forEach(c => c.onclick = () => { this.taskFilter = c.dataset.filter; App.refresh(); });
-    $('#addTask', el).onclick = () => this.openTaskModal();
     $$('[data-toggle]', el).forEach(b => b.onclick = async () => {
-      const t = tasks.find(x => x.id === b.dataset.toggle);
-      const done = t.status !== 'selesai';
-      await DB.update('tasks', t.id, { status: done ? 'selesai' : 'aktif' });
-      if (done) {
-        toast(tr('Tugas selesai — mantap! 🎉', 'Task done — nice work! 🎉'));
-        // Tugas berulang: buat otomatis occurrence berikutnya
-        if (t.ulang && t.ulang !== 'tidak') {
-          const base = t.tenggat ? parseDate(t.tenggat) : parseDate(todayStr());
-          if (t.ulang === 'harian') base.setDate(base.getDate() + 1);
-          else if (t.ulang === 'mingguan') base.setDate(base.getDate() + 7);
-          else base.setMonth(base.getMonth() + 1);
-          await DB.add('tasks', { judul: t.judul, mapel: t.mapel || '', label: t.label || '', prioritas: t.prioritas || 'sedang', ulang: t.ulang, tenggat: todayStr(base), status: 'aktif' });
-          toast(tr('Tugas berulang berikutnya dibuat 🔁', 'Next recurring task created 🔁'), 'info');
-        }
-      }
-      App.refresh();
-    });
-    $$('[data-edit]', el).forEach(b => b.onclick = () => this.openTaskModal(tasks.find(x => x.id === b.dataset.edit)));
-    $$('[data-del]', el).forEach(b => b.onclick = async () => {
-      if (!await confirmDialog(tr('Hapus tugas ini?', 'Delete this task?'), { danger: true, okText: tr('Hapus', 'Delete') })) return;
-      await DB.remove('tasks', b.dataset.del);
-      toast(tr('Tugas dihapus.', 'Task deleted.'));
+      const id = b.dataset.toggle;
+      const set = new Set(DB.user?.tugasSelesai || []);
+      if (set.has(id)) set.delete(id);
+      else { set.add(id); toast(tr('Tugas selesai — mantap! 🎉', 'Task done — nice work! 🎉')); }
+      await DB.updateUser({ tugasSelesai: [...set] });
       App.refresh();
     });
   },
@@ -397,25 +397,27 @@ const Prod = {
 
   /* ============ TAB: JADWAL ============ */
 
+  // Jadwal kini DIKIRIM WALI KELAS (dokumen class_schedule per kelas).
+  // Siswa hanya melihat (read-only).
   async renderSchedule(el) {
-    const schedule = await DB.list('schedule');
+    const kelasId = DB.user?.kelasId;
+    if (!kelasId) { el.innerHTML = this._needKelas(); this._bindNeedKelas(el); return; }
+
+    const doc = await DB.gGet('class_schedule', kelasId);
+    const entries = doc?.entries || [];
     const todayIdx = new Date().getDay();
-    const dayItems = schedule
+    const dayItems = entries
       .filter(s => +s.hari === this.selectedDay)
       .sort((a, b) => (a.jamMulai || '') < (b.jamMulai || '') ? -1 : 1);
-
-    // urutan tampilan: Senin dulu
     const dayOrder = [1, 2, 3, 4, 5, 6, 0];
 
     el.innerHTML = `
-      <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:16px;">
-        <div class="day-selector" style="flex:1;">
-          ${dayOrder.map(d => `
-            <div class="day-pill ${d === this.selectedDay ? 'active' : ''} ${d === todayIdx ? 'today' : ''}" data-day="${d}">
-              <div class="dp-name">${HARI[d].slice(0, 3)}</div>
-            </div>`).join('')}
-        </div>
-        <button class="btn btn-prod btn-sm" id="addSchedule"><ion-icon name="add"></ion-icon> Tambah</button>
+      <div style="font-size:.82rem;color:var(--text-3);margin-bottom:12px;"><ion-icon name="school-outline" style="vertical-align:-2px;"></ion-icon> ${tr('Jadwal kelas dari wali kelasmu.', 'Class schedule from your homeroom teacher.')}${doc?.waliNama ? ` · ${tr('Wali', 'Homeroom')}: ${esc(doc.waliNama)}` : ''}</div>
+      <div class="day-selector" style="margin-bottom:16px;">
+        ${dayOrder.map(d => `
+          <div class="day-pill ${d === this.selectedDay ? 'active' : ''} ${d === todayIdx ? 'today' : ''}" data-day="${d}">
+            <div class="dp-name">${HARI[d].slice(0, 3)}</div>
+          </div>`).join('')}
       </div>
 
       <div class="section-head" style="margin-top:4px;">
@@ -433,25 +435,15 @@ const Prod = {
                 <div style="font-weight:700;font-size:.92rem;">${esc(s.mapel)}</div>
                 ${s.ruang ? `<div style="font-size:.78rem;color:var(--text-3);"><ion-icon name="location-outline" style="vertical-align:-2px;"></ion-icon> ${esc(s.ruang)}</div>` : ''}
               </div>
-              <button class="mini-icon-btn" data-edit="${s.id}"><ion-icon name="create-outline"></ion-icon></button>
-              <button class="mini-icon-btn danger" data-del="${s.id}"><ion-icon name="trash-outline"></ion-icon></button>
             </div>`).join('')}
         </div>` : `
         <div class="card empty-state">
           <ion-icon name="calendar-outline"></ion-icon>
-          <div class="es-title">Belum ada jadwal di hari ${HARI[this.selectedDay]}</div>
-          <div class="es-sub">Tambahkan jam pelajaran atau kegiatanmu 📚</div>
+          <div class="es-title">${tr('Belum ada jadwal', 'No schedule yet')} — ${HARI[this.selectedDay]}</div>
+          <div class="es-sub">${tr('Wali kelas belum mengisi jadwal untuk hari ini.', "Your homeroom teacher hasn't set the schedule for this day.")}</div>
         </div>`}`;
 
     $$('[data-day]', el).forEach(p => p.onclick = () => { this.selectedDay = +p.dataset.day; this.renderSchedule(el); });
-    $('#addSchedule', el).onclick = () => this._scheduleModal();
-    $$('[data-edit]', el).forEach(b => b.onclick = () => this._scheduleModal(schedule.find(s => s.id === b.dataset.edit)));
-    $$('[data-del]', el).forEach(b => b.onclick = async () => {
-      if (!await confirmDialog('Hapus jadwal ini?', { danger: true, okText: 'Hapus' })) return;
-      await DB.remove('schedule', b.dataset.del);
-      toast('Jadwal dihapus.');
-      App.refresh();
-    });
   },
 
   _scheduleModal(item = null) {

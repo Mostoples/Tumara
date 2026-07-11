@@ -977,6 +977,64 @@ ion-icon { pointer-events: none; flex-shrink: 0; }
 }
 
 /* ============================================================
+   BERANDA GURU — hero, kartu statistik, grid menu (memakai token
+   warna yang ada; tidak menambah warna baru).
+   ============================================================ */
+.guru-hero {
+  background: linear-gradient(135deg, var(--brand-dark), var(--brand));
+  border-radius: var(--radius);
+  padding: 22px 22px 48px;
+  color: #fff;
+  margin-bottom: -36px;                 /* kartu statistik menimpa hero */
+  box-shadow: 0 12px 26px -12px rgba(16,185,129,.5);
+}
+.guru-hero-user { display: flex; align-items: center; gap: 14px; }
+.guru-hero-avatar .avatar-sm {
+  width: 52px; height: 52px; border-radius: 16px; font-size: 1.1rem;
+  border: 2px solid rgba(255,255,255,.55); background: rgba(255,255,255,.2);
+}
+.guru-hero-name { font-size: 1.15rem; font-weight: 800; letter-spacing: -.01em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.guru-hero-sub { font-size: .82rem; opacity: .9; margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.guru-hero-badge {
+  margin-left: auto; display: inline-flex; align-items: center; gap: 5px; flex-shrink: 0;
+  background: rgba(255,255,255,.22); color: #fff; font-size: .74rem; font-weight: 800;
+  padding: 7px 13px; border-radius: 999px; white-space: nowrap;
+}
+
+.guru-stat-card {
+  position: relative; z-index: 1;
+  display: grid; grid-template-columns: repeat(3, 1fr);
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius-sm); box-shadow: var(--shadow); overflow: hidden;
+}
+.guru-stat {
+  display: flex; flex-direction: column; align-items: center; gap: 7px;
+  padding: 18px 8px; text-align: center; min-width: 0;
+}
+.guru-stat + .guru-stat { border-left: 1px solid var(--border); }
+.guru-stat-ic { width: 44px; height: 44px; border-radius: 50%; display: grid; place-items: center; font-size: 1.35rem; }
+.guru-stat-num { font-size: 1.15rem; font-weight: 800; color: var(--text); line-height: 1.15; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.guru-stat-lb { font-size: .75rem; color: var(--text-3); font-weight: 600; }
+
+.guru-menu-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+.guru-tile {
+  position: relative;
+  display: flex; flex-direction: column; align-items: center; gap: 11px;
+  padding: 20px 8px; background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius-sm); cursor: pointer; font-family: var(--font);
+  transition: transform .12s ease, box-shadow .18s ease;
+}
+.guru-tile:hover { transform: translateY(-2px); box-shadow: var(--shadow-sm); }
+.guru-tile:active { transform: scale(.97); }
+.guru-tile-ic { width: 58px; height: 58px; border-radius: 50%; display: grid; place-items: center; font-size: 1.7rem; }
+.guru-tile-lb { font-size: .82rem; font-weight: 700; color: var(--text-2); text-align: center; line-height: 1.3; }
+.guru-tile-new {
+  position: absolute; top: 8px; right: 10px;
+  background: #ef4444; color: #fff; font-size: .58rem; font-weight: 800;
+  letter-spacing: .04em; padding: 2px 6px; border-radius: 999px;
+}
+
+/* ============================================================
    PORTAL (Admin & Guru) — shell, tabel, statistik, kredensial
    ============================================================ */
 
@@ -1090,37 +1148,42 @@ ion-icon { pointer-events: none; flex-shrink: 0; }
   .stat-mini { padding: 14px 8px; }
   .sm-num { font-size: 1.4rem; }
 
-  /* Tabel akun → kartu bertumpuk (tanpa scroll horizontal) */
-  .table-wrap { border: none; background: transparent; overflow: visible; }
-  .data-table { min-width: 0; font-size: .9rem; }
-  .data-table thead { display: none; }
-  .data-table, .data-table tbody, .data-table tbody tr, .data-table tbody td { display: block; width: 100%; }
-  .data-table tbody tr {
+  /* Tabel ber-kelas .stack → kartu bertumpuk (tanpa scroll horizontal).
+     OPT-IN: hanya tabel dengan class "stack" (mis. akun & roster yang
+     tiap sel-nya punya data-label). Tabel lain (gradebook nilai, absensi)
+     TETAP scroll horizontal via .table-wrap default agar tak berantakan. */
+  .table-wrap.stack { border: none; background: transparent; overflow: visible; }
+  .data-table.stack { min-width: 0; font-size: .9rem; }
+  .data-table.stack thead { display: none; }
+  .data-table.stack, .data-table.stack tbody, .data-table.stack tbody tr, .data-table.stack tbody td { display: block; width: 100%; }
+  .data-table.stack tbody tr {
     background: var(--surface); border: 1px solid var(--border);
     border-radius: var(--radius-sm); margin-bottom: 12px; overflow: hidden;
   }
-  .data-table tbody tr:hover { background: var(--surface); }
-  .data-table tbody td {
+  .data-table.stack tbody tr:hover { background: var(--surface); }
+  .data-table.stack tbody td {
     display: flex; align-items: center; justify-content: space-between; gap: 12px;
     padding: 11px 14px; text-align: right; border-bottom: 1px solid var(--border);
   }
-  .data-table tbody tr td:last-child { border-bottom: none; }
-  .data-table tbody td::before {
+  .data-table.stack tbody tr td:last-child { border-bottom: none; }
+  .data-table.stack tbody td::before {
     content: attr(data-label); flex-shrink: 0; text-align: left;
     font-size: .72rem; font-weight: 800; text-transform: uppercase;
     letter-spacing: .03em; color: var(--text-3);
   }
+  /* Sel tanpa data-label (mis. kolom "No") disembunyikan di mode kartu */
+  .data-table.stack tbody td:not([data-label]):not(.cell-primary) { display: none; }
   /* Baris nama = kepala kartu (rata kiri, tanpa label, ditonjolkan dgn aksen brand) */
-  .data-table tbody td.cell-primary {
+  .data-table.stack tbody td.cell-primary {
     justify-content: flex-start; text-align: left;
     background: var(--brand-soft); padding: 13px 14px;
     border-bottom: 1px solid var(--border);
   }
-  .data-table tbody td.cell-primary b { color: var(--text); }
-  .data-table tbody td.cell-primary::before { display: none; }
-  .data-table tbody td[data-label="Email"] { word-break: break-all; }
+  .data-table.stack tbody td.cell-primary b { color: var(--text); }
+  .data-table.stack tbody td.cell-primary::before { display: none; }
+  .data-table.stack tbody td[data-label="Email"] { word-break: break-all; }
   /* Tombol aksi lebih besar & mudah disentuh */
-  .data-table tbody td[data-label] .mini-icon-btn { width: 38px; height: 38px; }
+  .data-table.stack tbody td[data-label] .mini-icon-btn { width: 38px; height: 38px; }
 }
 
 /* Habit tracker & emoji picker */
@@ -1195,3 +1258,74 @@ ion-icon { pointer-events: none; flex-shrink: 0; }
 }
 .arabic-lg { font-size: 1.7rem; }
 .arabic-md { font-size: 1.5rem; }
+
+/* ============ DROPDOWN MENU ============ */
+.user-dropdown-wrap {
+  position: relative;
+  display: inline-block;
+}
+.user-dropdown-wrap .dropdown-menu {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 0;
+  min-width: 200px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm, 14px);
+  box-shadow: var(--shadow-lg);
+  padding: 6px;
+  z-index: 50;
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transform: translateY(6px);
+  transition: opacity .18s ease, transform .18s ease, visibility .18s;
+}
+.user-dropdown-wrap.open .dropdown-menu {
+  opacity: 1;
+  visibility: visible;
+  pointer-events: auto;
+  transform: translateY(0);
+}
+.dropdown-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 10px 14px;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--text-2);
+  font-family: var(--font);
+  font-size: .88rem;
+  font-weight: 600;
+  cursor: pointer;
+  text-align: left;
+  transition: background .15s, color .15s;
+}
+.dropdown-item:hover { background: var(--surface-2); color: var(--text); }
+.dropdown-item.danger { color: #ef4444; }
+.dropdown-item.danger:hover { background: rgba(239,68,68,.1); }
+.dropdown-item ion-icon { font-size: 1.15rem; flex-shrink: 0; }
+
+/* Topbar avatar dengan dropdown (pada desktop) */
+.topbar-actions .user-dropdown-wrap {
+  display: flex;
+  align-items: center;
+}
+.topbar-actions .dropdown-menu {
+  left: auto;
+  right: 0;
+  bottom: auto;
+  top: calc(100% + 8px);
+}
+@media (max-width: 860px) {
+  /* Topbar menempel di paling atas layar (sticky top:0), jadi dropdown avatar
+     HARUS terbuka ke BAWAH — bila ke atas, menunya keluar dari tepi atas layar
+     dan tak bisa ditekan (bug logout di HP). */
+  .topbar-actions .dropdown-menu {
+    top: calc(100% + 8px);
+    bottom: auto;
+  }
+}

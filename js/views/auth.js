@@ -197,9 +197,18 @@ const AuthView = {
 const OnboardView = {
   data: { jenisKelamin: 'L', aktivitas: 'ringan' },
 
-  render() {
+  async render() {
     const u = DB.user;
     const d = this.data;
+
+    // Muat daftar kelas (school_classes) untuk pilihan kelas siswa.
+    $('#onboardCard').innerHTML = `<div class="portal-loading"><div class="spinner"></div> ${tr('Memuat…', 'Loading…')}</div>`;
+    let classes = [];
+    try {
+      classes = (await DB.gList('school_classes'))
+        .sort((a, b) => (a.urutan ?? 999999) - (b.urutan ?? 999999) || (a.nama || '').localeCompare(b.nama || ''));
+    } catch (_) { classes = []; }
+
     $('#onboardCard').innerHTML = `
       <div style="text-align:center;margin-bottom:22px;">
         <div class="logo-mark" style="margin:0 auto 14px;width:54px;height:54px;"><img src="assets/logo.png" alt="Logo Tumara"></div>
@@ -246,9 +255,24 @@ const OnboardView = {
             ${Calc.AKTIVITAS.map(a => `<option value="${a.key}" ${a.key === d.aktivitas ? 'selected' : ''}>${a.label}</option>`).join('')}
           </select>
         </div>
+        <div class="grid grid-2 keep-2" style="gap:12px;">
+          <div class="field">
+            <label>${tr('Kelas', 'Class')}</label>
+            ${classes.length ? `
+            <select class="select" id="obKelas" required>
+              <option value="" ${u.kelasId ? '' : 'selected'} disabled>${tr('Pilih kelasmu…', 'Choose your class…')}</option>
+              ${classes.map(c => `<option value="${esc(c.id)}" ${c.id === u.kelasId ? 'selected' : ''}>${esc(c.nama)}</option>`).join('')}
+            </select>` : `
+            <input type="text" class="input" disabled value="${tr('Belum ada kelas — hubungi admin', 'No classes yet — contact admin')}">`}
+          </div>
+          <div class="field">
+            <label>NIS</label>
+            <input type="text" class="input" id="obNis" inputmode="numeric" maxlength="20" placeholder="${tr('No. Induk Siswa', 'Student ID')}" value="${esc(u.nis || '')}">
+          </div>
+        </div>
         <div class="field">
           <label>${tr('Asal sekolah', 'School')} <span style="font-weight:500;color:var(--text-3)">${tr('(opsional)', '(optional)')}</span></label>
-          <input type="text" class="input" id="obSekolah" placeholder="${tr('mis. SMAN 1 Bandung', 'e.g. Bandung High School 1')}">
+          <input type="text" class="input" id="obSekolah" placeholder="${tr('mis. SMAN 1 Bandung', 'e.g. Bandung High School 1')}" value="${esc(u.sekolah || '')}">
         </div>
 
         <div class="disclaimer" style="margin:6px 0 18px;">
@@ -264,12 +288,27 @@ const OnboardView = {
       $$('#obJK .radio-card').forEach(x => x.classList.toggle('selected', x === c));
     });
 
+    // NIS: hanya angka, maksimal 20 digit.
+    const nisEl = $('#obNis');
+    if (nisEl) nisEl.oninput = () => { nisEl.value = nisEl.value.replace(/\D/g, '').slice(0, 20); };
+
     $('#obForm').onsubmit = async e => {
       e.preventDefault();
       const usia = +$('#obUsia').value, tinggi = +$('#obTinggi').value, berat = +$('#obBerat').value;
       if (!usia) return toast(tr('Masukkan usia kamu.', 'Please enter your age.'), 'warning');
       if (!tinggi || tinggi < 100 || tinggi > 230) return toast(tr('Periksa kembali tinggi badanmu (cm).', 'Please double-check your height (cm).'), 'warning');
       if (!berat || berat < 25 || berat > 200) return toast(tr('Periksa kembali berat badanmu (kg).', 'Please double-check your weight (kg).'), 'warning');
+
+      // Kelas & NIS (wajib bila admin sudah membuat kelas) — inilah yang
+      // menautkan akun siswa ke kelasnya agar muncul di roster guru.
+      const kelasSel = $('#obKelas');
+      let kelasId = u.kelasId || '', kelasNama = u.kelasNama || '', nis = (nisEl?.value || '').replace(/\D/g, '').slice(0, 20);
+      if (kelasSel) {
+        kelasId = kelasSel.value;
+        if (!kelasId) return toast(tr('Pilih kelasmu dulu.', 'Please choose your class first.'), 'warning');
+        kelasNama = classes.find(c => c.id === kelasId)?.nama || '';
+        if (!nis) return toast(tr('Masukkan NIS-mu (sesuai data sekolah).', 'Please enter your NIS (as on the school record).'), 'warning');
+      }
 
       const aktivitas = $('#obAktivitas').value;
       const jenisKelamin = this.data.jenisKelamin;
@@ -280,6 +319,7 @@ const OnboardView = {
       await DB.updateUser({
         usia, jenisKelamin, tinggi, berat, aktivitas,
         sekolah: $('#obSekolah').value.trim(),
+        kelasId, kelasNama, nis,
         targetKalori: tdee,
         targetAir: air.gelas,
         profileComplete: true

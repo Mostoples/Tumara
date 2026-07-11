@@ -2,6 +2,53 @@
 
 > Catatan handoff untuk melanjutkan pengerjaan di sesi Claude Code berikutnya.
 
+## Status: ✅ v1.3 — Enrolment terpusat + tugas/jadwal dari guru + wali kelas + beranda guru
+
+Fokus v1.3: menata alur **sekolah** (admin → guru → siswa) dan membuat tugas/jadwal mengalir dari guru ke siswa.
+
+### 1. Enrolment terpusat (data induk admin)
+- **Koleksi Firestore top-level baru** (bukan subkoleksi user): `school_classes` (daftar kelas: `nama`, `keterangan`, `urutan?`) & `school_roster` (data acuan siswa: `classId`, `nama`, `nis`).
+- **Admin** (`js/views/admin.js`, state `view: accounts|classes`): menu **"Kelas & Siswa"** — buat/ubah/hapus kelas, **import massal** siswa (tempel `Nama, NIS`; parser `_parseRoster`, pemisah `,`/`;`/tab/2+ spasi), tambah/edit/hapus siswa, ekspor CSV. **NIS dibatasi maks 20 angka** (helper `_cleanNis`/`_bindNis`) di semua input NIS.
+- Roster admin = **acuan**; roster aktif guru berasal dari siswa yang sudah login (lihat #2).
+
+### 2. Siswa login Google → pilih kelas + NIS
+- Onboarding siswa (`OnboardView` di `js/views/auth.js`, kini **async**) + halaman Profil (`js/views/profile.js`) menambah field **Kelas** (dropdown `school_classes`) + **NIS** → disimpan ke profil user `{ kelasId, kelasNama, nis }`.
+- Roster guru `Teacher._students(classId)` = **akun siswa** ber-`kelasId` itu via `DB.listStudentsByClass(classId)` (query `users where role=='siswa' && kelasId==`). Absensi/nilai/jurnal kini di-key oleh **uid siswa asli**; pemantauan ibadah/kesehatan per-siswa aktif kembali.
+
+### 3. Guru pilih kelas yang diampu
+- Tab "Kelas" guru: tombol **"Tambah Kelas"** → modal pilih dari `school_classes` (bukan bikin kelas sendiri). Disimpan di `DB.user.kelasAmpu` (array classId). `_classes()` = school_classes ∩ kelasAmpu.
+
+### 4. Tugas & jadwal DIKIRIM guru (siswa read-only)
+- `class_tasks` (top-level: `classId, judul, mapel, tenggat, prioritas, guruId, guruNama`) — dibuat guru pengampu di tab **"Tugas Kelas"**. Siswa (`js/views/productivity.js`) hanya menerima (tombol "Tugas Baru" dihapus); boleh mencentang selesai → `DB.user.tugasSelesai` (array id).
+- `class_schedule/{classId}` (top-level, doc id = classId: `entries[]`, `waliNama`) — **hanya wali kelas** yang menulis, di tab **"Jadwal Kelas"**. Siswa menerima read-only (tombol "Tambah" dihapus).
+
+### 5. Wali kelas + form Data Guru
+- Guru mengisi form **"Data Guru"** (`Teacher._setupModal`): nama, mapel, toggle wali + pilih kelas → `{ nama, mapel, waliKelasId, guruSetup }`. Muncul otomatis saat guru pertama login (`!guruSetup`) & bisa dibuka ulang dari tombol topbar `#topGuruBtn`.
+- Tab **"Jadwal Kelas"** hanya muncul di nav bila `waliKelasId` terisi (`refreshGuruNav()` di `guru.html`); `renderJadwalKelas` terikat langsung ke kelas wali (tanpa pemilih kelas).
+
+### 6. Beranda guru (dashboard)
+- Tab default guru = **`beranda`** (`Teacher.renderBeranda`): hero (avatar+nama+badge wali/guru), kartu statistik (Siswa/Mapel/Kelas), grid menu ubin → menaut ke tab yang sudah ada (`Teacher._goto`). CSS `.guru-hero/.guru-stat-card/.guru-menu-grid/.guru-tile` di `style.css` (memakai token warna yang ada, tanpa warna baru).
+
+### 7. Perbaikan lain
+- **Ibadah auto-reset tengah malam** (`js/views/ibadah.js` `_watchDayChange`): interval 30 dtk + event `visibilitychange`/`focus`, waktu lokal perangkat (WIB/WITA/WIT ikut jam device).
+- **Pemantauan kesehatan** (`teacher.js`): modal detail siswa kini **auto-refresh 10 dtk** (guard `m.isConnected`, pertahankan scroll); fix pencocokan tanggal **mood** pakai tanggal lokal (`_moodOnDate`), bukan slice UTC.
+- **Responsif**: fix dropdown logout guru di HP (dropdown buka ke bawah), tabel `.data-table` stack jadi **opt-in** via kelas `.stack` (gradebook/absensi tetap scroll), h1 hero landing di HP.
+
+### Lapisan data (`js/db.js`)
+- **Koleksi global**: `gList / gListWhere / gAdd / gAddMany (writeBatch ≤500) / gUpdate (UPSERT di kedua adapter) / gRemove / gGet`.
+- `listStudentsByClass(classId)`.
+- **Rules** (`firestore.rules`): `school_classes`/`school_roster` read semua-auth, write admin; `class_tasks` write guru; `class_schedule/{classId}` write hanya wali (`get(users/uid).data.waliKelasId == classId`); guru boleh baca user role=siswa.
+- **Composite index** `users(role, kelasId)` di `firestore.indexes.json` (didaftarkan di `firebase.json`).
+
+### ⚠️ Deploy
+**Wajib `firebase deploy` PENUH** (hosting + rules + index). `--only firestore:rules` TIDAK mengirim hosting/JS/CSS maupun index → perubahan tak live. `version.json` = 1.3.x.
+
+### Catatan naming (berubah dari v1.1/1.2)
+- `Prod.openTaskModal()` & `Prod._scheduleModal()` jadi **tak terpakai** (siswa tak buat tugas/jadwal sendiri). Subkoleksi lama per-guru `classes`/`students` & subkoleksi siswa `tasks`/`schedule` juga tak terpakai (tanpa migrasi; data uji).
+- Method guru baru: `renderBeranda`, `renderTugasKelas`/`_tugasKelasModal`, `renderJadwalKelas`/`_jadwalKelasModal`, `_setupModal`, `_goto`, `_moodOnDate`.
+
+---
+
 ## Status: ✅ v1.2 — Cakupan penuh fitur `draff apk (1).pdf`
 
 ### Ditambahkan di v1.2 (melengkapi semua item PDF yang feasible)

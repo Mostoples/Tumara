@@ -6,7 +6,16 @@
    ============================================================ */
 
 const Teacher = {
-  tab: 'kelas',
+  TABS: ['kelas', 'absensi', 'nilai', 'jurnal', 'jadwal'],
+  _TAB_KEY: 'tumara_guru_tab',
+  // Tab aktif dipulihkan dari localStorage agar refresh tidak balik ke tab pertama.
+  get tab() {
+    const t = localStorage.getItem(this._TAB_KEY);
+    return this.TABS.includes(t) ? t : 'kelas';
+  },
+  set tab(v) {
+    if (this.TABS.includes(v)) localStorage.setItem(this._TAB_KEY, v);
+  },
   classId: null,          // kelas aktif (absensi/nilai/jurnal)
   attDate: todayStr(),
   attPertemuan: 1,
@@ -49,6 +58,15 @@ const Teacher = {
       .sort((a, b) => (a.urutan ?? 999) - (b.urutan ?? 999) || (a.nama || '').localeCompare(b.nama || ''));
   },
 
+  // Avatar siswa/akun: foto profil (fotoUrl/photoURL) bila ada, selain itu inisial.
+  // referrerpolicy diperlukan agar foto akun Google tidak diblokir (403).
+  _avatarHTML(u) {
+    const foto = u.fotoUrl || u.photoURL;
+    const inisial = esc((u.nama || u.email || '?').trim().split(/\s+/).map(w => w[0]).slice(0, 2).join('').toUpperCase());
+    const inner = foto ? `<img src="${esc(foto)}" alt="${esc(u.nama || 'Foto profil')}" referrerpolicy="no-referrer">` : inisial;
+    return `<span class="avatar avatar-sm${foto ? ' avatar-photo' : ''}">${inner}</span>`;
+  },
+
   // Pemilih kelas (dropdown) dipakai di beberapa tab
   _classPicker(classes, id = 'tClass') {
     return `<select class="select" id="${id}" style="max-width:280px;">
@@ -84,7 +102,7 @@ const Teacher = {
             <div style="display:flex;gap:8px;">
               <button class="btn btn-sm" id="editClass"><ion-icon name="create-outline"></ion-icon> ${tr('Ubah', 'Edit')}</button>
               <button class="btn btn-sm btn-soft-danger" id="delClass"><ion-icon name="trash-outline"></ion-icon></button>
-              <button class="btn btn-primary btn-sm" id="addStudent"><ion-icon name="person-add-outline"></ion-icon> ${tr('Tambah Siswa', 'Add Student')}</button>
+              <button class="btn btn-primary btn-sm" id="pickStudent"><ion-icon name="person-add-outline"></ion-icon> ${tr('Pilih Siswa', 'Select Students')}</button>
             </div>
           </div>
 
@@ -96,26 +114,21 @@ const Teacher = {
                   ${students.map((s, i) => `
                     <tr>
                       <td class="center">${i + 1}</td>
-                      <td><b>${esc(s.nama)}</b></td>
+                      <td><div style="display:flex;align-items:center;gap:10px;">${this._avatarHTML(s)}<b>${esc(s.nama)}</b></div></td>
                       <td style="color:var(--text-3);">${esc(s.nis || '-')}</td>
                       <td style="text-align:right;white-space:nowrap;">
-                        <button class="mini-icon-btn" data-edits="${s.id}"><ion-icon name="create-outline"></ion-icon></button>
-                        <button class="mini-icon-btn danger" data-dels="${s.id}"><ion-icon name="trash-outline"></ion-icon></button>
+                        <button class="mini-icon-btn danger" data-dels="${s.id}" title="${tr('Keluarkan dari kelas', 'Remove from class')}"><ion-icon name="person-remove-outline"></ion-icon></button>
                       </td>
                     </tr>`).join('')}
                 </tbody>
               </table>
-            </div>
-            <div style="margin-top:14px;">
-              <button class="btn btn-sm" id="bulkAdd"><ion-icon name="list-outline"></ion-icon> ${tr('Tambah Massal (tempel daftar nama)', 'Bulk add (paste name list)')}</button>
             </div>` : `
             <div class="empty-state" style="padding:30px 10px;">
               <ion-icon name="person-add-outline"></ion-icon>
               <div class="es-title">${tr('Belum ada siswa di kelas ini', 'No students in this class yet')}</div>
-              <div class="es-sub">${tr('Tambahkan satu per satu atau tempel daftar nama sekaligus', 'Add one by one or paste a whole name list')}</div>
+              <div class="es-sub">${tr('Pilih siswa dari akun yang sudah dibuatkan admin.', 'Select students from the accounts created by the admin.')}</div>
               <div style="display:flex;gap:8px;justify-content:center;margin-top:14px;">
-                <button class="btn btn-primary btn-sm" id="addStudent2"><ion-icon name="add"></ion-icon> ${tr('Tambah Siswa', 'Add Student')}</button>
-                <button class="btn btn-sm" id="bulkAdd2"><ion-icon name="list-outline"></ion-icon> ${tr('Tambah Massal', 'Bulk add')}</button>
+                <button class="btn btn-primary btn-sm" id="pickStudent2"><ion-icon name="person-add-outline"></ion-icon> ${tr('Pilih Siswa', 'Select Students')}</button>
               </div>
             </div>`}
         </div>` : `
@@ -142,20 +155,13 @@ const Teacher = {
         toast(tr('Kelas dihapus.', 'Class deleted.'));
         this.render(this._el);
       };
-      const addS = () => this._studentModal(active.id);
-      $('#addStudent', el) && ($('#addStudent', el).onclick = addS);
-      $('#addStudent2', el) && ($('#addStudent2', el).onclick = addS);
-      const bulk = () => this._bulkStudentModal(active.id);
-      $('#bulkAdd', el) && ($('#bulkAdd', el).onclick = bulk);
-      $('#bulkAdd2', el) && ($('#bulkAdd2', el).onclick = bulk);
-      $$('[data-edits]', el).forEach(b => b.onclick = async () => {
-        const s = (await this._students(active.id)).find(x => x.id === b.dataset.edits);
-        this._studentModal(active.id, s);
-      });
+      const pick = () => this._pickStudentsModal(active.id);
+      $('#pickStudent', el) && ($('#pickStudent', el).onclick = pick);
+      $('#pickStudent2', el) && ($('#pickStudent2', el).onclick = pick);
       $$('[data-dels]', el).forEach(b => b.onclick = async () => {
-        if (!await confirmDialog(tr('Hapus siswa ini?', 'Delete this student?'), { danger: true, okText: tr('Hapus', 'Delete') })) return;
+        if (!await confirmDialog(tr('Keluarkan siswa ini dari kelas?', 'Remove this student from the class?'), { danger: true, okText: tr('Keluarkan', 'Remove') })) return;
         await DB.remove('students', b.dataset.dels);
-        toast(tr('Siswa dihapus.', 'Student removed.'));
+        toast(tr('Siswa dikeluarkan dari kelas.', 'Student removed from class.'));
         this.render(this._el);
       });
     }
@@ -189,63 +195,100 @@ const Teacher = {
     });
   },
 
-  _studentModal(classId, student = null) {
-    openModal({
-      title: student ? tr('Ubah Siswa', 'Edit Student') : tr('Tambah Siswa', 'Add Student'),
-      body: `
-        <div class="field">
-          <label>${tr('Nama siswa', 'Student name')}</label>
-          <input type="text" class="input" id="mNama" placeholder="${tr('Nama lengkap', 'Full name')}" value="${esc(student?.nama || '')}">
-        </div>
-        <div class="field">
-          <label>NIS <span style="font-weight:500;color:var(--text-3)">${tr('(opsional)', '(optional)')}</span></label>
-          <input type="text" class="input" id="mNis" value="${esc(student?.nis || '')}">
-        </div>
-        <button class="btn btn-primary btn-block" id="mSave"><ion-icon name="checkmark"></ion-icon> ${tr('Simpan', 'Save')}</button>`,
-      onMount: m => {
-        $('#mSave', m).onclick = async () => {
-          const nama = $('#mNama', m).value.trim();
-          if (!nama) return toast(tr('Isi nama siswa.', 'Enter a student name.'), 'warning');
-          const data = { classId, nama, nis: $('#mNis', m).value.trim() };
-          if (student) await DB.update('students', student.id, data);
-          else {
-            const existing = await this._students(classId);
-            await DB.add('students', { ...data, urutan: existing.length });
-          }
-          closeModal();
-          toast(tr('Siswa tersimpan 🧑‍🎓', 'Student saved 🧑‍🎓'));
-          this.render(this._el);
-        };
-      }
-    });
-  },
+  // Pilih anggota kelas dari akun siswa yang dibuatkan admin (bukan input manual).
+  // Guru mencentang siswa; simpan akan menyinkronkan daftar anggota kelas.
+  async _pickStudentsModal(classId) {
+    let accounts = [];
+    try {
+      accounts = await DB.listStudents();
+    } catch (e) {
+      return toast(tr('Gagal memuat daftar akun siswa. Pastikan Security Rules sudah di-deploy.',
+                      'Failed to load student accounts. Make sure the Security Rules are deployed.'), 'error');
+    }
+    accounts.sort((a, b) => (a.nama || a.email || '').localeCompare(b.nama || b.email || ''));
 
-  _bulkStudentModal(classId) {
+    const enrolled = await this._students(classId);
+    // Peta userId → record enrollment (untuk tahu mana yang sudah anggota)
+    const enrolledByUser = new Map(enrolled.filter(e => e.userId).map(e => [e.userId, e]));
+    // Set pilihan awal = siswa yang sudah jadi anggota
+    const selected = new Set(enrolledByUser.keys());
+
+    const row = a => `
+      <label class="pick-row" data-uid="${a.id}" style="display:flex;align-items:center;gap:10px;padding:8px 10px;border:1px solid var(--border);border-radius:var(--radius-xs);cursor:pointer;">
+        <input type="checkbox" data-cb="${a.id}" ${selected.has(a.id) ? 'checked' : ''}>
+        ${this._avatarHTML(a)}
+        <span style="min-width:0;flex:1;">
+          <b style="display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(a.nama || tr('(tanpa nama)', '(no name)'))}</b>
+          <span style="font-size:.76rem;color:var(--text-3);">${esc(a.email || '')}${a.kelas ? ' · ' + esc(a.kelas) : ''}${a.nis ? ' · NIS ' + esc(a.nis) : ''}</span>
+        </span>
+      </label>`;
+
     openModal({
-      title: tr('Tambah Siswa Massal', 'Bulk Add Students'),
-      body: `
-        <p style="font-size:.84rem;color:var(--text-3);margin-bottom:10px;">${tr('Tempel daftar nama, satu nama per baris. Bisa juga format "NIS, Nama".', 'Paste a name list, one name per line. Optional format "NIS, Name".')}</p>
-        <div class="field">
-          <textarea class="textarea" id="mBulk" style="min-height:160px;" placeholder="Andi Saputra&#10;Budi Santoso&#10;1234, Citra Dewi"></textarea>
+      title: tr('Pilih Siswa', 'Select Students'),
+      body: accounts.length ? `
+        <p style="font-size:.84rem;color:var(--text-3);margin-bottom:10px;">${tr('Centang siswa yang menjadi anggota kelas ini. Akun siswa dibuat oleh admin.', 'Tick the students who belong to this class. Student accounts are created by the admin.')}</p>
+        <div class="input-group" style="margin-bottom:12px;">
+          <input type="text" class="input" id="pSearch" placeholder="${tr('Cari nama, email, kelas…', 'Search name, email, class…')}">
+          <button type="button" class="suffix-btn"><ion-icon name="search-outline"></ion-icon></button>
         </div>
-        <button class="btn btn-primary btn-block" id="mSave"><ion-icon name="checkmark"></ion-icon> ${tr('Tambahkan Semua', 'Add All')}</button>`,
+        <div id="pList" style="max-height:46vh;overflow-y:auto;display:flex;flex-direction:column;gap:6px;margin-bottom:6px;">
+          ${accounts.map(row).join('')}
+        </div>
+        <div style="font-size:.8rem;color:var(--text-3);margin:6px 0 14px;"><span id="pCount">${selected.size}</span> ${tr('siswa dipilih', 'students selected')}</div>
+        <button class="btn btn-primary btn-block" id="mSave"><ion-icon name="checkmark"></ion-icon> ${tr('Simpan Anggota Kelas', 'Save Class Members')}</button>`
+      : `
+        <div class="empty-state" style="padding:24px 10px;">
+          <ion-icon name="people-outline"></ion-icon>
+          <div class="es-title">${tr('Belum ada akun siswa', 'No student accounts yet')}</div>
+          <div class="es-sub">${tr('Minta admin membuatkan akun siswa terlebih dahulu.', 'Ask the admin to create student accounts first.')}</div>
+        </div>`,
       onMount: m => {
-        $('#mSave', m).onclick = async () => {
-          const lines = $('#mBulk', m).value.split('\n').map(l => l.trim()).filter(Boolean);
-          if (!lines.length) return toast(tr('Daftar masih kosong.', 'The list is empty.'), 'warning');
-          const btn = $('#mSave', m); btn.disabled = true;
-          const start = (await this._students(classId)).length;
-          let i = 0;
-          for (const line of lines) {
-            let nis = '', nama = line;
-            const parts = line.split(',');
-            if (parts.length >= 2 && /^\S+$/.test(parts[0].trim())) { nis = parts[0].trim(); nama = parts.slice(1).join(',').trim(); }
-            await DB.add('students', { classId, nama, nis, urutan: start + i });
-            i++;
+        const countEl = $('#pCount', m);
+        const refreshCount = () => { if (countEl) countEl.textContent = selected.size; };
+
+        $$('[data-cb]', m).forEach(cb => cb.onchange = () => {
+          if (cb.checked) selected.add(cb.dataset.cb); else selected.delete(cb.dataset.cb);
+          refreshCount();
+        });
+
+        const search = $('#pSearch', m);
+        if (search) search.oninput = () => {
+          const q = search.value.trim().toLowerCase();
+          $$('.pick-row', m).forEach(r => {
+            const a = accounts.find(x => x.id === r.dataset.uid) || {};
+            const hay = `${a.nama || ''} ${a.email || ''} ${a.kelas || ''} ${a.nis || ''}`.toLowerCase();
+            r.style.display = !q || hay.includes(q) ? '' : 'none';
+          });
+        };
+
+        const saveBtn = $('#mSave', m);
+        if (saveBtn) saveBtn.onclick = async () => {
+          saveBtn.disabled = true;
+          try {
+            let order = enrolled.length;
+            // Tambah yang baru dicentang
+            for (const a of accounts) {
+              if (selected.has(a.id) && !enrolledByUser.has(a.id)) {
+                await DB.add('students', {
+                  classId, userId: a.id,
+                  nama: a.nama || a.email || tr('Siswa', 'Student'),
+                  nis: a.nis || '',
+                  fotoUrl: a.fotoUrl || a.photoURL || '',
+                  urutan: order++
+                });
+              }
+            }
+            // Keluarkan yang dilepas centangnya
+            for (const [userId, rec] of enrolledByUser) {
+              if (!selected.has(userId)) await DB.remove('students', rec.id);
+            }
+            closeModal();
+            toast(tr('Anggota kelas diperbarui 🧑‍🎓', 'Class members updated 🧑‍🎓'));
+            this.render(this._el);
+          } catch (e) {
+            saveBtn.disabled = false;
+            toast(e.message, 'error');
           }
-          closeModal();
-          toast(tr(`${i} siswa ditambahkan 🧑‍🎓`, `${i} students added 🧑‍🎓`));
-          this.render(this._el);
         };
       }
     });
@@ -566,7 +609,9 @@ const Teacher = {
     $$('[data-edit]', el).forEach(b => b.onclick = () => this._jurnalModal(journals.find(j => j.id === b.dataset.edit)));
     $$('[data-del]', el).forEach(b => b.onclick = async () => {
       if (!await confirmDialog(tr('Hapus jurnal ini?', 'Delete this journal?'), { danger: true, okText: tr('Hapus', 'Delete') })) return;
+      const jrn = journals.find(j => j.id === b.dataset.del);
       await DB.remove('journals', b.dataset.del);
+      Storage.deleteByUrl(jrn?.foto);   // bersihkan file foto di Supabase (best-effort)
       toast(tr('Jurnal dihapus.', 'Journal deleted.'));
       this.render(this._el);
     });
@@ -603,10 +648,20 @@ const Teacher = {
         $('#mFoto', m).onchange = async e => {
           const f = e.target.files[0];
           if (!f) return;
+          const prev = $('#fotoPrev', m);
+          const oldUrl = fotoData;   // foto sebelumnya (untuk dibersihkan bila terganti)
+          prev.innerHTML = `<span style="display:inline-flex;align-items:center;gap:6px;font-size:.82rem;color:var(--text-3);">
+            <ion-icon name="cloud-upload-outline"></ion-icon> ${tr('Mengunggah foto…', 'Uploading photo…')}</span>`;
           try {
-            fotoData = await compressImage(f, { maxDim: 800, quality: 0.55 });
-            $('#fotoPrev', m).innerHTML = `<img src="${fotoData}" style="max-height:90px;border-radius:8px;">`;
-          } catch (_) { toast(tr('Gagal memproses gambar.', 'Failed to process image.'), 'error'); }
+            // Unggah file ke Supabase Storage; yang disimpan ke Firestore hanya URL-nya.
+            fotoData = await Storage.uploadFoto(f, 'jurnal');
+            prev.innerHTML = `<img src="${fotoData}" style="max-height:90px;border-radius:8px;">`;
+            Storage.deleteByUrl(oldUrl);   // hapus foto lama (best-effort)
+          } catch (err) {
+            fotoData = oldUrl;
+            prev.innerHTML = oldUrl ? `<img src="${oldUrl}" style="max-height:90px;border-radius:8px;">` : '';
+            toast(tr('Gagal mengunggah foto: ', 'Failed to upload photo: ') + (err.message || ''), 'error');
+          }
         };
         $('#mSave', m).onclick = async () => {
           const judul = $('#mJudul', m).value.trim();

@@ -2,6 +2,25 @@
    TUMARA — Tampilan Auth (Masuk / Daftar) & Onboarding
    ============================================================ */
 
+// Simpan kredensial ke pengelola sandi browser agar muncul notifikasi
+// "Simpan sandi" (mis. dari Google/Chrome). Memakai Credential Management API,
+// yang hanya tersedia di browser Chromium & konteks aman (HTTPS/localhost).
+// Diabaikan diam-diam bila tidak didukung (Firefox/Safari tetap pakai heuristik form).
+async function savePasswordCredential(email, password) {
+  // Prompt simpan sandi butuh secure context (HTTPS atau http://localhost).
+  // Bila dibuka via file:// atau http di IP LAN, API-nya nonaktif.
+  if (!window.isSecureContext) {
+    console.warn('[Tumara] Simpan sandi dinonaktifkan: halaman bukan secure context (butuh HTTPS atau localhost).');
+    return;
+  }
+  try {
+    if (window.PasswordCredential && email && password) {
+      const cred = new window.PasswordCredential({ id: email, password, name: email });
+      await navigator.credentials.store(cred);
+    }
+  } catch (_) { /* tidak didukung — abaikan */ }
+}
+
 const AuthView = {
   mode: 'login', // 'login' | 'register'
 
@@ -49,12 +68,12 @@ const AuthView = {
         <form id="authForm" novalidate>
           <div class="field">
             <label>Email</label>
-            <input type="email" class="input" id="fEmail" placeholder="${tr('nama@email.com', 'name@email.com')}" required autocomplete="email">
+            <input type="email" class="input" id="fEmail" name="email" placeholder="${tr('nama@email.com', 'name@email.com')}" required autocomplete="username">
           </div>
           <div class="field">
             <label>${tr('Kata sandi', 'Password')}</label>
             <div class="input-group">
-              <input type="password" class="input" id="fPass" placeholder="••••••••" required autocomplete="current-password">
+              <input type="password" class="input" id="fPass" name="password" placeholder="••••••••" required autocomplete="current-password">
               <button type="button" class="suffix-btn" id="togglePass"><ion-icon name="eye-outline"></ion-icon></button>
             </div>
           </div>
@@ -75,16 +94,16 @@ const AuthView = {
         <form id="authForm" novalidate>
           <div class="field">
             <label>${tr('Nama lengkap', 'Full name')}</label>
-            <input type="text" class="input" id="fNama" placeholder="${tr('Nama kamu', 'Your name')}" required autocomplete="name">
+            <input type="text" class="input" id="fNama" name="name" placeholder="${tr('Nama kamu', 'Your name')}" required autocomplete="name">
           </div>
           <div class="field">
             <label>Email</label>
-            <input type="email" class="input" id="fEmail" placeholder="${tr('nama@email.com', 'name@email.com')}" required autocomplete="email">
+            <input type="email" class="input" id="fEmail" name="email" placeholder="${tr('nama@email.com', 'name@email.com')}" required autocomplete="username">
           </div>
           <div class="field">
             <label>${tr('Kata sandi', 'Password')}</label>
             <div class="input-group">
-              <input type="password" class="input" id="fPass" placeholder="${tr('Minimal 6 karakter', 'At least 6 characters')}" required autocomplete="new-password">
+              <input type="password" class="input" id="fPass" name="password" placeholder="${tr('Minimal 6 karakter', 'At least 6 characters')}" required autocomplete="new-password">
               <button type="button" class="suffix-btn" id="togglePass"><ion-icon name="eye-outline"></ion-icon></button>
             </div>
           </div>
@@ -160,6 +179,8 @@ const AuthView = {
           }
           toast(tr(`Selamat datang, ${(u.nama || '').split(' ')[0]}!`, `Welcome, ${(u.nama || '').split(' ')[0]}!`));
         }
+        // Picu notifikasi "Simpan sandi" browser sebelum berpindah halaman.
+        await savePasswordCredential(email, pass);
         setTimeout(() => location.replace(roleHome(u.role)), 400); // beri waktu toast tampil
       } catch (err) {
         toast(err.message, 'error');

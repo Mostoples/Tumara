@@ -92,6 +92,13 @@ const DB = (() => {
       return this._users().map(u => { const { passHash, ...safe } = u; return safe; });
     },
 
+    // Daftar akun siswa (dipakai guru untuk memilih anggota kelas).
+    async listStudents() {
+      return this._users()
+        .filter(u => (u.role || 'siswa') === 'siswa')
+        .map(u => { const { passHash, ...safe } = u; return safe; });
+    },
+
     async adminCreateUser({ nama, email, password, role = 'guru', extra = {} }) {
       email = email.trim().toLowerCase();
       if (this._users().some(u => u.email === email)) {
@@ -123,6 +130,10 @@ const DB = (() => {
     },
 
     async adminDeleteUser(id) {
+      const target = this._users().find(u => u.id === id);
+      if (target && (target.role || 'siswa') === 'admin') {
+        throw new Error(tr('Akun admin tidak bisa dihapus.', 'Admin accounts cannot be deleted.'));
+      }
       this._saveUsers(this._users().filter(u => u.id !== id));
       // buang data milik user tsb.
       Object.keys(localStorage)
@@ -339,6 +350,15 @@ const DB = (() => {
       return snap.docs.map(d => ({ id: d.id, ...d.data() }));
     },
 
+    // Daftar akun siswa saja (dipakai guru untuk memilih anggota kelas).
+    // Security Rules mengizinkan guru membaca dokumen ber-role 'siswa'.
+    async listStudents() {
+      const { F, db } = this.fb;
+      const qy = F.query(F.collection(db, 'users'), F.where('role', '==', 'siswa'));
+      const snap = await F.getDocs(qy);
+      return snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    },
+
     // Buat akun baru TANPA menendang admin dari sesinya, dengan memakai
     // instance Firebase app kedua (auth terpisah). User baru menulis
     // dokumen profilnya sendiri (diizinkan Rules), lalu app kedua ditutup.
@@ -389,6 +409,10 @@ const DB = (() => {
     // Admin SDK/Cloud Functions; menandai nonaktif sudah cukup untuk sekolah).
     async adminDeleteUser(id) {
       const { F, db } = this.fb;
+      const snap = await F.getDoc(F.doc(db, 'users', id));
+      if (snap.exists() && (snap.data().role || 'siswa') === 'admin') {
+        throw new Error(tr('Akun admin tidak bisa dihapus.', 'Admin accounts cannot be deleted.'));
+      }
       await F.deleteDoc(F.doc(db, 'users', id));
     },
 
@@ -592,6 +616,7 @@ const DB = (() => {
 
     // Admin
     adminListUsers: () => adapter.adminListUsers(),
+    listStudents: () => adapter.listStudents(),
     adminCreateUser: d => adapter.adminCreateUser(d),
     adminUpdateUser: (id, p) => adapter.adminUpdateUser(id, p),
     adminDeleteUser: id => adapter.adminDeleteUser(id),

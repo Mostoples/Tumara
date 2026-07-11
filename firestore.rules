@@ -9,9 +9,28 @@ service cloud.firestore {
         && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
     }
 
+    // Guru = pengguna yang dokumen profilnya memiliki role 'guru'.
+    function isGuru() {
+      return request.auth != null
+        && exists(/databases/$(database)/documents/users/$(request.auth.uid))
+        && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'guru';
+    }
+
     match /users/{uid} {
-      // Pemilik boleh baca/tulis dokumen profilnya sendiri; admin boleh semua akun.
-      allow read, write: if request.auth != null && (request.auth.uid == uid || isAdmin());
+      // Pemilik boleh baca dokumennya; admin boleh semua akun; guru boleh
+      // membaca akun siswa (untuk memilih anggota kelas). Query guru harus
+      // dibatasi where('role','==','siswa') agar lolos aturan ini.
+      allow read: if request.auth != null
+        && (request.auth.uid == uid || isAdmin() || (isGuru() && resource.data.role == 'siswa'));
+
+      // Menulis profil hanya oleh pemilik atau admin.
+      allow create, update: if request.auth != null && (request.auth.uid == uid || isAdmin());
+
+      // Akun admin tidak boleh dihapus siapa pun (termasuk admin lain / dirinya
+      // sendiri). Akun non-admin hanya boleh dihapus oleh admin/pemilik.
+      allow delete: if request.auth != null
+        && (request.auth.uid == uid || isAdmin())
+        && resource.data.role != 'admin';
 
       // Seluruh subkoleksi data (health, tasks, classes, students, grades, dll.)
       // milik pemiliknya sendiri; admin juga boleh untuk keperluan pengelolaan.

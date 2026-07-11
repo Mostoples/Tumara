@@ -28,6 +28,7 @@
       </div>
       <div class="portal-actions">
         <button class="icon-btn" id="themeBtn" title="Ganti tema"><ion-icon name="moon-outline"></ion-icon></button>
+        <button class="icon-btn" id="passBtn" title="Ganti kata sandi"><ion-icon name="key-outline"></ion-icon></button>
         <button class="btn btn-sm btn-soft-danger" id="logoutBtn"><ion-icon name="log-out-outline"></ion-icon> <span data-en="Sign out">Keluar</span></button>
       </div>
     </header>
@@ -59,6 +60,7 @@
       setTheme(u.tema || localStorage.getItem('tumara_theme') || 'light');
       document.getElementById('themeBtn').onclick = () =>
         setTheme(document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark');
+      document.getElementById('passBtn').onclick = () => AdminView._passwordModal();
       document.getElementById('logoutBtn').onclick = async () => {
         if (!await confirmDialog(tr('Keluar dari akun admin?', 'Sign out of admin?'), { title: tr('Keluar', 'Sign out'), okText: tr('Ya, keluar', 'Yes, sign out') })) return;
         await DB.logout();

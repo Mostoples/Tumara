@@ -46,6 +46,15 @@ const AdminView = {
       return `<span class="badge ${map[r] || 'badge-gray'}">${roleLabel(r)}</span>`;
     };
 
+    // Avatar: pakai foto profil (fotoUrl/photoURL) bila ada, selain itu inisial.
+    // referrerpolicy diperlukan agar foto akun Google tidak diblokir (403).
+    const avatarInner = u => {
+      const foto = u.fotoUrl || u.photoURL;
+      return foto
+        ? `<img src="${esc(foto)}" alt="${esc(u.nama || 'Foto profil')}" referrerpolicy="no-referrer">`
+        : esc((u.nama || '?').trim().split(/\s+/).map(w => w[0]).slice(0, 2).join('').toUpperCase());
+    };
+
     el.innerHTML = `
       <div class="portal-head">
         <div>
@@ -82,16 +91,16 @@ const AdminView = {
             <tbody>
               ${shown.map(u => `
                 <tr>
-                  <td><div style="display:flex;align-items:center;gap:10px;">
-                    <span class="avatar avatar-sm">${esc((u.nama || '?').trim().split(/\s+/).map(w => w[0]).slice(0, 2).join('').toUpperCase())}</span>
+                  <td class="cell-primary"><div style="display:flex;align-items:center;gap:10px;">
+                    <span class="avatar avatar-sm${(u.fotoUrl || u.photoURL) ? ' avatar-photo' : ''}">${avatarInner(u)}</span>
                     <b>${esc(u.nama || '-')}</b>
                   </div></td>
-                  <td style="color:var(--text-3);">${esc(u.email || '-')}</td>
-                  <td>${roleBadge(u.role || 'siswa')}</td>
-                  <td style="color:var(--text-3);font-size:.82rem;">${esc(u.mapel || u.kelas || u.sekolah || '-')}</td>
-                  <td style="text-align:right;white-space:nowrap;">
+                  <td data-label="Email" style="color:var(--text-3);">${esc(u.email || '-')}</td>
+                  <td data-label="${tr('Peran', 'Role')}">${roleBadge(u.role || 'siswa')}</td>
+                  <td data-label="${tr('Detail', 'Detail')}" style="color:var(--text-3);font-size:.82rem;">${esc(u.mapel || u.kelas || u.sekolah || '-')}</td>
+                  <td data-label="${tr('Aksi', 'Actions')}" style="text-align:right;white-space:nowrap;">
                     <button class="mini-icon-btn" data-edit="${u.id}" title="${tr('Ubah', 'Edit')}"><ion-icon name="create-outline"></ion-icon></button>
-                    <button class="mini-icon-btn danger" data-del="${u.id}" title="${tr('Hapus', 'Delete')}" ${u.id === DB.user.id ? 'disabled' : ''}><ion-icon name="trash-outline"></ion-icon></button>
+                    <button class="mini-icon-btn danger" data-del="${u.id}" title="${(u.role || 'siswa') === 'admin' ? tr('Akun admin tidak bisa dihapus', 'Admin accounts cannot be deleted') : tr('Hapus', 'Delete')}" ${u.id === DB.user.id || (u.role || 'siswa') === 'admin' ? 'disabled' : ''}><ion-icon name="trash-outline"></ion-icon></button>
                   </td>
                 </tr>`).join('')}
             </tbody>
@@ -110,6 +119,7 @@ const AdminView = {
     $$('[data-edit]', el).forEach(b => b.onclick = () => this._userModal(users.find(u => u.id === b.dataset.edit)));
     $$('[data-del]', el).forEach(b => b.onclick = async () => {
       const u = users.find(x => x.id === b.dataset.del);
+      if ((u.role || 'siswa') === 'admin') return toast(tr('Akun admin tidak bisa dihapus.', 'Admin accounts cannot be deleted.'), 'warning');
       if (!await confirmDialog(
         tr(`Hapus akun "${u.nama}" (${u.email})? Data profilnya akan dihapus. Tindakan ini tidak bisa dibatalkan.`,
            `Delete account "${u.nama}" (${u.email})? Their profile data will be removed. This cannot be undone.`),
@@ -189,7 +199,11 @@ const AdminView = {
           const btn = $('#mSave', m); btn.disabled = true;
           try {
             if (editing) {
-              await DB.adminUpdateUser(user.id, { nama, role, ...extra });
+              const patch = { nama, role, ...extra };
+              // Bila peran berubah, sesuaikan status onboarding: siswa perlu
+              // melengkapi profil kesehatan, guru/admin tidak.
+              if (role !== (user.role || 'siswa')) patch.profileComplete = role !== 'siswa';
+              await DB.adminUpdateUser(user.id, patch);
               toast(tr('Akun diperbarui.', 'Account updated.'));
             } else {
               const email = $('#mEmail', m).value.trim();
@@ -232,6 +246,27 @@ const AdminView = {
           const text = `Tumara\nEmail: ${email}\n${tr('Kata sandi', 'Password')}: ${pass}`;
           try { await navigator.clipboard.writeText(text); toast(tr('Kredensial disalin 📋', 'Credentials copied 📋')); }
           catch (_) { toast(tr('Tidak bisa menyalin otomatis — catat manual ya.', 'Could not auto-copy — please note it manually.'), 'warning'); }
+        };
+      }
+    });
+  },
+
+  // Ganti kata sandi akun admin yang sedang login.
+  _passwordModal() {
+    openModal({
+      title: tr('Ganti Kata Sandi', 'Change Password'),
+      body: `
+        <div class="field"><label>${tr('Kata sandi lama', 'Old password')}</label><input type="password" class="input" id="mOld" autocomplete="current-password"></div>
+        <div class="field"><label>${tr('Kata sandi baru', 'New password')}</label><input type="password" class="input" id="mNew" placeholder="${tr('Minimal 6 karakter', 'At least 6 characters')}" autocomplete="new-password"></div>
+        <div class="field"><label>${tr('Ulangi kata sandi baru', 'Repeat new password')}</label><input type="password" class="input" id="mNew2" autocomplete="new-password"></div>
+        <button class="btn btn-primary btn-block" id="mSave"><ion-icon name="checkmark"></ion-icon> ${tr('Simpan', 'Save')}</button>`,
+      onMount: m => {
+        $('#mSave', m).onclick = async () => {
+          const oldP = $('#mOld', m).value, newP = $('#mNew', m).value;
+          if (newP.length < 6) return toast(tr('Kata sandi baru minimal 6 karakter.', 'New password must be at least 6 characters.'), 'warning');
+          if (newP !== $('#mNew2', m).value) return toast(tr('Ulangan kata sandi tidak sama.', "Passwords don't match."), 'warning');
+          try { await DB.changePassword(oldP, newP); closeModal(); toast(tr('Kata sandi berhasil diganti 🔒', 'Password changed 🔒')); }
+          catch (err) { toast(err.message, 'error'); }
         };
       }
     });

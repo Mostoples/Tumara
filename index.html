@@ -321,6 +321,13 @@
           <span class="logo-text">Tumara</span>
         </a>
         <p data-en="Grow healthy, productive, on track.<br>Daily companion for Indonesian students.">Tumbuh sehat, produktif, terarah.<br>Pendamping harian siswa Indonesia.</p>
+        <button id="pwaInstallBtn" data-pwa-install hidden
+          style="margin-top:14px;display:inline-flex;align-items:center;gap:9px;padding:12px 20px;border:0;cursor:pointer;
+                 border-radius:999px;font:700 14.5px/1 'Plus Jakarta Sans',system-ui,sans-serif;color:#fff;
+                 background:linear-gradient(135deg,#10b981,#059669);box-shadow:0 10px 30px rgba(5,150,105,.35);">
+          <ion-icon name="download-outline" style="font-size:1.15rem;"></ion-icon>
+          <span data-en="Install App">Pasang Aplikasi</span>
+        </button>
       </div>
       <div class="footer-col">
         <b data-en="Product">Produk</b>
@@ -344,16 +351,6 @@
       <span data-en="Tumara is not a substitute for professional medical advice.">Tumara bukan pengganti nasihat tenaga kesehatan profesional.</span>
     </div>
   </footer>
-
-  <!-- ============ TOMBOL PASANG PWA (muncul saat bisa di-install) ============ -->
-  <button id="pwaInstallBtn" data-pwa-install hidden
-    style="position:fixed;left:50%;bottom:22px;transform:translateX(-50%);z-index:9000;
-           display:inline-flex;align-items:center;gap:9px;padding:12px 20px;border:0;cursor:pointer;
-           border-radius:999px;font:700 14.5px/1 'Plus Jakarta Sans',system-ui,sans-serif;color:#fff;
-           background:linear-gradient(135deg,#10b981,#059669);box-shadow:0 10px 30px rgba(5,150,105,.35);">
-    <ion-icon name="download-outline" style="font-size:1.15rem;"></ion-icon>
-    <span data-en="Install App">Pasang Aplikasi</span>
-  </button>
 
   <script>
     // Toggle bahasa ID/EN (I18N.set menukar semua elemen [data-en] otomatis)

@@ -59,7 +59,7 @@ const Prod = {
         <div class="table-wrap">
           <table class="data-table">
             <thead><tr>
-              <th style="min-width:150px;position:sticky;left:0;background:var(--surface-2);">${tr('Kebiasaan', 'Habit')}</th>
+              <th class="sticky-col" style="min-width:150px;">${tr('Kebiasaan', 'Habit')}</th>
               ${days.map(d => { const dt = parseDate(d); const today = d === todayStr(); return `<th class="center" style="min-width:42px;${today ? 'color:var(--prod);' : ''}">${HARI[dt.getDay()].slice(0, 1)}<br><span style="font-size:.7rem;font-weight:600;">${dt.getDate()}</span></th>`; }).join('')}
               <th class="center">🔥</th>
               <th></th>
@@ -67,7 +67,7 @@ const Prod = {
             <tbody>
               ${habits.map(h => `
                 <tr>
-                  <td style="position:sticky;left:0;background:var(--surface);"><b>${h.emoji || '⭐'} ${esc(h.nama)}</b></td>
+                  <td class="sticky-col"><b>${h.emoji || '⭐'} ${esc(h.nama)}</b></td>
                   ${days.map(d => { const on = doneSet.has(h.id + '|' + d); return `<td class="center"><button class="habit-dot ${on ? 'on' : ''}" data-hb="${h.id}" data-d="${d}">${on ? '✓' : ''}</button></td>`; }).join('')}
                   <td class="center"><b>${streakOf(h.id)}</b></td>
                   <td class="center"><button class="mini-icon-btn danger" data-delh="${h.id}"><ion-icon name="trash-outline"></ion-icon></button></td>

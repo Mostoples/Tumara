@@ -526,14 +526,22 @@ const Fin = {
     $$('[data-edit]', el).forEach(b => b.onclick = () => this.openTxModal(all.find(t => t.id === b.dataset.edit)));
     $$('[data-del]', el).forEach(b => b.onclick = async () => {
       if (!await confirmDialog(tr('Hapus transaksi ini?', 'Delete this transaction?'), { danger: true, okText: tr('Hapus', 'Delete') })) return;
+      const t = all.find(x => x.id === b.dataset.del);
       await DB.remove('transactions', b.dataset.del);
+      if (t?.walletId) {
+        try {
+          const w = (await DB.list('wallets')).find(x => x.id === t.walletId);
+          if (w) await DB.update('wallets', t.walletId, { saldo: (+w.saldo || 0) - (t.tipe === 'masuk' ? t.jumlah : -t.jumlah) });
+        } catch (_) { /* saldo dompet gagal disesuaikan */ }
+      }
       toast(tr('Transaksi dihapus.', 'Transaction deleted.'));
       App.refresh();
     });
   },
 
   // dipanggil juga dari dashboard.js — jangan ganti nama
-  openTxModal(tx = null) {
+  async openTxModal(tx = null) {
+    const wallets = await DB.list('wallets');
     let tipe = tx?.tipe || 'keluar';
 
     // kategori kustom = kategori transaksi yang tidak ada di daftar tetap
@@ -558,6 +566,13 @@ const Fin = {
             <input type="number" class="input" id="mJumlah" min="0" placeholder="${tr('mis. 15000', 'e.g. 15000')}" value="${tx?.jumlah ?? ''}">
             <span class="input-unit">Rp</span>
           </div>
+        </div>
+        <div class="field">
+          <label>${tr('Dompet', 'Wallet')} <span style="font-weight:500;color:var(--text-3)">${tr('(opsional)', '(optional)')}</span></label>
+          <select class="select" id="mWallet">
+            <option value="">${tr('Tidak dari dompet manapun', 'Not from any wallet')}</option>
+            ${wallets.map(w => `<option value="${esc(w.id)}" ${tx?.walletId === w.id ? 'selected' : ''}>${esc(w.nama)}</option>`).join('')}
+          </select>
         </div>
         <div class="field">
           <label>${tr('Kategori', 'Category')}</label>
@@ -597,13 +612,36 @@ const Fin = {
             kategori = katInput.value.trim();
             if (!kategori) return toast(tr('Tulis nama kategori dulu.', 'Enter a category name first.'), 'warning');
           }
+          const walletId = $('#mWallet', m).value || null;
           const data = {
             tanggal, tipe, jumlah,
             kategori,
-            catatan: $('#mCatatan', m).value.trim()
+            catatan: $('#mCatatan', m).value.trim(),
+            walletId
           };
           if (tx) await DB.update('transactions', tx.id, data);
           else await DB.add('transactions', data);
+
+          // Sesuaikan saldo dompet: balikkan efek transaksi lama (kalau edit),
+          // lalu terapkan efek transaksi baru. Kegagalan di sini tidak boleh
+          // membatalkan transaksi yang sudah tersimpan di atas.
+          try {
+            const oldWalletId = tx?.walletId || null;
+            const oldDelta = tx ? (tx.tipe === 'masuk' ? tx.jumlah : -tx.jumlah) : 0;
+            const newDelta = tipe === 'masuk' ? jumlah : -jumlah;
+            const freshWallets = await DB.list('wallets');
+            const adjust = async (id, delta) => {
+              const w = freshWallets.find(x => x.id === id);
+              if (w) await DB.update('wallets', id, { saldo: (+w.saldo || 0) + delta });
+            };
+            if (oldWalletId && oldWalletId === walletId) {
+              await adjust(walletId, newDelta - oldDelta);
+            } else {
+              if (oldWalletId) await adjust(oldWalletId, -oldDelta);
+              if (walletId) await adjust(walletId, newDelta);
+            }
+          } catch (_) { /* saldo dompet gagal disesuaikan — transaksi tetap tersimpan */ }
+
           this.month = tanggal.slice(0, 7);
           closeModal();
           toast(tx ? tr('Transaksi diperbarui.', 'Transaction updated.') : tr('Transaksi dicatat 💰', 'Transaction logged 💰'));

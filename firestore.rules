@@ -16,6 +16,15 @@ service cloud.firestore {
         && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'guru';
     }
 
+    // Mirrors js/firebase-config.js ADMIN_EMAILS. Firestore Rules can't
+    // import JS, so this list must be kept in sync manually if that file
+    // changes. Used only to bootstrap the first admin account(s) server-side
+    // instead of trusting the client-side check in js/db.js.
+    function isBootstrapAdminEmail() {
+      return request.auth != null && request.auth.token.email != null
+        && request.auth.token.email.lower() in ['admin@tumara.com', 'admin@tumara.id'];
+    }
+
     match /users/{uid} {
       // Pemilik boleh baca dokumennya; admin boleh semua akun; guru boleh
       // membaca akun siswa (untuk memilih anggota kelas). Query guru harus
@@ -23,8 +32,25 @@ service cloud.firestore {
       allow read: if request.auth != null
         && (request.auth.uid == uid || isAdmin() || (isGuru() && resource.data.role == 'siswa'));
 
-      // Menulis profil hanya oleh pemilik atau admin.
-      allow create, update: if request.auth != null && (request.auth.uid == uid || isAdmin());
+      // Menulis profil: pemilik boleh membuat/mengubah dokumennya sendiri,
+      // TAPI tidak boleh mengubah field `role` sendiri (mencegah privilege
+      // escalation) kecuali saat bootstrap admin pertama (email cocok
+      // isBootstrapAdminEmail()). Admin boleh menulis apa saja untuk
+      // siapa saja (dipakai adminCreateUser() membuat akun guru).
+      allow create: if request.auth != null && (
+        isAdmin() ||
+        (request.auth.uid == uid && (
+          request.resource.data.role == 'siswa' ||
+          (request.resource.data.role == 'admin' && isBootstrapAdminEmail())
+        ))
+      );
+      allow update: if request.auth != null && (
+        isAdmin() ||
+        (request.auth.uid == uid && (
+          request.resource.data.role == resource.data.role ||
+          (request.resource.data.role == 'admin' && isBootstrapAdminEmail())
+        ))
+      );
 
       // Akun admin tidak boleh dihapus siapa pun (termasuk admin lain / dirinya
       // sendiri). Akun non-admin hanya boleh dihapus oleh admin/pemilik.

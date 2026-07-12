@@ -271,7 +271,7 @@ const Health = {
           <div class="es-title">${tr('Belum ada obat terdaftar', 'No medications yet')}</div>
           <div class="es-sub">${tr('Tambahkan obat/vitamin & jadwal minumnya biar tak terlewat 💊', 'Add meds/vitamins & their schedule so you never miss them 💊')}</div>
         </div>`}
-      <div class="disclaimer" style="margin-top:18px;"><ion-icon name="information-circle"></ion-icon><span>${tr('Pengingat tampil sebagai notifikasi saat aplikasi terbuka. Selalu ikuti anjuran dosis dari dokter/apoteker.', 'Reminders appear as notifications while the app is open. Always follow dosage advice from your doctor/pharmacist.')}</span></div>`;
+      <div class="disclaimer" style="margin-top:18px;"><ion-icon name="information-circle"></ion-icon><span>${tr('Pengingat dicek tiap 30 detik & tampil sebagai notifikasi selama aplikasi ini terbuka di tabmu (tidak berjalan di latar belakang). Selalu ikuti anjuran dosis dari dokter/apoteker.', 'Reminders are checked every 30 seconds and appear as a notification while this app is open in your tab (not in the background). Always follow dosage advice from your doctor/pharmacist.')}</span></div>`;
 
     $('#addMed', el).onclick = () => this._medModal();
     $$('[data-edit]', el).forEach(b => b.onclick = () => this._medModal(meds.find(x => x.id === b.dataset.edit)));
@@ -312,6 +312,9 @@ const Health = {
           else await DB.add('meds', { ...data, riwayat: {} });
           closeModal();
           toast(tr('Obat tersimpan 💊', 'Medication saved 💊'));
+          if (waktu.length && 'Notification' in window && Notification.permission === 'default') {
+            try { await Notification.requestPermission(); } catch (_) { /* abaikan */ }
+          }
           App.refresh();
         };
       }

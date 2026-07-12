@@ -2,6 +2,43 @@
 
 > Catatan handoff untuk melanjutkan pengerjaan di sesi Claude Code berikutnya.
 
+## Status: 🚧 v1.4 (branch `feature-check`, BELUM merge ke main / BELUM deploy) — Audit kepatuhan spec + perbaikan P0–P2
+
+Dikerjakan lewat alur superpowers penuh (brainstorming → spec → plan → eksekusi) per prioritas, satu putaran per prioritas. Semua spec & plan tersimpan di `docs/superpowers/specs/` dan `docs/superpowers/plans/` (7 dokumen, tanggal 2026-07-12) — baca dulu sebelum lanjut kalau mau tahu alasan di balik tiap keputusan desain.
+
+### 0. Audit awal
+`spec-compliance-report.md` (di root repo, belum di-commit — masih working file) membandingkan `spec.md` (dokumen rancangan APK asli) terhadap kode sungguhan, per fitur. Temuan utama: kode adalah **PWA web murni**, bukan APK Android (nol Capacitor/Cordova/TWA) — beberapa "gap" (pedometer, sinkron wearable) memang mustahil di web, bukan bug. Skor kepatuhan awal: 27 ADA / 27 PARSIAL / 12 TIDAK ADA dari 66 butir fitur. Laporan itu jadi sumber prioritas P0–P3 di bawah.
+
+### 1. P0 — Keamanan `firestore.rules` (3 lubang ditutup)
+Spec: `docs/superpowers/specs/2026-07-12-firestore-security-p0-design.md`. Plan: `docs/superpowers/plans/2026-07-12-firestore-security-p0.md`.
+- **Privilege escalation ditutup**: `users/{uid}` create/update sekarang menolak siswa mengubah `role` miliknya sendiri, kecuali bootstrap admin via `isBootstrapAdminEmail()` (mirror `ADMIN_EMAILS` di `js/firebase-config.js` — **wajib disinkron manual** kalau daftar itu berubah, rules tidak bisa `import` JS).
+- **Data kesehatan/ibadah siswa dibatasi per kelas**: helper baru `isGuruOfStudent(studentUid)` — guru cuma bisa baca `health_daily/workouts/biometrics/weights/meds/foods/menstrual/ibadah_daily/quran_log/hafalan` milik siswa yang `kelasId`-nya ada di `kelasAmpu` guru itu. Sebelumnya guru manapun bisa baca data siswa manapun.
+- **`school_roster` dibatasi** admin+guru (siswa tak lagi bisa baca NIS seluruh sekolah). **`class_tasks` write dibatasi** ke guru yang `classId`-nya ada di `kelasAmpu`-nya (sebelumnya guru manapun bisa hapus tugas kelas lain).
+- Diverifikasi lewat `npx firebase-tools emulators:start` (cek compile bersih) + trace skenario manual per fix. **Belum di-`firebase deploy`** — nunggu izin eksplisit.
+
+### 2. P1 — Reminder obat nyata (`js/app.js`, `js/views/health.js`, `js/views/profile.js`)
+Spec: `docs/superpowers/specs/2026-07-12-med-reminder-p1-design.md`. Plan: `docs/superpowers/plans/2026-07-12-med-reminder-p1.md`.
+- Disclaimer lama di tab Obat menjanjikan notifikasi yang **tidak ada scheduler-nya sama sekali** (nol kode baca `med.waktu`). Ditambah `App.startMedReminder()/stopMedReminder()/_checkMedReminder()` meniru pola `startWaterReminder()`: cek tiap 30 detik, `DB.list('meds')` di-fetch ulang tiap tick (tanpa cache, konsisten gaya kode lain), notifikasi via `App.notify()` + fallback toast.
+- Dipanggil otomatis di `App.init()` (tanpa toggle terpisah — ikut ada-tidaknya obat berjadwal), di-stop saat logout (`profile.js`).
+- `Notification.requestPermission()` diminta saat obat pertama dengan jadwal jam disimpan (sebelumnya cuma diminta lewat toggle pengingat air — obat tak pernah dapat izin sendiri).
+- Item lain yang tadinya dikira P1 (label "Audio Murrotal" di `ibadah.js:522`) ternyata **bukan bug** — link keluar ke quran.com sudah jujur ditandai "(quran.com)". Dicoret dari scope setelah verifikasi kode.
+
+### 3. P2 — 5 bug fitur existing
+Spec: `docs/superpowers/specs/2026-07-12-p2-bugfixes-design.md`. Plan: `docs/superpowers/plans/2026-07-12-p2-bugfixes.md`.
+- **Budget per-bulan** (`finance.js`): dokumen `budgets` sekarang punya field `bulan` (YYYY-MM) + doc id `b_{bulan}_{kategori}`. Helper `Fin._budgetsForMonth()` — dokumen lama tanpa `bulan` tetap fallback berlaku di semua bulan sampai diedit ulang untuk bulan spesifik (tanpa migrasi data). Sebelumnya limit sama untuk semua bulan.
+- **Dompet terhubung ke transaksi** (`finance.js`): `transactions` punya field opsional `walletId`; simpan/edit/hapus transaksi otomatis menyesuaikan `saldo` dompet (edit membalikkan efek lama dulu). Sebelumnya saldo dompet murni angka manual yang tak pernah berubah.
+- **Tab "Tugas Pribadi" baru** (`productivity.js`): tugas pribadi (koleksi `tasks`, dibuat dari tombol cepat Dashboard) sebelumnya tak punya tempat tampil — tab "Tugas" sudah dialihkan khusus tugas dari guru (`class_tasks`). Tab baru pakai `openTaskModal()` yang sudah ada tapi belum pernah dipanggil dengan argumen edit dari UI manapun. Sekaligus menampilkan badge "🔁 Harian/Mingguan/Bulanan" untuk field `ulang` yang sebelumnya tersimpan tapi tak pernah dibaca (belum ada auto-generate instance berulang — didorong ke P3 kalau dibutuhkan).
+- **Auto-hadir jurnal per pertemuan** (`teacher.js`): filter absensi di `_jurnalModal` ditambah `a.pertemuan === pert` — sebelumnya 2 pertemuan di tanggal sama saling menimpa data hadirnya (field `pertemuan` diabaikan total).
+- Semua diverifikasi `node --check` per file + smoke test Playwright (0 error konsol) + checklist manual (belum dijalankan user — perlu login nyata & data kelas/dompet).
+
+### Belum dikerjakan (P3 — gap fitur besar, di luar scope sesi ini)
+Checklist shalat lengkap per waktu (~30 sub-item: Qobliyah/Ba'diyyah/Awwabin/dst), ekspor jurnal per kelas + kop surat, submit foto pekerjaan siswa + zoom + nilai berdampingan gambar, dashboard drag & drop + sistem template (termasuk Template Pengusaha yang belum ada sama sekali), Al-Qur'an 114 surah + audio murrotal. Lihat `spec-compliance-report.md` bagian "Rekomendasi Prioritas → P3" untuk daftar lengkap.
+
+### ⚠️ Status branch
+Semua kerja di atas ada di branch `feature-check`, **belum di-merge ke `main`** (menunggu approval) dan **belum di-deploy** (baik `firestore.rules` maupun hosting). Kalau lanjut sesi berikutnya: cek `git log main..feature-check` untuk daftar commit, dan baca spec/plan docs di atas untuk konteks tiap keputusan sebelum mengubah kode yang sama.
+
+---
+
 ## Status: ✅ v1.3 — Enrolment terpusat + tugas/jadwal dari guru + wali kelas + beranda guru
 
 Fokus v1.3: menata alur **sekolah** (admin → guru → siswa) dan membuat tugas/jadwal mengalir dari guru ke siswa.

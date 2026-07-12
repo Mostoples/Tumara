@@ -311,6 +311,7 @@ const Profile = {
     $('#pfLogout', el).onclick = async () => {
       if (!await confirmDialog(tr('Keluar dari akunmu?', 'Sign out of your account?'), { title: tr('Keluar', 'Sign out'), okText: tr('Ya, keluar', 'Yes, sign out') })) return;
       App.stopWaterReminder();
+      App.stopMedReminder();
       await DB.logout();
       App.showAuth();
     };

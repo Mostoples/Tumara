@@ -113,6 +113,7 @@ const App = {
     const route0 = fromHash.split('/')[0];
     this.navigate(this.VIEWS[route0] ? fromHash : 'dashboard');
     if (u.reminderAir) this.startWaterReminder();
+    this.startMedReminder();
   },
 
   /* ---------- auto-center tab aktif (mobile) ---------- */

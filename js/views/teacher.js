@@ -42,6 +42,14 @@ const Teacher = {
     this._el = el || this._el;
     el = this._el;
 
+    // Setiap BERPINDAH tab, pilihan kelas direset agar tab yang gated
+    // (absensi/nilai/jurnal/tugaskelas/ibadah/kesehatan) selalu dimulai dari
+    // layar "pilih kelas". Render ulang di dalam tab yang sama tidak mereset.
+    if (this._lastTab !== this.tab) {
+      this._lastTab = this.tab;
+      this.classId = null;
+    }
+
     // Hentikan polling ibadah/kesehatan jika pindah ke tab lain
     if (this.tab !== 'ibadah' && this._ibadahPollTimer) {
       clearInterval(this._ibadahPollTimer);
@@ -92,11 +100,177 @@ const Teacher = {
     return `<span class="avatar avatar-sm${foto ? ' avatar-photo' : ''}">${inner}</span>`;
   },
 
-  // Pemilih kelas (dropdown) dipakai di beberapa tab
-  _classPicker(classes, id = 'tClass') {
-    return `<select class="select" id="${id}" style="max-width:280px;">
-      ${classes.map(c => `<option value="${c.id}" ${c.id === this.classId ? 'selected' : ''}>${esc(c.nama)}</option>`).join('')}
-    </select>`;
+  /* ============ GERBANG PILIH KELAS ============
+     Tab absensi/nilai/jurnal/tugaskelas/ibadah/kesehatan selalu dimulai dari
+     layar "pilih kelas" (SMA: tingkat X, XI, XII; tiap tingkat punya abjad
+     mis. X-A). Konten baru dirender setelah guru memilih satu kelas. */
+
+  TINGKAT: ['X', 'XI', 'XII'],
+
+  // Ambil tingkat dari nama kelas: "X-A" → X, "XI IPA 2" → XI, "XII-B" → XII.
+  // Urutan XII→XI→X penting agar "XII" tidak keburu cocok sebagai "X"/"XI".
+  _tingkat(nama) {
+    const m = String(nama || '').trim().toUpperCase().match(/^(?:KELAS\s+)?(XII|XI|X)\b/);
+    return m ? m[1] : null;
+  },
+
+  // Kelompokkan kelas per tingkat; yang namanya tak berpola masuk "Lainnya".
+  _groupByTingkat(classes) {
+    const groups = [];
+    for (const t of this.TINGKAT) {
+      const list = classes.filter(c => this._tingkat(c.nama) === t);
+      if (list.length) groups.push({ label: `${tr('Kelas', 'Grade')} ${t}`, list });
+    }
+    const lain = classes.filter(c => !this._tingkat(c.nama));
+    if (lain.length) groups.push({ label: tr('Lainnya', 'Others'), list: lain });
+    return groups;
+  },
+
+  // Grid kartu kelas, dikelompokkan per tingkat. Dipakai gerbang tiap tab.
+  _classGrid(classes) {
+    return this._groupByTingkat(classes).map(g => `
+      <div class="tingkat-head">
+        <span class="tingkat-name">${esc(g.label)}</span>
+        <span class="tingkat-count">${g.list.length} ${tr('kelas', 'classes')}</span>
+      </div>
+      <div class="guru-menu-grid" style="margin-bottom:18px;">
+        ${g.list.map(c => `
+          <button class="guru-tile" data-cls="${c.id}">
+            <span class="guru-tile-ic" style="background:var(--brand-soft);color:var(--brand-dark);">
+              <ion-icon name="school"></ion-icon>
+            </span>
+            <span class="guru-tile-lb">${esc(c.nama)}</span>
+          </button>`).join('')}
+      </div>`).join('');
+  },
+
+  // Layar pemilihan kelas (header standar + grid).
+  _classGate(classes, judul) {
+    return `
+      <div class="portal-head" style="margin-bottom:6px;">
+        <div>
+          <h1 style="font-size:1.2rem;">${tr('Pilih Kelas', 'Select a Class')}</h1>
+          <p style="font-size:.85rem;color:var(--text-3);margin-top:2px;">
+            ${tr(`Pilih kelas dulu untuk membuka ${judul}.`, `Pick a class first to open ${judul}.`)}
+          </p>
+        </div>
+      </div>
+
+      ${this._classGrid(classes)}`;
+  },
+
+  // Baris "kelas aktif + tombol ganti kelas" di atas konten tiap tab.
+  // Nama kelas aktif dicatat di sini karena dipakai juga untuk nama file ekspor CSV.
+  _classBar(cls) {
+    this._activeClsNama = cls?.nama || '';
+    return `
+      <div class="class-bar">
+        <button class="btn btn-sm" id="tBackCls">
+          <ion-icon name="arrow-back-outline"></ion-icon> ${tr('Ganti Kelas', 'Change Class')}
+        </button>
+        <span class="class-bar-name"><ion-icon name="school"></ion-icon> ${esc(cls?.nama || '')}</span>
+      </div>`;
+  },
+
+  _bindClassGate(el) {
+    $$('[data-cls]', el).forEach(b => b.onclick = () => {
+      this.classId = b.dataset.cls;
+      this.render(this._el);
+    });
+  },
+
+  _bindClassBar(el) {
+    const b = $('#tBackCls', el);
+    if (b) b.onclick = () => { this.classId = null; this.render(this._el); };
+  },
+
+  /* ============ JAM (format Indonesia, 24 jam) ============
+     Disimpan & ditampilkan "HH:MM" (mis. 06:00, 21:00) — tanpa AM/PM. */
+
+  _jam(t) {
+    const s = String(t || '').trim();
+    return /^\d{2}:\d{2}$/.test(s) ? s : '--:--';
+  },
+
+  // Rentang jam dengan sekat "-" agar mulai & selesai tidak tertukar dibaca.
+  _jamRange(a, b) {
+    return `<span class="jam-range"><b>${this._jam(a)}</b><span class="jam-sd">-</span><b>${this._jam(b)}</b></span>`;
+  },
+
+  /* Jenis jadwal:
+     - 'rutin'  → berulang tiap minggu pada `hari` (0–6). Ini default.
+     - 'sekali' → hanya berlaku pada `tanggal` (YYYY-MM-DD); untuk jadwal
+                  pengganti/mendadak yang cuma sehari.
+     Entri lama belum punya field `tipe` → diperlakukan sebagai 'rutin'. */
+  _tipeJadwal(s) {
+    return s?.tipe === 'sekali' ? 'sekali' : 'rutin';
+  },
+  _isSekali(s) { return this._tipeJadwal(s) === 'sekali'; },
+
+  // Apakah entri jadwal ini berlaku pada tanggal tertentu (YYYY-MM-DD)?
+  _berlakuPada(s, iso) {
+    if (this._isSekali(s)) return s.tanggal === iso;
+    return +s.hari === new Date(`${iso}T00:00:00`).getDay();
+  },
+
+  // "Besok" / "3 hari lagi" — pengingat relatif untuk jadwal tanggal tertentu.
+  _selisihHari(iso, dariIso = todayStr()) {
+    const a = parseDate(iso), b = parseDate(dariIso);
+    if (!a || !b || isNaN(a) || isNaN(b)) return null;
+    return Math.round((a - b) / 86400000);
+  },
+  _relatifHari(iso) {
+    const n = this._selisihHari(iso);
+    if (n === null) return '';
+    if (n === 1) return tr('Besok', 'Tomorrow');
+    return tr(`${n} hari lagi`, `in ${n} days`);
+  },
+
+  // Kolom kiri kartu "Jadwal Hari Ini" di beranda:
+  //  - jadwal sekali → tanggal & bulan (mis. 14 / Jul)
+  //  - jadwal rutin  → nama hari (mis. Senin), ditandai "Rutin"
+  _tsWhen(s) {
+    if (this._isSekali(s)) {
+      const d = parseDate(s.tanggal);
+      if (d && !isNaN(d)) {
+        return `<div class="ts-time">
+          <b>${d.getDate()}</b>
+          <span>${BULAN[d.getMonth()].slice(0, 3)}</span>
+        </div>`;
+      }
+    }
+    return `<div class="ts-time">
+      <b class="ts-hari">${HARI[+s.hari] || '-'}</b>
+      <span>${tr('Rutin', 'Weekly')}</span>
+    </div>`;
+  },
+
+  MENIT: ['00', '05', '10', '15', '20', '25', '30', '35', '40', '45', '50', '55'],
+
+  // Pemilih jam 24-jam. <input type="time"> bawaan Chrome mengikuti locale
+  // browser (bisa muncul AM/PM) dan itu TIDAK bisa dipaksa lewat HTML/CSS —
+  // atribut lang pun diabaikan. Maka dipakai dua <select> agar pasti 24 jam.
+  _jamPicker(id, val, fallback = '07:00') {
+    const [h0, m0] = String(val || fallback).split(':');
+    const jam = Array.from({ length: 24 }, (_, i) => String(i).padStart(2, '0'));
+    // Nilai menit lama yang tak kelipatan 5 tetap dipertahankan agar tak berubah diam-diam.
+    const menit = this.MENIT.includes(m0) ? [...this.MENIT] : [...this.MENIT, m0].sort();
+    return `
+      <div class="jam-picker">
+        <select class="select" id="${id}H" aria-label="${tr('Jam', 'Hour')}">
+          ${jam.map(h => `<option value="${h}" ${h === h0 ? 'selected' : ''}>${h}</option>`).join('')}
+        </select>
+        <span class="jam-sep">:</span>
+        <select class="select" id="${id}M" aria-label="${tr('Menit', 'Minute')}">
+          ${menit.map(mm => `<option value="${mm}" ${mm === m0 ? 'selected' : ''}>${mm}</option>`).join('')}
+        </select>
+      </div>`;
+  },
+
+  // Baca kembali nilai _jamPicker sebagai "HH:MM" (format simpan).
+  _jamValue(id, m) {
+    const h = $(`#${id}H`, m)?.value, mm = $(`#${id}M`, m)?.value;
+    return h && mm ? `${h}:${mm}` : '';
   },
 
   // Pindah ke tab lain lewat elemen nav yang sudah ada (agar judul topbar &
@@ -116,6 +290,45 @@ const Teacher = {
     let totalSiswa = 0;
     for (const c of classes) totalSiswa += (await this._students(c.id)).length;
     const isWali = !!u.waliKelasId;
+
+    // Jadwal mengajar hari ini — pengingat di bagian bawah beranda.
+    const now = new Date();
+    const jamKini = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+    // Jadwal rutin yang jatuh pada hari ini + jadwal sekali bertanggal hari ini.
+    const isoHariIni = todayStr();
+    const semuaJadwal = await DB.list('schedule');
+    const jadwalHariIni = semuaJadwal
+      .filter(s => this._berlakuPada(s, isoHariIni))
+      .sort((a, b) => (a.jamMulai || '').localeCompare(b.jamMulai || ''));
+
+    // Lewat sore (≥ 18.00) jadwal hari ini praktis sudah selesai → tampilkan
+    // jadwal BESOK sebagai persiapan.
+    const JAM_PRATINJAU_BESOK = 18;
+    const pratinjauBesok = now.getHours() >= JAM_PRATINJAU_BESOK;
+    const isoBesok = todayStr(new Date(now.getTime() + 86400000));
+    const jadwalBesok = pratinjauBesok
+      ? semuaJadwal
+          .filter(s => this._berlakuPada(s, isoBesok))
+          .sort((a, b) => (a.jamMulai || '').localeCompare(b.jamMulai || ''))
+      : [];
+
+    // Jadwal "tanggal tertentu" yang AKAN DATANG — ditampilkan terpisah sebagai
+    // pengingat, karena mudah terlupa (tidak berulang mingguan). Batasnya digeser
+    // ke besok bila seksi "Jadwal Besok" sedang tampil, supaya tidak dobel.
+    const batasKhusus = pratinjauBesok ? isoBesok : isoHariIni;
+    const jadwalKhusus = semuaJadwal
+      .filter(s => this._isSekali(s) && (s.tanggal || '') > batasKhusus)
+      .sort((a, b) => (a.tanggal || '').localeCompare(b.tanggal || '') || (a.jamMulai || '').localeCompare(b.jamMulai || ''))
+      .slice(0, 5);
+    // jam pertama yang belum berakhir = sedang berlangsung (bila sudah mulai) atau berikutnya
+    const aktifIdx = jadwalHariIni.findIndex(s => (s.jamSelesai || '') > jamKini);
+    const sisa = aktifIdx === -1 ? 0 : jadwalHariIni.length - aktifIdx;
+    const stateOf = (s, i) => {
+      if ((s.jamSelesai || '') <= jamKini) return 'done';
+      if (i === aktifIdx) return (s.jamMulai || '') <= jamKini ? 'now' : 'next';
+      return '';
+    };
+    const badgeText = { now: tr('Berlangsung', 'Ongoing'), next: tr('Berikutnya', 'Up next'), done: tr('Selesai', 'Done') };
 
     const tiles = [
       { route: 'kelas',       icon: 'people-outline',        label: tr('Kelas & Siswa', 'Classes'),        color: 'brand' },
@@ -155,7 +368,92 @@ const Teacher = {
             <span class="guru-tile-ic" style="color:var(--${t.color});background:var(--${t.color}-soft);"><ion-icon name="${t.icon}"></ion-icon></span>
             <span class="guru-tile-lb">${t.label}</span>
           </button>`).join('')}
-      </div>`;
+      </div>
+
+      <div class="section-head" style="margin-top:26px;">
+        <h2>${tr('Jadwal Hari Ini', 'Today\'s Schedule')} <span class="ts-day">· ${HARI[now.getDay()]}</span></h2>
+        <button class="btn btn-sm" data-goto="jadwal"><ion-icon name="calendar-outline"></ion-icon> ${tr('Semua Jadwal', 'All Schedules')}</button>
+      </div>
+
+      ${jadwalHariIni.length ? `
+        <div class="ts-note">${sisa
+          ? tr(`Masih ada <b>${sisa}</b> jam mengajar tersisa hari ini.`, `You still have <b>${sisa}</b> teaching slot(s) left today.`)
+          : tr('Semua jam mengajar hari ini sudah selesai. 🎉', 'All teaching slots for today are done. 🎉')}</div>
+        <div class="today-sched">
+          ${jadwalHariIni.map((s, i) => {
+            const st = stateOf(s, i);
+            return `
+              <div class="ts-item ${st}">
+                ${this._tsWhen(s)}
+                <div class="ts-body">
+                  <div class="ts-class">${esc(s.kelas || tr('Tanpa kelas', 'No class'))}
+                    ${this._isSekali(s) ? `<span class="badge badge-purple" style="margin-left:6px;">${tr('Hari ini saja', 'Today only')}</span>` : ''}
+                  </div>
+                  <div class="ts-sub">${esc(s.mapel || u.mapel || '-')}</div>
+                  <div class="ts-jam"><ion-icon name="time-outline"></ion-icon> ${this._jamRange(s.jamMulai, s.jamSelesai)}</div>
+                </div>
+                ${st ? `<span class="ts-badge ${st}">${badgeText[st]}</span>` : ''}
+              </div>`;
+          }).join('')}
+        </div>` : `
+        <div class="card empty-state" style="padding:26px 20px;">
+          <ion-icon name="cafe-outline"></ion-icon>
+          <div class="es-title">${tr('Tidak ada jadwal mengajar hari ini', 'No teaching schedule today')}</div>
+          <div class="es-sub">${tr('Kalau seharusnya ada, tambahkan di menu Jadwal Mengajar.', 'If there should be one, add it in My Schedule.')}</div>
+          <button class="btn btn-primary btn-sm" data-goto="jadwal" style="margin-top:12px;"><ion-icon name="add"></ion-icon> ${tr('Atur Jadwal', 'Set Schedule')}</button>
+        </div>`}
+
+      ${pratinjauBesok ? `
+        <div class="section-head" style="margin-top:26px;">
+          <h2>
+            <ion-icon name="sunny-outline" style="vertical-align:-2px;color:var(--brand);"></ion-icon>
+            ${tr('Jadwal Besok', "Tomorrow's Schedule")}
+            <span class="ts-day">· ${HARI[(now.getDay() + 1) % 7]}</span>
+          </h2>
+        </div>
+        ${jadwalBesok.length ? `
+          <div class="ts-note">${tr('Jadwal hari ini sudah lewat — ini persiapan untuk besok.', "Today is wrapping up — here's what's coming tomorrow.")}</div>
+          <div class="today-sched">
+            ${jadwalBesok.map(s => `
+              <div class="ts-item besok">
+                ${this._tsWhen(s)}
+                <div class="ts-body">
+                  <div class="ts-class">${esc(s.kelas || tr('Tanpa kelas', 'No class'))}
+                    ${this._isSekali(s) ? `<span class="badge badge-purple" style="margin-left:6px;">${tr('Sekali', 'One-off')}</span>` : ''}
+                  </div>
+                  <div class="ts-sub">${esc(s.mapel || u.mapel || '-')}</div>
+                  <div class="ts-jam"><ion-icon name="time-outline"></ion-icon> ${this._jamRange(s.jamMulai, s.jamSelesai)}</div>
+                </div>
+                <span class="ts-badge besok">${tr('Besok', 'Tomorrow')}</span>
+              </div>`).join('')}
+          </div>` : `
+          <div class="card empty-state" style="padding:22px 20px;">
+            <ion-icon name="bed-outline"></ion-icon>
+            <div class="es-title">${tr('Besok tidak ada jadwal mengajar', 'No teaching schedule tomorrow')}</div>
+            <div class="es-sub">${tr('Istirahat yang cukup ya. 😴', 'Get some good rest. 😴')}</div>
+          </div>`}` : ''}
+
+      ${jadwalKhusus.length ? `
+        <div class="section-head" style="margin-top:26px;">
+          <h2>
+            <ion-icon name="calendar-outline" style="vertical-align:-2px;color:var(--brand);"></ion-icon>
+            ${tr('Jadwal Tanggal Tertentu', 'One-off Schedule')}
+          </h2>
+          <span class="badge badge-purple">${tr('Jangan sampai lupa', "Don't forget")}</span>
+        </div>
+        <div class="ts-note">${tr('Jadwal berikut hanya berlaku pada tanggalnya — tidak berulang tiap minggu.', 'These apply only on their date — they do not repeat weekly.')}</div>
+        <div class="today-sched">
+          ${jadwalKhusus.map(s => `
+            <div class="ts-item upcoming">
+              ${this._tsWhen(s)}
+              <div class="ts-body">
+                <div class="ts-class">${esc(s.kelas || tr('Tanpa kelas', 'No class'))}</div>
+                <div class="ts-sub">${esc(s.mapel || u.mapel || '-')}</div>
+                <div class="ts-jam"><ion-icon name="time-outline"></ion-icon> ${this._jamRange(s.jamMulai, s.jamSelesai)}</div>
+              </div>
+              <span class="ts-badge upcoming">${this._relatifHari(s.tanggal)}</span>
+            </div>`).join('')}
+        </div>` : ''}`;
 
     $$('[data-goto]', el).forEach(b => b.onclick = () => this._goto(b.dataset.goto));
   },
@@ -180,46 +478,19 @@ const Teacher = {
 
     const ampu = new Set(DB.user?.kelasAmpu || []);
     const taught = allClasses.filter(c => ampu.has(c.id));
-    if (taught.length && (!this.classId || !taught.find(c => c.id === this.classId))) this.classId = taught[0].id;
-    const active = taught.find(c => c.id === this.classId) || taught[0] || null;
-    const students = active ? await this._students(active.id) : [];
 
-    el.innerHTML = `
+    const head = `
       <div class="portal-head" style="margin-bottom:16px;">
         <div>
           <h1 style="font-size:1.2rem;">${tr('Kelas yang Kamu Ampu', 'Your Classes')}</h1>
-          <p style="font-size:.85rem;color:var(--text-3);margin-top:2px;">${tr('Pilih kelas dari daftar yang dibuat admin. Daftar kelas & siswa dikelola admin.', 'Pick a class from the list created by the admin. Classes & students are managed by the admin.')}</p>
+          <p style="font-size:.85rem;color:var(--text-3);margin-top:2px;">${tr('Pilih kelas untuk melihat daftar siswanya. Daftar kelas & siswa dikelola admin.', 'Pick a class to see its students. Classes & students are managed by the admin.')}</p>
         </div>
         <button class="btn btn-primary btn-sm" id="pickKelas"><ion-icon name="add"></ion-icon> ${tr('Tambah Kelas', 'Add Class')}</button>
-      </div>
+      </div>`;
 
-      ${taught.length ? `
-        <div style="display:flex;gap:9px;flex-wrap:wrap;margin-bottom:16px;">
-          ${taught.map(c => `<button class="chip ${c.id === this.classId ? 'active' : ''}" data-pick="${c.id}">${esc(c.nama)}</button>`).join('')}
-        </div>
-
-        <div class="card">
-          <div class="card-title" style="margin:0;"><ion-icon name="people" style="color:var(--brand)"></ion-icon>${esc(active.nama)} <span class="badge badge-blue">${students.length} ${tr('siswa', 'students')}</span></div>
-          ${students.length ? `
-            <div class="table-wrap stack" style="margin-top:16px;">
-              <table class="data-table stack">
-                <thead><tr><th style="width:44px;">No</th><th>${tr('Nama Siswa', 'Student Name')}</th><th>NIS</th></tr></thead>
-                <tbody>
-                  ${students.map((s, i) => `
-                    <tr>
-                      <td class="center">${i + 1}</td>
-                      <td class="cell-primary"><b>${esc(s.nama)}</b></td>
-                      <td data-label="NIS" style="color:var(--text-3);">${esc(s.nis || '-')}</td>
-                    </tr>`).join('')}
-                </tbody>
-              </table>
-            </div>` : `
-            <div class="empty-state" style="padding:24px 10px;">
-              <ion-icon name="people-outline"></ion-icon>
-              <div class="es-title">${tr('Belum ada siswa yang bergabung', 'No students have joined yet')}</div>
-              <div class="es-sub">${tr('Siswa akan muncul otomatis setelah login dengan Google & memilih kelas ini beserta NIS-nya.', 'Students appear automatically after they sign in with Google & pick this class with their NIS.')}</div>
-            </div>`}
-        </div>` : (allClasses.length ? `
+    // Belum ada kelas yang diampu → kondisi kosong (tombol "Tambah Kelas" tetap ada).
+    if (!taught.length) {
+      el.innerHTML = head + (allClasses.length ? `
         <div class="card empty-state">
           <ion-icon name="albums-outline"></ion-icon>
           <div class="es-title">${tr('Belum memilih kelas', 'No classes selected')}</div>
@@ -229,10 +500,50 @@ const Teacher = {
           <ion-icon name="school-outline"></ion-icon>
           <div class="es-title">${tr('Belum ada kelas', 'No classes yet')}</div>
           <div class="es-sub">${tr('Admin belum membuat kelas. Hubungi admin sekolah.', 'The admin has not created any classes yet. Contact your school admin.')}</div>
-        </div>`)}`;
+        </div>`);
+      $('#pickKelas', el).onclick = () => this._pickKelasModal(allClasses);
+      return;
+    }
 
-    $('#pickKelas', el).onclick = () => this._pickKelasModal(allClasses);
-    $$('[data-pick]', el).forEach(b => b.onclick = () => { this.classId = b.dataset.pick; this.render(this._el); });
+    // Gerbang: pilih kelas dulu (dikelompokkan per tingkat X / XI / XII).
+    if (this.classId && !taught.find(c => c.id === this.classId)) this.classId = null;
+    if (!this.classId) {
+      el.innerHTML = head + this._classGrid(taught);
+      $('#pickKelas', el).onclick = () => this._pickKelasModal(allClasses);
+      this._bindClassGate(el);
+      return;
+    }
+
+    // Kelas terpilih → tampilkan roster siswanya.
+    const active = taught.find(c => c.id === this.classId);
+    const students = await this._students(active.id);
+
+    el.innerHTML = `
+      ${this._classBar(active)}
+      <div class="card">
+        <div class="card-title" style="margin:0;"><ion-icon name="people" style="color:var(--brand)"></ion-icon>${esc(active.nama)} <span class="badge badge-blue">${students.length} ${tr('siswa', 'students')}</span></div>
+        ${students.length ? `
+          <div class="table-wrap stack" style="margin-top:16px;">
+            <table class="data-table stack">
+              <thead><tr><th style="width:44px;">No</th><th>${tr('Nama Siswa', 'Student Name')}</th><th>NIS</th></tr></thead>
+              <tbody>
+                ${students.map((s, i) => `
+                  <tr>
+                    <td class="center">${i + 1}</td>
+                    <td class="cell-primary"><b>${esc(s.nama)}</b></td>
+                    <td data-label="NIS" style="color:var(--text-3);">${esc(s.nis || '-')}</td>
+                  </tr>`).join('')}
+              </tbody>
+            </table>
+          </div>` : `
+          <div class="empty-state" style="padding:24px 10px;">
+            <ion-icon name="people-outline"></ion-icon>
+            <div class="es-title">${tr('Belum ada siswa yang bergabung', 'No students have joined yet')}</div>
+            <div class="es-sub">${tr('Siswa akan muncul otomatis setelah login dengan Google & memilih kelas ini beserta NIS-nya.', 'Students appear automatically after they sign in with Google & pick this class with their NIS.')}</div>
+          </div>`}
+      </div>`;
+
+    this._bindClassBar(el);
   },
 
   // Modal: guru memilih kelas yang diampu HANYA dari daftar kelas yang sudah
@@ -284,7 +595,8 @@ const Teacher = {
           const btn = $('#kSave', m); btn.disabled = true;
           try {
             await DB.updateUser({ kelasAmpu: [...selected] });
-            if (!selected.has(this.classId)) this.classId = selected.size ? [...selected][0] : null;
+            // Kelas aktif tak lagi diampu → kembali ke gerbang "pilih kelas".
+            if (!selected.has(this.classId)) this.classId = null;
             closeModal();
             toast(tr('Kelas yang diampu diperbarui 🏫', 'Your classes updated 🏫'));
             this.render(this._el);
@@ -299,7 +611,12 @@ const Teacher = {
   async renderAbsensi(el) {
     const classes = await this._classes();
     if (!classes.length) { el.innerHTML = this._needClass(); this._bindNeedClass(el); return; }
-    if (!this.classId || !classes.find(c => c.id === this.classId)) this.classId = classes[0].id;
+    if (this.classId && !classes.find(c => c.id === this.classId)) this.classId = null;
+    if (!this.classId) {
+      el.innerHTML = this._classGate(classes, tr('Absensi', 'Attendance'));
+      this._bindClassGate(el); return;
+    }
+    const cls = classes.find(c => c.id === this.classId);
     const students = await this._students(this.classId);
 
     // record absensi untuk (kelas, tanggal, pertemuan)
@@ -311,8 +628,8 @@ const Teacher = {
     const legend = this.ABSEN.map(a => `<span class="badge" style="gap:5px;"><span class="att-cell att-${a.k}" style="width:16px;height:16px;pointer-events:none;"></span> ${a.k} = ${tr(a.id, a.en)}</span>`).join(' ');
 
     el.innerHTML = `
+      ${this._classBar(cls)}
       <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end;margin-bottom:16px;">
-        <div class="field" style="margin:0;"><label>${tr('Kelas', 'Class')}</label>${this._classPicker(classes)}</div>
         <div class="field" style="margin:0;"><label>${tr('Tanggal', 'Date')}</label><input type="date" class="input" id="attDate" value="${this.attDate}" style="max-width:170px;"></div>
         <div class="field" style="margin:0;"><label>${tr('Pertemuan ke-', 'Meeting #')}</label><input type="number" class="input" id="attPert" min="1" value="${this.attPertemuan}" style="max-width:110px;"></div>
       </div>
@@ -320,7 +637,8 @@ const Teacher = {
       <div style="font-size:.8rem;color:var(--text-3);display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px;">${legend}</div>
 
       ${students.length ? `
-        <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;">
+        <div style="display:flex;gap:10px;margin-bottom:12px;flex-wrap:wrap;align-items:center;">
+          <span class="att-sum" id="attSummary"></span>
           <button class="btn btn-sm" id="allHadir"><ion-icon name="checkmark-done-outline"></ion-icon> ${tr('Tandai semua Hadir', 'Mark all Present')}</button>
         </div>
         <div class="table-wrap">
@@ -343,7 +661,6 @@ const Teacher = {
         <div style="display:flex;gap:10px;margin-top:16px;flex-wrap:wrap;">
           <button class="btn btn-primary" id="saveAtt"><ion-icon name="save-outline"></ion-icon> ${tr('Simpan Absensi', 'Save Attendance')}</button>
           <button class="btn" id="exportAtt"><ion-icon name="download-outline"></ion-icon> ${tr('Ekspor CSV', 'Export CSV')}</button>
-          <span id="attSummary" style="align-self:center;font-size:.82rem;color:var(--text-3);"></span>
         </div>` : `
         <div class="card empty-state"><ion-icon name="people-outline"></ion-icon>
           <div class="es-title">${tr('Kelas ini belum punya siswa', 'This class has no students')}</div>
@@ -353,14 +670,19 @@ const Teacher = {
     // draft lokal absensi (biar tidak nulis DB tiap klik)
     const draft = { ...entries };
     const updateSummary = () => {
-      const cnt = {};
-      Object.values(draft).forEach(v => cnt[v] = (cnt[v] || 0) + 1);
       const sum = $('#attSummary', el);
-      if (sum) sum.textContent = this.ABSEN.map(a => `${a.k}:${cnt[a.k] || 0}`).join('  ');
+      if (!sum) return;
+      const cnt = {};
+      let filled = 0;
+      students.forEach(s => { const v = draft[s.id]; if (v) { cnt[v] = (cnt[v] || 0) + 1; filled++; } });
+      const belum = students.length - filled;
+      sum.innerHTML = this.ABSEN.map(a => `
+        <span class="att-sum-item" title="${tr(a.id, a.en)}">${a.k} <b>${cnt[a.k] || 0}</b></span>`).join('') + `
+        <span class="att-sum-item${belum ? ' att-sum-warn' : ''}">${tr('Belum', 'Unmarked')} <b>${belum}</b></span>`;
     };
     updateSummary();
 
-    $('#tClass', el).onchange = e => { this.classId = e.target.value; this.render(this._el); };
+    this._bindClassBar(el);
     $('#attDate', el).onchange = e => { this.attDate = e.target.value || todayStr(); this.render(this._el); };
     $('#attPert', el).onchange = e => { this.attPertemuan = Math.max(1, +e.target.value || 1); this.render(this._el); };
 
@@ -403,7 +725,12 @@ const Teacher = {
   async renderNilai(el) {
     const classes = await this._classes();
     if (!classes.length) { el.innerHTML = this._needClass(); this._bindNeedClass(el); return; }
-    if (!this.classId || !classes.find(c => c.id === this.classId)) this.classId = classes[0].id;
+    if (this.classId && !classes.find(c => c.id === this.classId)) this.classId = null;
+    if (!this.classId) {
+      el.innerHTML = this._classGate(classes, tr('Penilaian', 'Grades'));
+      this._bindClassGate(el); return;
+    }
+    const activeCls = classes.find(c => c.id === this.classId);
     const students = await this._students(this.classId);
 
     const allGrades = await DB.list('grades');
@@ -420,8 +747,8 @@ const Teacher = {
     const minKkm = columns.length ? Math.min(...columns.map(c => +c.kkm || 0)) : 0;
 
     el.innerHTML = `
+      ${this._classBar(activeCls)}
       <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end;margin-bottom:16px;">
-        <div class="field" style="margin:0;"><label>${tr('Kelas', 'Class')}</label>${this._classPicker(classes)}</div>
         <button class="btn btn-primary btn-sm" id="addCol" style="margin-bottom:1px;"><ion-icon name="add"></ion-icon> ${tr('Kolom Nilai', 'Grade Column')}</button>
         <button class="btn btn-sm" id="exportGrade" style="margin-bottom:1px;"><ion-icon name="download-outline"></ion-icon> ${tr('Ekspor CSV', 'Export CSV')}</button>
         <button class="btn btn-sm" id="printGrade" style="margin-bottom:1px;"><ion-icon name="print-outline"></ion-icon> PDF</button>
@@ -441,7 +768,7 @@ const Teacher = {
             <thead>
               <tr>
                 <th style="width:40px;">No</th>
-                <th style="min-width:150px;position:sticky;left:0;background:var(--surface-2);">${tr('Nama', 'Name')}</th>
+                <th class="sticky-col" style="min-width:150px;">${tr('Nama', 'Name')}</th>
                 ${columns.map(c => `
                   <th class="center" style="min-width:80px;">
                     <div style="display:flex;flex-direction:column;align-items:center;gap:3px;">
@@ -459,7 +786,7 @@ const Teacher = {
               ${students.map((s, i) => `
                 <tr>
                   <td class="center">${i + 1}</td>
-                  <td style="position:sticky;left:0;background:var(--surface);"><b>${esc(s.nama)}</b></td>
+                  <td class="sticky-col"><b>${esc(s.nama)}</b></td>
                   ${columns.map(c => {
                     const v = scores[s.id]?.[c.id];
                     const below = v !== undefined && v !== '' && (+v) < (+c.kkm || 0);
@@ -471,7 +798,7 @@ const Teacher = {
           </table>
         </div>`}`;
 
-    $('#tClass', el).onchange = e => { this.classId = e.target.value; this.render(this._el); };
+    this._bindClassBar(el);
     $('#addCol', el).onclick = () => this._colModal(gb);
     $$('[data-editcol]', el).forEach(h => h.onclick = () => this._colModal(gb, columns.find(c => c.id === h.dataset.editcol)));
 
@@ -565,15 +892,20 @@ const Teacher = {
   async renderJurnal(el) {
     const classes = await this._classes();
     if (!classes.length) { el.innerHTML = this._needClass(); this._bindNeedClass(el); return; }
-    if (!this.classId || !classes.find(c => c.id === this.classId)) this.classId = classes[0].id;
+    if (this.classId && !classes.find(c => c.id === this.classId)) this.classId = null;
+    if (!this.classId) {
+      el.innerHTML = this._classGate(classes, tr('Jurnal Mengajar', 'the Teaching Journal'));
+      this._bindClassGate(el); return;
+    }
+    const activeCls = classes.find(c => c.id === this.classId);
 
     const journals = (await DB.list('journals'))
       .filter(j => j.classId === this.classId)
       .sort((a, b) => (b.tanggal || '') < (a.tanggal || '') ? -1 : 1);
 
     el.innerHTML = `
+      ${this._classBar(activeCls)}
       <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end;margin-bottom:16px;">
-        <div class="field" style="margin:0;"><label>${tr('Kelas', 'Class')}</label>${this._classPicker(classes)}</div>
         <button class="btn btn-primary btn-sm" id="addJurnal" style="margin-bottom:1px;"><ion-icon name="add"></ion-icon> ${tr('Jurnal Baru', 'New Journal')}</button>
       </div>
 
@@ -604,7 +936,7 @@ const Teacher = {
           <div class="es-sub">${tr('Catat materi & kegiatan tiap pertemuan mengajar 📝', 'Log material & activities for each teaching session 📝')}</div>
         </div>`}`;
 
-    $('#tClass', el).onchange = e => { this.classId = e.target.value; this.render(this._el); };
+    this._bindClassBar(el);
     $('#addJurnal', el).onclick = () => this._jurnalModal();
     $$('[data-edit]', el).forEach(b => b.onclick = () => this._jurnalModal(journals.find(j => j.id === b.dataset.edit)));
     $$('[data-del]', el).forEach(b => b.onclick = async () => {
@@ -695,9 +1027,21 @@ const Teacher = {
   /* ============ TAB: JADWAL MENGAJAR ============ */
 
   async renderJadwal(el) {
-    const schedule = (await DB.list('schedule')).sort((a, b) =>
-      (+a.hari - +b.hari) || (a.jamMulai || '').localeCompare(b.jamMulai || ''));
+    const all = await DB.list('schedule');
+    const hariIni = todayStr();
     const dayOrder = [1, 2, 3, 4, 5, 6, 0];
+
+    // Rutin (berulang mingguan) vs sekali (tanggal tertentu).
+    const rutin = all.filter(s => !this._isSekali(s))
+      .sort((a, b) => (+a.hari - +b.hari) || (a.jamMulai || '').localeCompare(b.jamMulai || ''));
+    const sekali = all.filter(s => this._isSekali(s))
+      .sort((a, b) => (a.tanggal || '').localeCompare(b.tanggal || '') || (a.jamMulai || '').localeCompare(b.jamMulai || ''));
+
+    const aksi = s => `
+      <td style="text-align:right;white-space:nowrap;">
+        <button class="mini-icon-btn" data-edit="${s.id}"><ion-icon name="create-outline"></ion-icon></button>
+        <button class="mini-icon-btn danger" data-del="${s.id}"><ion-icon name="trash-outline"></ion-icon></button>
+      </td>`;
 
     el.innerHTML = `
       <div class="portal-head" style="margin-bottom:16px;">
@@ -708,58 +1052,114 @@ const Teacher = {
         </div>
       </div>
 
-      ${schedule.length ? `
+      ${!all.length ? `
+        <div class="card empty-state"><ion-icon name="calendar-outline"></ion-icon>
+          <div class="es-title">${tr('Belum ada jadwal mengajar', 'No teaching schedule yet')}</div>
+          <div class="es-sub">${tr('Tambahkan jam, kelas, dan mapel yang kamu ajar 🗓️', 'Add the time, class, and subject you teach 🗓️')}</div>
+        </div>` : ''}
+
+      ${rutin.length ? `
+        <div class="section-head">
+          <h2><ion-icon name="repeat-outline" style="vertical-align:-2px;color:var(--brand);"></ion-icon> ${tr('Jadwal Rutin', 'Weekly Schedule')}</h2>
+          <span class="badge badge-green">${tr('Berulang tiap minggu', 'Repeats weekly')}</span>
+        </div>
         <div class="table-wrap">
           <table class="data-table">
             <thead><tr><th>${tr('Hari', 'Day')}</th><th>${tr('Jam', 'Time')}</th><th>${tr('Kelas', 'Class')}</th><th>${tr('Mapel', 'Subject')}</th><th style="text-align:right;">${tr('Aksi', 'Actions')}</th></tr></thead>
             <tbody>
-              ${dayOrder.filter(d => schedule.some(s => +s.hari === d)).map(d => schedule.filter(s => +s.hari === d).map((s, idx) => `
+              ${dayOrder.filter(d => rutin.some(s => +s.hari === d)).map(d => rutin.filter(s => +s.hari === d).map((s, idx) => `
                 <tr>
                   <td>${idx === 0 ? `<b>${HARI[d]}</b>` : ''}</td>
-                  <td>${esc(s.jamMulai)}–${esc(s.jamSelesai)}</td>
+                  <td>${this._jamRange(s.jamMulai, s.jamSelesai)}</td>
                   <td>${esc(s.kelas || '-')}</td>
                   <td>${esc(s.mapel || '-')}</td>
-                  <td style="text-align:right;white-space:nowrap;">
-                    <button class="mini-icon-btn" data-edit="${s.id}"><ion-icon name="create-outline"></ion-icon></button>
-                    <button class="mini-icon-btn danger" data-del="${s.id}"><ion-icon name="trash-outline"></ion-icon></button>
-                  </td>
+                  ${aksi(s)}
                 </tr>`).join('')).join('')}
             </tbody>
           </table>
-        </div>` : `
-        <div class="card empty-state"><ion-icon name="calendar-outline"></ion-icon>
-          <div class="es-title">${tr('Belum ada jadwal mengajar', 'No teaching schedule yet')}</div>
-          <div class="es-sub">${tr('Tambahkan jam, kelas, dan mapel yang kamu ajar 🗓️', 'Add the time, class, and subject you teach 🗓️')}</div>
-        </div>`}`;
+        </div>` : ''}
+
+      ${sekali.length ? `
+        <div class="section-head" style="margin-top:26px;">
+          <h2><ion-icon name="calendar-outline" style="vertical-align:-2px;color:var(--brand);"></ion-icon> ${tr('Jadwal Tanggal Tertentu', 'One-off Schedule')}</h2>
+          <span class="badge badge-purple">${tr('Berlaku 1 hari saja', 'Single day only')}</span>
+        </div>
+        <div class="table-wrap">
+          <table class="data-table">
+            <thead><tr><th>${tr('Tanggal', 'Date')}</th><th>${tr('Jam', 'Time')}</th><th>${tr('Kelas', 'Class')}</th><th>${tr('Mapel', 'Subject')}</th><th style="text-align:right;">${tr('Aksi', 'Actions')}</th></tr></thead>
+            <tbody>
+              ${sekali.map(s => {
+                const lewat = (s.tanggal || '') < hariIni;
+                return `
+                <tr style="${lewat ? 'opacity:.5;' : ''}">
+                  <td style="white-space:nowrap;">
+                    <b>${fmtDate(s.tanggal, { weekday: true })}</b>
+                    ${s.tanggal === hariIni ? `<span class="badge badge-green" style="margin-left:6px;">${tr('Hari ini', 'Today')}</span>` : ''}
+                    ${lewat ? `<span class="badge" style="margin-left:6px;">${tr('Lewat', 'Past')}</span>` : ''}
+                  </td>
+                  <td>${this._jamRange(s.jamMulai, s.jamSelesai)}</td>
+                  <td>${esc(s.kelas || '-')}</td>
+                  <td>${esc(s.mapel || '-')}</td>
+                  ${aksi(s)}
+                </tr>`;
+              }).join('')}
+            </tbody>
+          </table>
+        </div>` : ''}`;
 
     $('#addJadwal', el).onclick = () => this._jadwalModal();
-    $$('[data-edit]', el).forEach(b => b.onclick = () => this._jadwalModal(schedule.find(s => s.id === b.dataset.edit)));
+    $$('[data-edit]', el).forEach(b => b.onclick = () => this._jadwalModal(all.find(s => s.id === b.dataset.edit)));
     $$('[data-del]', el).forEach(b => b.onclick = async () => {
       if (!await confirmDialog(tr('Hapus jadwal ini?', 'Delete this schedule?'), { danger: true, okText: tr('Hapus', 'Delete') })) return;
       await DB.remove('schedule', b.dataset.del);
       toast(tr('Jadwal dihapus.', 'Schedule deleted.'));
       this.render(this._el);
     });
-    $('#exportJadwal', el) && ($('#exportJadwal', el).onclick = () => {
-      const rows = [[tr('Hari', 'Day'), tr('Mulai', 'Start'), tr('Selesai', 'End'), tr('Kelas', 'Class'), tr('Mapel', 'Subject')]];
-      schedule.forEach(s => rows.push([HARI[+s.hari], s.jamMulai, s.jamSelesai, s.kelas || '', s.mapel || '']));
+    $('#exportJadwal', el).onclick = () => {
+      const rows = [[tr('Jenis', 'Type'), tr('Berlaku', 'Applies on'), tr('Mulai', 'Start'), tr('Selesai', 'End'), tr('Kelas', 'Class'), tr('Mapel', 'Subject')]];
+      [...rutin, ...sekali].forEach(s => rows.push([
+        this._isSekali(s) ? tr('Sekali', 'One-off') : tr('Rutin', 'Weekly'),
+        this._isSekali(s) ? s.tanggal : HARI[+s.hari],
+        this._jam(s.jamMulai), this._jam(s.jamSelesai), s.kelas || '', s.mapel || ''
+      ]));
       downloadCSV(rows, 'jadwal_mengajar.csv');
-    });
+    };
   },
 
   async _jadwalModal(item = null) {
     const dayOrder = [1, 2, 3, 4, 5, 6, 0];
     const classes = await this._classes();
+    const tipe = this._tipeJadwal(item);   // 'rutin' (default) | 'sekali'
+
     openModal({
       title: item ? tr('Ubah Jadwal', 'Edit Schedule') : tr('Jadwal Baru', 'New Schedule'),
       body: `
         <div class="field">
+          <label>${tr('Jenis jadwal', 'Schedule type')}</label>
+          <div class="seg" id="mTipe">
+            <button type="button" class="seg-btn ${tipe === 'rutin' ? 'active' : ''}" data-tipe="rutin">
+              <ion-icon name="repeat-outline"></ion-icon> ${tr('Ulangi tiap minggu', 'Repeat weekly')}
+            </button>
+            <button type="button" class="seg-btn ${tipe === 'sekali' ? 'active' : ''}" data-tipe="sekali">
+              <ion-icon name="calendar-outline"></ion-icon> ${tr('Tanggal tertentu', 'Specific date')}
+            </button>
+          </div>
+          <div class="hint" id="mTipeHint"></div>
+        </div>
+
+        <div class="field" id="mFieldHari">
           <label>${tr('Hari', 'Day')}</label>
           <select class="select" id="mHari">${dayOrder.map(d => `<option value="${d}" ${(item ? +item.hari : new Date().getDay()) === d ? 'selected' : ''}>${HARI[d]}</option>`).join('')}</select>
         </div>
-        <div class="grid grid-2 keep-2" style="gap:12px;">
-          <div class="field"><label>${tr('Jam mulai', 'Start time')}</label><input type="time" class="input" id="mMulai" value="${item?.jamMulai || '07:00'}"></div>
-          <div class="field"><label>${tr('Jam selesai', 'End time')}</label><input type="time" class="input" id="mSelesai" value="${item?.jamSelesai || '08:30'}"></div>
+
+        <div class="field" id="mFieldTanggal">
+          <label>${tr('Tanggal', 'Date')}</label>
+          <input type="date" class="input" id="mTanggal" value="${esc(item?.tanggal || todayStr())}">
+        </div>
+
+        <div class="grid grid-2 keep-2 jam-fields" style="gap:12px;">
+          <div class="field"><label>${tr('Jam mulai', 'Start time')}</label>${this._jamPicker('mMulai', item?.jamMulai, '07:00')}</div>
+          <div class="field"><label>${tr('Jam selesai', 'End time')}</label>${this._jamPicker('mSelesai', item?.jamSelesai, '08:30')}</div>
         </div>
         <div class="field">
           <label>${tr('Kelas', 'Class')}</label>
@@ -769,11 +1169,40 @@ const Teacher = {
         <div class="field"><label>${tr('Mata pelajaran', 'Subject')}</label><input type="text" class="input" id="mMapel" value="${esc(item?.mapel || DB.user.mapel || '')}"></div>
         <button class="btn btn-primary btn-block" id="mSave"><ion-icon name="checkmark"></ion-icon> ${tr('Simpan', 'Save')}</button>`,
       onMount: m => {
+        let cur = tipe;
+
+        // Tampilkan "Hari" untuk jadwal rutin, "Tanggal" untuk jadwal sekali.
+        const syncTipe = () => {
+          $('#mFieldHari', m).style.display = cur === 'rutin' ? '' : 'none';
+          $('#mFieldTanggal', m).style.display = cur === 'sekali' ? '' : 'none';
+          $('#mTipeHint', m).textContent = cur === 'rutin'
+            ? tr('Berulang setiap minggu pada hari yang dipilih.', 'Repeats every week on the chosen day.')
+            : tr('Hanya berlaku pada tanggal itu saja (jadwal pengganti/mendadak).', 'Applies only on that date (one-off / replacement).');
+          $$('.seg-btn', m).forEach(b => b.classList.toggle('active', b.dataset.tipe === cur));
+        };
+        $$('.seg-btn', m).forEach(b => b.onclick = () => { cur = b.dataset.tipe; syncTipe(); });
+        syncTipe();
+
         $('#mSave', m).onclick = async () => {
-          const jamMulai = $('#mMulai', m).value, jamSelesai = $('#mSelesai', m).value;
+          const jamMulai = this._jamValue('mMulai', m), jamSelesai = this._jamValue('mSelesai', m);
           if (!jamMulai || !jamSelesai) return toast(tr('Isi jam mulai & selesai.', 'Enter start & end time.'), 'warning');
           if (jamSelesai <= jamMulai) return toast(tr('Jam selesai harus setelah jam mulai.', 'End time must be after start time.'), 'warning');
-          const data = { hari: +$('#mHari', m).value, jamMulai, jamSelesai, kelas: $('#mKelas', m).value.trim(), mapel: $('#mMapel', m).value.trim() };
+
+          let hari, tanggal = '';
+          if (cur === 'sekali') {
+            tanggal = $('#mTanggal', m).value;
+            if (!tanggal) return toast(tr('Pilih tanggalnya.', 'Pick a date.'), 'warning');
+            // `hari` tetap diisi (turunan dari tanggal) agar pengurutan &
+            // penyaringan berbasis hari yang sudah ada tetap jalan.
+            hari = new Date(`${tanggal}T00:00:00`).getDay();
+          } else {
+            hari = +$('#mHari', m).value;
+          }
+
+          const data = {
+            tipe: cur, hari, tanggal, jamMulai, jamSelesai,
+            kelas: $('#mKelas', m).value.trim(), mapel: $('#mMapel', m).value.trim()
+          };
           if (item) await DB.update('schedule', item.id, data);
           else await DB.add('schedule', data);
           closeModal();
@@ -790,13 +1219,18 @@ const Teacher = {
   async renderTugasKelas(el) {
     const classes = await this._classes();
     if (!classes.length) { el.innerHTML = this._needClass(); this._bindNeedClass(el); return; }
-    if (!this.classId || !classes.find(c => c.id === this.classId)) this.classId = classes[0].id;
+    if (this.classId && !classes.find(c => c.id === this.classId)) this.classId = null;
+    if (!this.classId) {
+      el.innerHTML = this._classGate(classes, tr('Tugas Kelas', 'Class Tasks'));
+      this._bindClassGate(el); return;
+    }
+    const activeCls = classes.find(c => c.id === this.classId);
     const tasks = (await DB.gListWhere('class_tasks', 'classId', this.classId))
       .sort((a, b) => (a.tenggat || '9999-99-99') < (b.tenggat || '9999-99-99') ? -1 : 1);
 
     el.innerHTML = `
+      ${this._classBar(activeCls)}
       <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end;margin-bottom:12px;">
-        <div class="field" style="margin:0;"><label>${tr('Kelas', 'Class')}</label>${this._classPicker(classes)}</div>
         <button class="btn btn-primary btn-sm" id="addTugas" style="margin-bottom:1px;"><ion-icon name="add"></ion-icon> ${tr('Kirim Tugas', 'Send Task')}</button>
       </div>
       <div style="font-size:.8rem;color:var(--text-3);margin-bottom:14px;">${tr('Tugas yang kamu kirim langsung muncul di app siswa kelas ini.', "Tasks you send appear instantly in this class's student apps.")}</div>
@@ -825,7 +1259,7 @@ const Teacher = {
           <div class="es-sub">${tr('Tekan "Kirim Tugas" untuk memberi tugas ke siswa 📚', 'Press "Send Task" to assign a task to students 📚')}</div>
         </div>`}`;
 
-    $('#tClass', el).onchange = e => { this.classId = e.target.value; this.render(this._el); };
+    this._bindClassBar(el);
     $('#addTugas', el).onclick = () => this._tugasKelasModal();
     $$('[data-edit]', el).forEach(b => b.onclick = () => this._tugasKelasModal(tasks.find(t => t.id === b.dataset.edit)));
     $$('[data-del]', el).forEach(b => b.onclick = async () => {
@@ -912,7 +1346,7 @@ const Teacher = {
             <tbody>
               ${entries.map(s => `<tr>
                 <td>${HARI[+s.hari]}</td>
-                <td>${esc(s.jamMulai)}–${esc(s.jamSelesai)}</td>
+                <td>${this._jamRange(s.jamMulai, s.jamSelesai)}</td>
                 <td><b>${esc(s.mapel)}</b></td>
                 <td style="color:var(--text-3);">${esc(s.ruang || '-')}</td>
                 <td style="text-align:right;white-space:nowrap;">
@@ -947,16 +1381,16 @@ const Teacher = {
       body: `
         <div class="field"><label>${tr('Mata pelajaran', 'Subject')}</label><input type="text" class="input" id="mMapel" placeholder="${tr('mis. Matematika', 'e.g. Math')}" value="${esc(item?.mapel || '')}"></div>
         <div class="field"><label>${tr('Hari', 'Day')}</label><select class="select" id="mHari">${dayOrder.map(d => `<option value="${d}" ${(item ? +item.hari : 1) === d ? 'selected' : ''}>${HARI[d]}</option>`).join('')}</select></div>
-        <div class="grid grid-2 keep-2" style="gap:12px;">
-          <div class="field"><label>${tr('Jam mulai', 'Start')}</label><input type="time" class="input" id="mMulai" value="${item?.jamMulai || '07:00'}"></div>
-          <div class="field"><label>${tr('Jam selesai', 'End')}</label><input type="time" class="input" id="mSelesai" value="${item?.jamSelesai || '08:30'}"></div>
+        <div class="grid grid-2 keep-2 jam-fields" style="gap:12px;">
+          <div class="field"><label>${tr('Jam mulai', 'Start')}</label>${this._jamPicker('mMulai', item?.jamMulai, '07:00')}</div>
+          <div class="field"><label>${tr('Jam selesai', 'End')}</label>${this._jamPicker('mSelesai', item?.jamSelesai, '08:30')}</div>
         </div>
         <div class="field"><label>${tr('Ruang', 'Room')} <span style="font-weight:500;color:var(--text-3)">${tr('(opsional)', '(optional)')}</span></label><input type="text" class="input" id="mRuang" value="${esc(item?.ruang || '')}"></div>
         <button class="btn btn-primary btn-block" id="mSave"><ion-icon name="checkmark"></ion-icon> ${tr('Simpan', 'Save')}</button>`,
       onMount: m => {
         $('#mSave', m).onclick = async () => {
           const mapel = $('#mMapel', m).value.trim();
-          const jamMulai = $('#mMulai', m).value, jamSelesai = $('#mSelesai', m).value;
+          const jamMulai = this._jamValue('mMulai', m), jamSelesai = this._jamValue('mSelesai', m);
           if (!mapel) return toast(tr('Isi nama pelajaran.', 'Enter a subject.'), 'warning');
           if (!jamMulai || !jamSelesai) return toast(tr('Isi jam mulai & selesai.', 'Enter start & end time.'), 'warning');
           if (jamSelesai <= jamMulai) return toast(tr('Jam selesai harus setelah mulai.', 'End must be after start.'), 'warning');
@@ -1059,14 +1493,19 @@ const Teacher = {
 
     const classes = await this._classes();
     if (!classes.length) { el.innerHTML = this._needClass(); this._bindNeedClass(el); return; }
-    if (!this.classId || !classes.find(c => c.id === this.classId)) this.classId = classes[0].id;
+    if (this.classId && !classes.find(c => c.id === this.classId)) this.classId = null;
+    if (!this.classId) {
+      el.innerHTML = this._classGate(classes, tr('Ibadah Siswa', 'Student Worship'));
+      this._bindClassGate(el); return;
+    }
+    const activeCls = classes.find(c => c.id === this.classId);
     const students = await this._students(this.classId);
 
     this.ibadahDate = this.ibadahDate || todayStr();
 
     el.innerHTML = `
+      ${this._classBar(activeCls)}
       <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end;margin-bottom:16px;">
-        <div class="field" style="margin:0;"><label>${tr('Kelas', 'Class')}</label>${this._classPicker(classes)}</div>
         <div class="field" style="margin:0;"><label>${tr('Tanggal Pantauan', 'Monitoring Date')}</label><input type="date" class="input" id="ibDate" value="${this.ibadahDate}" style="max-width:170px;"></div>
         <button class="btn btn-sm" id="exportIbadah" style="margin-bottom:1px;"><ion-icon name="download-outline"></ion-icon> ${tr('Ekspor CSV', 'Export CSV')}</button>
         <span id="ibStatus" style="font-size:.78rem;color:var(--text-3);align-self:center;">
@@ -1085,7 +1524,7 @@ const Teacher = {
             <thead>
               <tr>
                 <th style="width:40px;">No</th>
-                <th style="min-width:150px;position:sticky;left:0;background:var(--surface-2);">${tr('Nama', 'Name')}</th>
+                <th class="sticky-col" style="min-width:150px;">${tr('Nama', 'Name')}</th>
                 <th class="center" style="min-width:140px;">${tr('Sholat Fardhu', 'Fardh Prayers')}</th>
                 <th class="center" style="min-width:120px;">${tr('Amalan Sunnah', 'Sunnah Deeds')}</th>
                 <th class="center" style="min-width:100px;">${tr('Tilawah Qur\'an', 'Tilawah')}</th>
@@ -1101,7 +1540,7 @@ const Teacher = {
     `;
 
     // Bind filters
-    $('#tClass', el).onchange = e => { this.classId = e.target.value; this.render(this._el); };
+    this._bindClassBar(el);
     const dateInput = $('#ibDate', el);
     if (dateInput) {
       dateInput.onchange = e => { this.ibadahDate = e.target.value || todayStr(); this.render(this._el); };
@@ -1205,7 +1644,7 @@ const Teacher = {
       listHtml.push(`
         <tr>
           <td class="center">${i + 1}</td>
-          <td style="position:sticky;left:0;background:var(--surface);">
+          <td class="sticky-col">
             <div style="display:flex;align-items:center;gap:8px;">
               ${this._avatarHTML(s)}
               <b>${esc(s.nama)}</b>
@@ -1260,8 +1699,7 @@ const Teacher = {
     const exp = document.getElementById('exportIbadah');
     if (exp) {
       exp.onclick = () => {
-        const clsSelector = document.getElementById('tClass');
-        const cls = clsSelector ? clsSelector.options[clsSelector.selectedIndex].text : 'kelas';
+        const cls = Teacher._activeClsNama || 'kelas';
         downloadCSV(csvRows, `ibadah_${cls.replace(/\s+/g, '_')}_${tanggal}.csv`);
         toast(tr('Data ibadah diekspor 📊', 'Worship data exported 📊'));
       };
@@ -1377,14 +1815,19 @@ const Teacher = {
 
     const classes = await this._classes();
     if (!classes.length) { el.innerHTML = this._needClass(); this._bindNeedClass(el); return; }
-    if (!this.classId || !classes.find(c => c.id === this.classId)) this.classId = classes[0].id;
+    if (this.classId && !classes.find(c => c.id === this.classId)) this.classId = null;
+    if (!this.classId) {
+      el.innerHTML = this._classGate(classes, tr('Kesehatan Siswa', 'Student Health'));
+      this._bindClassGate(el); return;
+    }
+    const activeCls = classes.find(c => c.id === this.classId);
     const students = await this._students(this.classId);
 
     this.healthDate = this.healthDate || todayStr();
 
     el.innerHTML = `
+      ${this._classBar(activeCls)}
       <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end;margin-bottom:16px;">
-        <div class="field" style="margin:0;"><label>${tr('Kelas', 'Class')}</label>${this._classPicker(classes)}</div>
         <div class="field" style="margin:0;"><label>${tr('Tanggal Pantauan', 'Monitoring Date')}</label><input type="date" class="input" id="healthDate" value="${this.healthDate}" style="max-width:170px;"></div>
         <button class="btn btn-sm" id="exportHealth" style="margin-bottom:1px;"><ion-icon name="download-outline"></ion-icon> ${tr('Ekspor CSV', 'Export CSV')}</button>
         <span id="healthStatus" style="font-size:.78rem;color:var(--text-3);align-self:center;">
@@ -1403,7 +1846,7 @@ const Teacher = {
             <thead>
               <tr>
                 <th style="width:40px;">No</th>
-                <th style="min-width:150px;position:sticky;left:0;background:var(--surface-2);">${tr('Nama', 'Name')}</th>
+                <th class="sticky-col" style="min-width:150px;">${tr('Nama', 'Name')}</th>
                 <th class="center" style="min-width:90px;">${tr('Air', 'Water')}</th>
                 <th class="center" style="min-width:90px;">${tr('Kalori', 'Calories')}</th>
                 <th class="center" style="min-width:90px;">${tr('Tidur', 'Sleep')}</th>
@@ -1420,7 +1863,7 @@ const Teacher = {
     `;
 
     // Bind filters
-    $('#tClass', el).onchange = e => { this.classId = e.target.value; this.render(this._el); };
+    this._bindClassBar(el);
     const dateInput = $('#healthDate', el);
     if (dateInput) {
       dateInput.onchange = e => { this.healthDate = e.target.value || todayStr(); this.render(this._el); };
@@ -1521,7 +1964,7 @@ const Teacher = {
       listHtml.push(`
         <tr>
           <td class="center">${i + 1}</td>
-          <td style="position:sticky;left:0;background:var(--surface);">
+          <td class="sticky-col">
             <div style="display:flex;align-items:center;gap:8px;">
               ${this._avatarHTML(s)}
               <b>${esc(s.nama)}</b>
@@ -1573,8 +2016,7 @@ const Teacher = {
     const exp = document.getElementById('exportHealth');
     if (exp) {
       exp.onclick = () => {
-        const clsSelector = document.getElementById('tClass');
-        const cls = clsSelector ? clsSelector.options[clsSelector.selectedIndex].text : 'kelas';
+        const cls = Teacher._activeClsNama || 'kelas';
         downloadCSV(csvRows, `kesehatan_${cls.replace(/\s+/g, '_')}_${tanggal}.csv`);
         toast(tr('Data kesehatan diekspor 📊', 'Health data exported 📊'));
       };

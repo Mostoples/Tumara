@@ -87,9 +87,21 @@ body {
 
 .hidden { display: none !important; }
 
-/* Scrollbar disembunyikan — scroll tetap berfungsi normal */
-* { scrollbar-width: none; -ms-overflow-style: none; }
-::-webkit-scrollbar { width: 0; height: 0; display: none; }
+/* Scrollbar disembunyikan — scroll tetap berfungsi normal.
+   KECUALI .table-wrap (tabel data), yang dikecualikan dari selector ini supaya
+   aturan penyembunyi di bawah tidak beradu dengan styling scrollbar-nya. */
+*:not(.table-wrap) { scrollbar-width: none; -ms-overflow-style: none; }
+*:not(.table-wrap)::-webkit-scrollbar { width: 0; height: 0; display: none; }
+
+/* Scrollbar horizontal tabel — SELALU tampil, tidak memudar saat dilepas.
+   Scrollbar native itu bertipe "overlay" (muncul hanya saat digeser). Dengan
+   men-style ::-webkit-scrollbar secara eksplisit, Chrome beralih ke scrollbar
+   klasik yang permanen selama kontennya memang bisa digeser. */
+.table-wrap { scrollbar-width: auto; scrollbar-color: var(--text-3) var(--surface-2); }
+.table-wrap::-webkit-scrollbar { height: 10px; }
+.table-wrap::-webkit-scrollbar-track { background: var(--surface-2); border-radius: 99px; }
+.table-wrap::-webkit-scrollbar-thumb { background: var(--text-3); border-radius: 99px; }
+.table-wrap::-webkit-scrollbar-thumb:hover { background: var(--text-2); }
 
 ion-icon { pointer-events: none; flex-shrink: 0; }
 
@@ -178,7 +190,11 @@ ion-icon { pointer-events: none; flex-shrink: 0; }
 }
 .topbar-title { font-size: 1.5rem; font-weight: 800; letter-spacing: -.02em; }
 .topbar-sub { font-size: .85rem; color: var(--text-3); font-weight: 500; }
-.topbar-actions { display: flex; align-items: center; gap: 10px; }
+.topbar-actions { display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
+
+/* Item/kontrol yang hanya tampil di layar mobile (mis. aksi topbar yang
+   dipindah ke dropdown avatar agar topbar tidak berdesakan) */
+.only-mobile { display: none; }
 
 .icon-btn {
   width: 42px; height: 42px; border-radius: 50%;
@@ -553,7 +569,8 @@ ion-icon { pointer-events: none; flex-shrink: 0; }
 .empty-state {
   text-align: center; padding: 44px 20px; color: var(--text-3);
 }
-.empty-state ion-icon { font-size: 2.6rem; opacity: .5; margin-bottom: 10px; }
+/* > : hanya ikon dekoratif milik empty-state, bukan ikon di dalam tombolnya */
+.empty-state > ion-icon { font-size: 2.6rem; opacity: .5; margin-bottom: 10px; }
 .empty-state .es-title { font-weight: 700; color: var(--text-2); font-size: .95rem; }
 .empty-state .es-sub { font-size: .82rem; margin-top: 3px; }
 
@@ -927,8 +944,21 @@ ion-icon { pointer-events: none; flex-shrink: 0; }
   .main-area { margin-left: 0; }
   .bottom-nav { display: flex; }
   .view-wrap { padding: 16px 18px 110px; }
-  .topbar { padding: 14px 18px 12px; }
+  .topbar { padding: 14px 18px 12px; gap: 12px; }
   .topbar-title { font-size: 1.3rem; }
+
+  /* Topbar ramping di mobile: judul boleh dipotong (…), tombol tak terdorong keluar layar */
+  .topbar > div:first-child { min-width: 0; flex: 1; }
+  .topbar-title { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .topbar-sub { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+  /* Hanya sisakan tema + avatar di topbar. Bahasa, Data Guru & Ganti sandi
+     pindah ke dropdown avatar (lihat .only-mobile) agar tidak berdesakan. */
+  #topLangBtn, #topGuruBtn, #topPassBtn { display: none; }
+  .topbar-actions { gap: 8px; }
+  .topbar-actions .icon-btn,
+  .topbar-actions .avatar-btn { width: 40px; height: 40px; }
+  .only-mobile { display: flex; }
 
   .auth-card { grid-template-columns: 1fr; min-height: 0; max-width: 460px; }
   .auth-brand { padding: 30px 28px; gap: 18px; }
@@ -1016,6 +1046,107 @@ ion-icon { pointer-events: none; flex-shrink: 0; }
 .guru-stat-num { font-size: 1.15rem; font-weight: 800; color: var(--text); line-height: 1.15; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .guru-stat-lb { font-size: .75rem; color: var(--text-3); font-weight: 600; }
 
+/* Segmented control — pilih jenis jadwal: "Ulangi tiap minggu" / "Tanggal tertentu" */
+.seg {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 4px;
+  padding: 4px; background: var(--surface-2);
+  border: 1px solid var(--border); border-radius: var(--radius-sm);
+}
+.seg-btn {
+  display: flex; align-items: center; justify-content: center; gap: 6px;
+  padding: 9px 8px; border: 0; border-radius: 10px; cursor: pointer;
+  background: transparent; color: var(--text-3);
+  font-family: var(--font); font-size: .8rem; font-weight: 700;
+  transition: background .15s, color .15s;
+}
+.seg-btn ion-icon { font-size: 1.05rem; }
+.seg-btn:hover { color: var(--text-2); }
+.seg-btn.active {
+  background: var(--surface); color: var(--brand-dark);
+  box-shadow: var(--shadow-sm);
+}
+[data-theme="dark"] .seg-btn.active { color: #34d399; }
+@media (max-width: 380px) {
+  .seg { grid-template-columns: 1fr; }
+}
+
+/* Pemilih jam 24-jam (format Indonesia: 06:00, 21:00). Memakai dua <select>
+   karena <input type="time"> bawaan Chrome ikut locale browser → bisa AM/PM. */
+.jam-picker { display: flex; align-items: center; gap: 6px; }
+.jam-sep { font-weight: 800; color: var(--text-3); }
+/* .select bawaan menyisakan padding-right 40px untuk chevron. Select jam sangat
+   sempit, jadi padding dirapatkan (dan dibuat simetris) agar angkanya tidak
+   terpotong dan tetap terlihat rata tengah. */
+.jam-picker .select {
+  flex: 1; min-width: 0; text-align: center;
+  padding-left: 12px; padding-right: 24px;
+  background-position: right 7px center;
+}
+
+/* Garis pemisah antara kolom "Jam mulai" dan "Jam selesai" di modal jadwal,
+   agar kedua kelompok select tidak terbaca menyatu. Memakai --text-3 (bukan
+   --border yang terlalu pucat) + 2px agar sekatnya benar-benar terbaca.
+   Jarak antar kolom dibuat lewat padding (gap dinolkan) supaya garis jatuh
+   tepat di tengah. */
+.jam-fields { gap: 0 !important; align-items: stretch; }
+.jam-fields > .field { padding-right: 16px; }
+.jam-fields > .field + .field {
+  padding-right: 0; padding-left: 16px;
+  border-left: 2px solid var(--text-3);
+}
+
+/* Di HP dua kolom jam terlalu sempit (angka terpotong) → tumpuk vertikal,
+   sekatnya ikut berubah jadi garis horizontal. */
+@media (max-width: 560px) {
+  .grid-2.keep-2.jam-fields { grid-template-columns: 1fr; }
+  /* margin-bottom bawaan .field (15px) dinolkan, kalau tidak garis jadi
+     tidak di tengah (15px margin + 14px padding di sisi atas saja). */
+  .jam-fields { margin-bottom: 15px; }
+  .jam-fields > .field { margin-bottom: 0; padding-right: 0; padding-bottom: 14px; }
+  .jam-fields > .field + .field {
+    padding-left: 0; padding-top: 14px; padding-bottom: 0;
+    border-left: none; border-top: 2px solid var(--text-3);
+  }
+}
+
+/* Rentang jam "06:00 - 07:30" — sekat agar mulai & selesai tak tertukar */
+.jam-range {
+  display: inline-flex; align-items: center; gap: 6px; white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.jam-range b { font-weight: 700; }
+.jam-sd { color: var(--text); font-weight: 700; }
+
+/* ---- Gerbang "pilih kelas" (absensi, nilai, jurnal, tugas, ibadah, kesehatan) ---- */
+
+/* Judul tingkat: Kelas X / XI / XII */
+.tingkat-head {
+  display: flex; align-items: center; gap: 10px;
+  margin: 4px 0 10px;
+}
+.tingkat-name {
+  font-size: .95rem; font-weight: 800; color: var(--text);
+  letter-spacing: -.01em;
+}
+.tingkat-count {
+  font-size: .72rem; font-weight: 700; color: var(--brand-dark);
+  background: var(--brand-soft); padding: 3px 9px; border-radius: 999px;
+}
+[data-theme="dark"] .tingkat-count { color: #34d399; }
+
+/* Baris kelas aktif + tombol "Ganti Kelas" di atas konten tab */
+.class-bar {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  margin-bottom: 16px;
+}
+.class-bar-name {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-size: .9rem; font-weight: 800; color: var(--brand-dark);
+  background: var(--brand-soft); padding: 7px 13px; border-radius: 999px;
+}
+.class-bar-name ion-icon { font-size: 1.05rem; }
+[data-theme="dark"] .class-bar-name { color: #34d399; }
+
 .guru-menu-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
 .guru-tile {
   position: relative;
@@ -1033,6 +1164,66 @@ ion-icon { pointer-events: none; flex-shrink: 0; }
   background: #ef4444; color: #fff; font-size: .58rem; font-weight: 800;
   letter-spacing: .04em; padding: 2px 6px; border-radius: 999px;
 }
+
+/* Jadwal hari ini (beranda guru) — pengingat jam mengajar */
+.ts-day { font-size: .85rem; font-weight: 700; color: var(--brand-dark); }
+[data-theme="dark"] .ts-day { color: #34d399; }
+.ts-note { font-size: .82rem; color: var(--text-3); margin-bottom: 12px; }
+.ts-note b { color: var(--text); font-weight: 800; }
+.today-sched { display: flex; flex-direction: column; gap: 10px; }
+.ts-item {
+  display: flex; align-items: center; gap: 14px; padding: 12px 14px;
+  background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-sm);
+}
+.ts-item.now { border-color: var(--brand); background: var(--brand-soft); }
+.ts-item.done { opacity: .55; }
+/* Kolom kiri = KAPAN jadwalnya: tanggal+bulan (jadwal sekali) atau nama hari
+   (jadwal rutin). Jamnya sendiri pindah ke .ts-jam di dalam .ts-body. */
+.ts-time {
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  line-height: 1.25; flex-shrink: 0;
+  min-width: 62px; padding-right: 14px; border-right: 1px solid var(--border);
+}
+.ts-time b { font-size: 1.25rem; font-weight: 800; letter-spacing: -.02em; }
+/* Nama hari lebih panjang dari angka tanggal → dikecilkan agar tetap muat */
+.ts-time b.ts-hari { font-size: .88rem; }
+.ts-time span {
+  font-size: .68rem; font-weight: 700; color: var(--text-3);
+  text-transform: uppercase; letter-spacing: .04em;
+}
+.ts-body { flex: 1; min-width: 0; }
+.ts-class { font-weight: 700; font-size: .92rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ts-sub { font-size: .78rem; color: var(--text-3); margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* Baris jam di dalam body (menggantikan jam yang dulu ada di kolom kiri) */
+.ts-jam {
+  display: flex; align-items: center; gap: 5px; margin-top: 6px;
+  font-size: .78rem; color: var(--text-2);
+}
+.ts-jam ion-icon { font-size: .95rem; color: var(--text-3); }
+.ts-jam .jam-range { gap: 6px; }
+.ts-jam .jam-range b { font-weight: 800; }
+.ts-jam .jam-sd { font-size: .62rem; padding: 1px 5px; }
+.ts-badge {
+  flex-shrink: 0; font-size: .66rem; font-weight: 800; text-transform: uppercase; letter-spacing: .03em;
+  padding: 4px 9px; border-radius: 999px; white-space: nowrap;
+}
+.ts-badge.now { background: var(--brand); color: #fff; }
+.ts-badge.next { background: var(--info-soft); color: var(--info); }
+.ts-badge.done { background: var(--surface-3); color: var(--text-3); }
+
+/* Jadwal besok — muncul di beranda selepas jam 18.00 sebagai persiapan. */
+.ts-item.besok { border-color: var(--info); background: var(--info-soft); }
+.ts-badge.besok { background: var(--info); color: #fff; text-transform: none; }
+
+/* Jadwal "tanggal tertentu" yang akan datang — pengingat di beranda. Garis
+   putus-putus + warna ungu (samakan dengan .badge-purple) menegaskan bahwa
+   ini bukan jadwal rutin mingguan. */
+.ts-item.upcoming { border-style: dashed; border-color: #c4b5fd; }
+[data-theme="dark"] .ts-item.upcoming { border-color: #6d28d9; }
+.ts-item.upcoming .ts-time { border-right-color: var(--border); }
+.ts-badge.upcoming { background: var(--prod-soft); color: #7c3aed; text-transform: none; }
+[data-theme="dark"] .ts-badge.upcoming { color: #a78bfa; }
 
 /* ============================================================
    PORTAL (Admin & Guru) — shell, tabel, statistik, kredensial
@@ -1095,10 +1286,12 @@ ion-icon { pointer-events: none; flex-shrink: 0; }
 .data-table { width: 100%; border-collapse: collapse; font-size: .87rem; min-width: 560px; }
 .data-table thead th {
   text-align: left; font-size: .74rem; font-weight: 800; text-transform: uppercase; letter-spacing: .03em;
-  color: var(--text-3); padding: 13px 16px; border-bottom: 1px solid var(--border); background: var(--surface-2);
+  color: var(--brand-dark); padding: 13px 16px; border-bottom: 1px solid var(--border); background: var(--brand-soft);
   position: sticky; top: 0;
 }
+[data-theme="dark"] .data-table thead th { color: #34d399; }
 .data-table tbody td { padding: 12px 16px; border-bottom: 1px solid var(--border); vertical-align: middle; }
+.data-table th.center, .data-table td.center { text-align: center; }
 .data-table tbody tr:last-child td { border-bottom: none; }
 .data-table tbody tr:hover { background: var(--surface-2); }
 .data-table input.cell-input {
@@ -1106,6 +1299,13 @@ ion-icon { pointer-events: none; flex-shrink: 0; }
   font-family: var(--font); font-size: .85rem; background: var(--surface); color: var(--text); text-align: center;
 }
 .data-table input.cell-input:focus { outline: none; border-color: var(--brand); }
+
+/* Kolom nama yang menempel di kiri. Background wajib opaque agar sel lain
+   tidak menembus saat tabel digeser, jadi hover baris harus di-mirror di sini. */
+.data-table .sticky-col { position: sticky; left: 0; z-index: 1; background: var(--surface); }
+.data-table thead .sticky-col { z-index: 3; background: var(--brand-soft); }
+.data-table tbody tr:hover .sticky-col,
+.data-table tbody tr:focus-within .sticky-col { background: var(--surface-2); }
 
 /* Kotak kredensial akun baru */
 .cred-box { display: flex; flex-direction: column; gap: 10px; }
@@ -1128,6 +1328,17 @@ ion-icon { pointer-events: none; flex-shrink: 0; }
 .att-A { background: #ef4444; }   /* Alfa   - merah */
 .att-D { background: #22d3ee; }   /* Dispen - biru muda */
 .att-empty { background: var(--surface-3); color: var(--text-3); }
+
+/* Ringkasan absensi: tiap status dipisah sekat vertikal */
+.att-sum {
+  display: inline-flex; align-items: center; flex-wrap: wrap;
+  border: 1px solid var(--border); border-radius: var(--radius-sm);
+  background: var(--surface); font-size: .8rem; color: var(--text-3); padding: 4px 2px;
+}
+.att-sum-item { display: inline-flex; align-items: center; gap: 5px; padding: 3px 11px; white-space: nowrap; font-weight: 700; }
+.att-sum-item + .att-sum-item { border-left: 1px solid var(--border); }
+.att-sum-item b { color: var(--text); font-weight: 800; font-size: .87rem; }
+.att-sum-warn b { color: #ef4444; }
 
 /* Nilai di bawah KKM → merah */
 .grade-below { color: #ef4444 !important; font-weight: 800; }
@@ -1161,6 +1372,7 @@ ion-icon { pointer-events: none; flex-shrink: 0; }
     border-radius: var(--radius-sm); margin-bottom: 12px; overflow: hidden;
   }
   .data-table.stack tbody tr:hover { background: var(--surface); }
+  .data-table.stack tbody .sticky-col { position: static; background: transparent; }
   .data-table.stack tbody td {
     display: flex; align-items: center; justify-content: space-between; gap: 12px;
     padding: 11px 14px; text-align: right; border-bottom: 1px solid var(--border);

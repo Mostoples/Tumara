@@ -80,6 +80,8 @@
           <div class="user-dropdown-wrap" id="topAvatarWrap">
             <button class="avatar-btn" id="topAvatar" title="Profil" data-en-title="Profile"></button>
             <div class="dropdown-menu">
+              <button class="dropdown-item only-mobile" id="ddGuru"><ion-icon name="person-circle-outline"></ion-icon> <span data-en="Teacher info">Data Guru</span></button>
+              <button class="dropdown-item only-mobile" id="ddLang"><ion-icon name="language-outline"></ion-icon> <span data-en="Language / Bahasa">Bahasa / Language</span></button>
               <button class="dropdown-item" id="ddPass"><ion-icon name="key-outline"></ion-icon> <span data-en="Change password">Ganti kata sandi</span></button>
               <button class="dropdown-item danger" id="ddLogout"><ion-icon name="log-out-outline"></ion-icon> <span data-en="Sign out">Keluar</span></button>
             </div>
@@ -199,6 +201,11 @@
       document.getElementById('topLangBtn').onclick = () => { I18N.toggle(); setTheme(document.documentElement.dataset.theme || 'light'); updateView(); };
       document.getElementById('topPassBtn').onclick = () => Teacher._passwordModal();
       document.getElementById('topGuruBtn').onclick = () => Teacher._setupModal(() => { refreshGuruNav(); updateView(); });
+
+      // Item dropdown khusus mobile (memindahkan aksi topbar yang penuh ke menu avatar)
+      const closeDropdowns = () => document.querySelectorAll('.user-dropdown-wrap.open').forEach(w => w.classList.remove('open'));
+      document.getElementById('ddGuru')?.addEventListener('click', () => { closeDropdowns(); Teacher._setupModal(() => { refreshGuruNav(); updateView(); }); });
+      document.getElementById('ddLang')?.addEventListener('click', () => { closeDropdowns(); I18N.toggle(); setTheme(document.documentElement.dataset.theme || 'light'); updateView(); });
 
       // Dropdown menu avatar topbar & sidebar
       const toggleDropdown = (wrapId) => {

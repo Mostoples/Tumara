@@ -25,6 +25,17 @@ service cloud.firestore {
         && request.auth.token.email.lower() in ['admin@tumara.com', 'admin@tumara.id'];
     }
 
+    // Guru hanya boleh membaca data siswa yang classId-nya ada di
+    // kelasAmpu miliknya (dipilih guru sendiri lewat UI, lihat
+    // js/views/teacher.js DB.user.kelasAmpu). Mencegah guru membaca data
+    // kesehatan/ibadah siswa di kelas yang tidak ia ampu.
+    function isGuruOfStudent(studentUid) {
+      return isGuru()
+        && get(/databases/$(database)/documents/users/$(studentUid)).data.get('kelasId', null) != null
+        && get(/databases/$(database)/documents/users/$(studentUid)).data.get('kelasId', null) in
+           get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('kelasAmpu', []);
+    }
+
     match /users/{uid} {
       // Pemilik boleh baca dokumennya; admin boleh semua akun; guru boleh
       // membaca akun siswa (untuk memilih anggota kelas). Query guru harus
@@ -64,39 +75,41 @@ service cloud.firestore {
         allow read, write: if request.auth != null && (request.auth.uid == uid || isAdmin());
       }
 
-      // Guru boleh MEMBACA subkoleksi ibadah siswa (ibadah_daily, quran_log, hafalan) untuk pemantauan.
+      // Guru boleh MEMBACA subkoleksi ibadah siswa (ibadah_daily, quran_log, hafalan)
+      // HANYA untuk siswa di kelas yang ia ampu (lihat isGuruOfStudent di atas).
       match /ibadah_daily/{id} {
-        allow read: if isGuru();
+        allow read: if isGuruOfStudent(uid);
       }
       match /quran_log/{id} {
-        allow read: if isGuru();
+        allow read: if isGuruOfStudent(uid);
       }
       match /hafalan/{id} {
-        allow read: if isGuru();
+        allow read: if isGuruOfStudent(uid);
       }
 
-      // Guru boleh MEMBACA subkoleksi kesehatan siswa untuk pemantauan kesehatan di kelas.
-      // Akses read-only; guru tidak boleh mengubah data kesehatan siswa.
+      // Guru boleh MEMBACA subkoleksi kesehatan siswa (termasuk menstrual)
+      // HANYA untuk siswa di kelas yang ia ampu. Akses read-only; guru tidak
+      // boleh mengubah data kesehatan siswa.
       match /health_daily/{id} {
-        allow read: if isGuru();
+        allow read: if isGuruOfStudent(uid);
       }
       match /workouts/{id} {
-        allow read: if isGuru();
+        allow read: if isGuruOfStudent(uid);
       }
       match /biometrics/{id} {
-        allow read: if isGuru();
+        allow read: if isGuruOfStudent(uid);
       }
       match /weights/{id} {
-        allow read: if isGuru();
+        allow read: if isGuruOfStudent(uid);
       }
       match /meds/{id} {
-        allow read: if isGuru();
+        allow read: if isGuruOfStudent(uid);
       }
       match /foods/{id} {
-        allow read: if isGuru();
+        allow read: if isGuruOfStudent(uid);
       }
       match /menstrual/{id} {
-        allow read: if isGuru();
+        allow read: if isGuruOfStudent(uid);
       }
     }
 

@@ -256,6 +256,40 @@ const App = {
 
   stopWaterReminder() {
     if (this._reminderId) { clearInterval(this._reminderId); this._reminderId = null; }
+  },
+
+  /* ---------- pengingat obat ---------- */
+
+  async _checkMedReminder() {
+    let meds;
+    try { meds = await DB.list('meds'); } catch (_) { return; }
+    if (!meds || !meds.length) return;
+    const now = new Date();
+    const hhmm = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+    const today = todayStr();
+    this._medNotified = this._medNotified || new Set();
+    meds.forEach(md => {
+      (md.waktu || []).forEach(w => {
+        if (w !== hhmm) return;
+        const key = `${md.id}_${w}_${today}`;
+        if (this._medNotified.has(key)) return;
+        this._medNotified.add(key);
+        const taken = (md.riwayat || {})[today] || [];
+        if (taken.includes(w)) return;
+        const pesan = tr(`Waktunya minum ${md.nama}${md.dosis ? ' · ' + md.dosis : ''} (${w}) 💊`,
+                         `Time for ${md.nama}${md.dosis ? ' · ' + md.dosis : ''} (${w}) 💊`);
+        if (!this.notify(pesan, { title: 'Tumara 💊' })) toast(pesan, 'info');
+      });
+    });
+  },
+
+  startMedReminder() {
+    this.stopMedReminder();
+    this._medReminderId = setInterval(() => this._checkMedReminder(), 30 * 1000);
+  },
+
+  stopMedReminder() {
+    if (this._medReminderId) { clearInterval(this._medReminderId); this._medReminderId = null; }
   }
 };
 

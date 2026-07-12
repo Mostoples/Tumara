@@ -16,6 +16,26 @@ service cloud.firestore {
         && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'guru';
     }
 
+    // Mirrors js/firebase-config.js ADMIN_EMAILS. Firestore Rules can't
+    // import JS, so this list must be kept in sync manually if that file
+    // changes. Used only to bootstrap the first admin account(s) server-side
+    // instead of trusting the client-side check in js/db.js.
+    function isBootstrapAdminEmail() {
+      return request.auth != null && request.auth.token.email != null
+        && request.auth.token.email.lower() in ['admin@tumara.com', 'admin@tumara.id'];
+    }
+
+    // Guru hanya boleh membaca data siswa yang classId-nya ada di
+    // kelasAmpu miliknya (dipilih guru sendiri lewat UI, lihat
+    // js/views/teacher.js DB.user.kelasAmpu). Mencegah guru membaca data
+    // kesehatan/ibadah siswa di kelas yang tidak ia ampu.
+    function isGuruOfStudent(studentUid) {
+      return isGuru()
+        && get(/databases/$(database)/documents/users/$(studentUid)).data.get('kelasId', null) != null
+        && get(/databases/$(database)/documents/users/$(studentUid)).data.get('kelasId', null) in
+           get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('kelasAmpu', []);
+    }
+
     match /users/{uid} {
       // Pemilik boleh baca dokumennya; admin boleh semua akun; guru boleh
       // membaca akun siswa (untuk memilih anggota kelas). Query guru harus
@@ -23,8 +43,25 @@ service cloud.firestore {
       allow read: if request.auth != null
         && (request.auth.uid == uid || isAdmin() || (isGuru() && resource.data.role == 'siswa'));
 
-      // Menulis profil hanya oleh pemilik atau admin.
-      allow create, update: if request.auth != null && (request.auth.uid == uid || isAdmin());
+      // Menulis profil: pemilik boleh membuat/mengubah dokumennya sendiri,
+      // TAPI tidak boleh mengubah field `role` sendiri (mencegah privilege
+      // escalation) kecuali saat bootstrap admin pertama (email cocok
+      // isBootstrapAdminEmail()). Admin boleh menulis apa saja untuk
+      // siapa saja (dipakai adminCreateUser() membuat akun guru).
+      allow create: if request.auth != null && (
+        isAdmin() ||
+        (request.auth.uid == uid && (
+          request.resource.data.role == 'siswa' ||
+          (request.resource.data.role == 'admin' && isBootstrapAdminEmail())
+        ))
+      );
+      allow update: if request.auth != null && (
+        isAdmin() ||
+        (request.auth.uid == uid && (
+          request.resource.data.role == resource.data.role ||
+          (request.resource.data.role == 'admin' && isBootstrapAdminEmail())
+        ))
+      );
 
       // Akun admin tidak boleh dihapus siapa pun (termasuk admin lain / dirinya
       // sendiri). Akun non-admin hanya boleh dihapus oleh admin/pemilik.
@@ -38,39 +75,41 @@ service cloud.firestore {
         allow read, write: if request.auth != null && (request.auth.uid == uid || isAdmin());
       }
 
-      // Guru boleh MEMBACA subkoleksi ibadah siswa (ibadah_daily, quran_log, hafalan) untuk pemantauan.
+      // Guru boleh MEMBACA subkoleksi ibadah siswa (ibadah_daily, quran_log, hafalan)
+      // HANYA untuk siswa di kelas yang ia ampu (lihat isGuruOfStudent di atas).
       match /ibadah_daily/{id} {
-        allow read: if isGuru();
+        allow read: if isGuruOfStudent(uid);
       }
       match /quran_log/{id} {
-        allow read: if isGuru();
+        allow read: if isGuruOfStudent(uid);
       }
       match /hafalan/{id} {
-        allow read: if isGuru();
+        allow read: if isGuruOfStudent(uid);
       }
 
-      // Guru boleh MEMBACA subkoleksi kesehatan siswa untuk pemantauan kesehatan di kelas.
-      // Akses read-only; guru tidak boleh mengubah data kesehatan siswa.
+      // Guru boleh MEMBACA subkoleksi kesehatan siswa (termasuk menstrual)
+      // HANYA untuk siswa di kelas yang ia ampu. Akses read-only; guru tidak
+      // boleh mengubah data kesehatan siswa.
       match /health_daily/{id} {
-        allow read: if isGuru();
+        allow read: if isGuruOfStudent(uid);
       }
       match /workouts/{id} {
-        allow read: if isGuru();
+        allow read: if isGuruOfStudent(uid);
       }
       match /biometrics/{id} {
-        allow read: if isGuru();
+        allow read: if isGuruOfStudent(uid);
       }
       match /weights/{id} {
-        allow read: if isGuru();
+        allow read: if isGuruOfStudent(uid);
       }
       match /meds/{id} {
-        allow read: if isGuru();
+        allow read: if isGuruOfStudent(uid);
       }
       match /foods/{id} {
-        allow read: if isGuru();
+        allow read: if isGuruOfStudent(uid);
       }
       match /menstrual/{id} {
-        allow read: if isGuru();
+        allow read: if isGuruOfStudent(uid);
       }
     }
 
@@ -81,16 +120,28 @@ service cloud.firestore {
       allow read: if request.auth != null;
       allow write: if isAdmin();
     }
+    // Roster berisi nama + NIS seluruh siswa per kelas — lebih sensitif
+    // daripada school_classes (yang cuma nama kelas). Dibatasi ke admin +
+    // guru (guru perlu melihat roster untuk memilih kelas yang diampu di
+    // UI, js/views/teacher.js:166); siswa tidak boleh membaca roster
+    // sekolah secara keseluruhan.
     match /school_roster/{id} {
-      allow read: if request.auth != null;
+      allow read: if request.auth != null && (isAdmin() || isGuru());
       allow write: if isAdmin();
     }
 
     // Tugas kelas: dikirim guru (pengampu), diterima siswa. Dibaca semua
-    // pengguna terautentikasi; ditulis guru (cakupan kelas dijaga di UI).
+    // pengguna terautentikasi (siswa perlu melihat tugas kelasnya). Ditulis
+    // HANYA oleh guru yang classId tugasnya ada di kelasAmpu miliknya —
+    // sebelumnya guru mana pun bisa menulis/menghapus tugas kelas lain.
     match /class_tasks/{id} {
       allow read: if request.auth != null;
-      allow write: if isGuru();
+      allow create: if isGuru() &&
+        request.resource.data.classId in
+          get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('kelasAmpu', []);
+      allow update, delete: if isGuru() &&
+        resource.data.classId in
+          get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('kelasAmpu', []);
     }
 
     // Jadwal kelas: satu dokumen per kelas (id = classId). Dibaca semua

@@ -1001,9 +1001,11 @@ const Teacher = {
           const tgl = $('#mTgl', m).value || todayStr();
           const pert = +$('#mPert', m).value || null;
           let hadir = $('#mHadir', m).value === '' ? null : +$('#mHadir', m).value;
-          // auto hadir dari absensi bila kosong
-          if (hadir === null) {
-            const att = (await DB.list('attendance')).filter(a => a.classId === this.classId && a.tanggal === tgl);
+          // auto hadir dari absensi bila kosong DAN pertemuan diisi — tanpa
+          // nomor pertemuan tidak ada cara aman menebak absensi mana yang
+          // dimaksud, jadi dibiarkan kosong untuk diisi guru secara manual.
+          if (hadir === null && pert) {
+            const att = (await DB.list('attendance')).filter(a => a.classId === this.classId && a.tanggal === tgl && a.pertemuan === pert);
             if (att.length) {
               const merged = {};
               att.forEach(a => Object.assign(merged, a.entries || {}));

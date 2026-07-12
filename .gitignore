@@ -1,3 +1,6 @@
+# Playwright MCP smoke-test artifacts
+.playwright-mcp/
+
 # Logs
 logs
 *.log

@@ -227,6 +227,7 @@ const Fin = {
     txBulan.forEach(t => { terpakaiPer[t.kategori] = (terpakaiPer[t.kategori] || 0) + t.jumlah; });
 
     const kategoriKeluar = this.KATEGORI.keluar;
+    const budgetsBulanIni = this._budgetsForMonth(budgets, this.month);
 
     el.innerHTML = `
       <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:16px;">
@@ -234,9 +235,9 @@ const Fin = {
         <button class="btn btn-fin btn-sm" id="setBudget"><ion-icon name="create-outline"></ion-icon> ${tr('Atur Anggaran', 'Set Budget')}</button>
       </div>
 
-      ${budgets.length ? `
+      ${budgetsBulanIni.length ? `
         <div class="grid grid-2">
-          ${budgets.map(b => {
+          ${budgetsBulanIni.map(b => {
             const pakai = terpakaiPer[b.kategori] || 0;
             const pct = b.limit > 0 ? Math.round(pakai / b.limit * 100) : 0;
             const over = pakai > b.limit;
@@ -266,14 +267,28 @@ const Fin = {
         </div>`}`;
 
     $('#bgMonth', el).onchange = e => { this.month = e.target.value || monthStr(); App.refresh(); };
-    $('#setBudget', el).onclick = () => this._budgetModal(budgets, kategoriKeluar);
+    $('#setBudget', el).onclick = () => this._budgetModal(budgetsBulanIni, kategoriKeluar);
   },
 
-  _budgetModal(budgets, kategoriKeluar) {
-    const cur = k => budgets.find(b => b.kategori === k)?.limit || '';
+  // Resolve budgets yang berlaku untuk `month`: utamakan dokumen khusus
+  // bulan itu (bulan === month), fallback ke dokumen lama tanpa field
+  // `bulan` (dianggap berlaku di semua bulan sampai diedit ulang untuk
+  // bulan tertentu — lihat catatan kompatibilitas di design doc).
+  _budgetsForMonth(budgets, month) {
+    const forMonth = new Map(), legacy = new Map();
+    budgets.forEach(b => {
+      if (b.bulan === month) forMonth.set(b.kategori, b);
+      else if (b.bulan == null) legacy.set(b.kategori, b);
+    });
+    const kategoriSet = new Set([...forMonth.keys(), ...legacy.keys()]);
+    return [...kategoriSet].map(k => forMonth.get(k) || legacy.get(k));
+  },
+
+  _budgetModal(budgetsBulanIni, kategoriKeluar) {
+    const cur = k => budgetsBulanIni.find(b => b.kategori === k)?.limit || '';
     const fixedKeys = kategoriKeluar.map(k => k.key);
-    // kategori kustom yang sudah punya anggaran (di luar daftar tetap)
-    const kustomAda = budgets.filter(b => !fixedKeys.includes(b.kategori));
+    // kategori kustom yang sudah punya anggaran (di luar daftar tetap), untuk bulan ini
+    const kustomAda = budgetsBulanIni.filter(b => !fixedKeys.includes(b.kategori));
 
     const rowKustom = (nama, limit) => `
       <div class="field bg-kustom-row">
@@ -311,16 +326,27 @@ const Fin = {
         };
 
         $('#mSave', m).onclick = async () => {
+          const month = Fin.month;
+          const docId = kategori => 'b_' + month.replace(/[^a-zA-Z0-9]+/g, '_') + '_' + kategori.replace(/[^a-zA-Z0-9]+/g, '_');
+          // Simpan/hapus budget kategori `kat` untuk bulan ini. Dokumen lama
+          // (bulan == null, fallback lintas-bulan) TIDAK PERNAH ditulis/dihapus
+          // di sini — hanya dokumen khusus bulan `month` yang dibuat/diubah/
+          // dihapus, supaya fallback lama tetap berlaku untuk bulan lain yang
+          // belum pernah diedit.
+          const saveKategori = async (kat, existing, val) => {
+            if (val > 0) {
+              if (existing && existing.bulan === month) await DB.update('budgets', existing.id, { limit: val });
+              else await DB.set('budgets', docId(kat), { kategori: kat, bulan: month, limit: val });
+            } else if (existing && existing.bulan === month) {
+              await DB.remove('budgets', existing.id);
+            }
+          };
+
           for (let i = 0; i < kategoriKeluar.length; i++) {
             const k = kategoriKeluar[i];
             const val = +$(`#bg_${i}`, m).value || 0;
-            const existing = budgets.find(b => b.kategori === k.key);
-            if (val > 0) {
-              if (existing) await DB.update('budgets', existing.id, { limit: val });
-              else await DB.set('budgets', 'b_' + k.key.replace(/[^a-zA-Z0-9]+/g, '_'), { kategori: k.key, limit: val });
-            } else if (existing) {
-              await DB.remove('budgets', existing.id);
-            }
+            const existing = budgetsBulanIni.find(b => b.kategori === k.key);
+            await saveKategori(k.key, existing, val);
           }
 
           // kategori kustom
@@ -332,13 +358,12 @@ const Fin = {
             if (!nama || val <= 0 || seen.has(nama)) continue;
             seen.add(nama);
             masihAda.add(nama);
-            const existing = budgets.find(b => b.kategori === nama);
-            if (existing) await DB.update('budgets', existing.id, { limit: val });
-            else await DB.set('budgets', 'b_' + nama.replace(/[^a-zA-Z0-9]+/g, '_'), { kategori: nama, limit: val });
+            const existing = budgetsBulanIni.find(b => b.kategori === nama);
+            await saveKategori(nama, existing, val);
           }
-          // hapus kategori kustom yang dihapus dari form
+          // hapus kategori kustom yang dihapus dari form (hanya dokumen bulan ini)
           for (const b of kustomAda) {
-            if (!masihAda.has(b.kategori)) await DB.remove('budgets', b.id);
+            if (!masihAda.has(b.kategori) && b.bulan === month) await DB.remove('budgets', b.id);
           }
 
           closeModal();
@@ -501,14 +526,22 @@ const Fin = {
     $$('[data-edit]', el).forEach(b => b.onclick = () => this.openTxModal(all.find(t => t.id === b.dataset.edit)));
     $$('[data-del]', el).forEach(b => b.onclick = async () => {
       if (!await confirmDialog(tr('Hapus transaksi ini?', 'Delete this transaction?'), { danger: true, okText: tr('Hapus', 'Delete') })) return;
+      const t = all.find(x => x.id === b.dataset.del);
       await DB.remove('transactions', b.dataset.del);
+      if (t?.walletId) {
+        try {
+          const w = (await DB.list('wallets')).find(x => x.id === t.walletId);
+          if (w) await DB.update('wallets', t.walletId, { saldo: (+w.saldo || 0) - (t.tipe === 'masuk' ? t.jumlah : -t.jumlah) });
+        } catch (_) { /* saldo dompet gagal disesuaikan */ }
+      }
       toast(tr('Transaksi dihapus.', 'Transaction deleted.'));
       App.refresh();
     });
   },
 
   // dipanggil juga dari dashboard.js — jangan ganti nama
-  openTxModal(tx = null) {
+  async openTxModal(tx = null) {
+    const wallets = await DB.list('wallets');
     let tipe = tx?.tipe || 'keluar';
 
     // kategori kustom = kategori transaksi yang tidak ada di daftar tetap
@@ -533,6 +566,13 @@ const Fin = {
             <input type="number" class="input" id="mJumlah" min="0" placeholder="${tr('mis. 15000', 'e.g. 15000')}" value="${tx?.jumlah ?? ''}">
             <span class="input-unit">Rp</span>
           </div>
+        </div>
+        <div class="field">
+          <label>${tr('Dompet', 'Wallet')} <span style="font-weight:500;color:var(--text-3)">${tr('(opsional)', '(optional)')}</span></label>
+          <select class="select" id="mWallet">
+            <option value="">${tr('Tidak dari dompet manapun', 'Not from any wallet')}</option>
+            ${wallets.map(w => `<option value="${esc(w.id)}" ${tx?.walletId === w.id ? 'selected' : ''}>${esc(w.nama)}</option>`).join('')}
+          </select>
         </div>
         <div class="field">
           <label>${tr('Kategori', 'Category')}</label>
@@ -572,13 +612,36 @@ const Fin = {
             kategori = katInput.value.trim();
             if (!kategori) return toast(tr('Tulis nama kategori dulu.', 'Enter a category name first.'), 'warning');
           }
+          const walletId = $('#mWallet', m).value || null;
           const data = {
             tanggal, tipe, jumlah,
             kategori,
-            catatan: $('#mCatatan', m).value.trim()
+            catatan: $('#mCatatan', m).value.trim(),
+            walletId
           };
           if (tx) await DB.update('transactions', tx.id, data);
           else await DB.add('transactions', data);
+
+          // Sesuaikan saldo dompet: balikkan efek transaksi lama (kalau edit),
+          // lalu terapkan efek transaksi baru. Kegagalan di sini tidak boleh
+          // membatalkan transaksi yang sudah tersimpan di atas.
+          try {
+            const oldWalletId = tx?.walletId || null;
+            const oldDelta = tx ? (tx.tipe === 'masuk' ? tx.jumlah : -tx.jumlah) : 0;
+            const newDelta = tipe === 'masuk' ? jumlah : -jumlah;
+            const freshWallets = await DB.list('wallets');
+            const adjust = async (id, delta) => {
+              const w = freshWallets.find(x => x.id === id);
+              if (w) await DB.update('wallets', id, { saldo: (+w.saldo || 0) + delta });
+            };
+            if (oldWalletId && oldWalletId === walletId) {
+              await adjust(walletId, newDelta - oldDelta);
+            } else {
+              if (oldWalletId) await adjust(oldWalletId, -oldDelta);
+              if (walletId) await adjust(walletId, newDelta);
+            }
+          } catch (_) { /* saldo dompet gagal disesuaikan — transaksi tetap tersimpan */ }
+
           this.month = tanggal.slice(0, 7);
           closeModal();
           toast(tx ? tr('Transaksi diperbarui.', 'Transaction updated.') : tr('Transaksi dicatat 💰', 'Transaction logged 💰'));

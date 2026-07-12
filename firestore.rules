@@ -120,16 +120,28 @@ service cloud.firestore {
       allow read: if request.auth != null;
       allow write: if isAdmin();
     }
+    // Roster berisi nama + NIS seluruh siswa per kelas — lebih sensitif
+    // daripada school_classes (yang cuma nama kelas). Dibatasi ke admin +
+    // guru (guru perlu melihat roster untuk memilih kelas yang diampu di
+    // UI, js/views/teacher.js:166); siswa tidak boleh membaca roster
+    // sekolah secara keseluruhan.
     match /school_roster/{id} {
-      allow read: if request.auth != null;
+      allow read: if request.auth != null && (isAdmin() || isGuru());
       allow write: if isAdmin();
     }
 
     // Tugas kelas: dikirim guru (pengampu), diterima siswa. Dibaca semua
-    // pengguna terautentikasi; ditulis guru (cakupan kelas dijaga di UI).
+    // pengguna terautentikasi (siswa perlu melihat tugas kelasnya). Ditulis
+    // HANYA oleh guru yang classId tugasnya ada di kelasAmpu miliknya —
+    // sebelumnya guru mana pun bisa menulis/menghapus tugas kelas lain.
     match /class_tasks/{id} {
       allow read: if request.auth != null;
-      allow write: if isGuru();
+      allow create: if isGuru() &&
+        request.resource.data.classId in
+          get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('kelasAmpu', []);
+      allow update, delete: if isGuru() &&
+        resource.data.classId in
+          get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('kelasAmpu', []);
     }
 
     // Jadwal kelas: satu dokumen per kelas (id = classId). Dibaca semua

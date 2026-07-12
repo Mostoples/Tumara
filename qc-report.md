@@ -1,12 +1,38 @@
 # Laporan QC — Tumara v1.0 (Audit Fitur)
 
-**Tanggal:** 12 Juli 2026
+**Tanggal:** 12 Juli 2026 (audit awal) — **diupdate 12 Juli 2026** setelah perbaikan P0-P2
 **Target Audit:** Source code repository (branch `feature-check`)
 **Metode:** Source code analysis — setiap klaim diverifikasi langsung ke file & baris kode
 **Ruang lingkup:** Fungsionalitas & keamanan. Audit UI/visual/responsive **tidak** termasuk.
-**Status:** ~70% feature coverage (47 ✅ / 27 ⚠️ / 12 ❌ dari 86 item) | **4 temuan keamanan kritis**
+**Status:** ~73% feature coverage (51 ✅ / 24 ⚠️ / 11 ❌ dari 86 item) | **2 dari 6 temuan keamanan diperbaiki penuh, 2 sebagian, 2 masih terbuka**
 
-> **Catatan metodologi:** Semua status di bawah dibuktikan dengan referensi `file:baris`. Item tanpa bukti kode dinyatakan ❌, bukan diasumsikan ada. Fitur yang UI-nya tampil tetapi logikanya tidak pernah dieksekusi dihitung ❌ atau ⚠️, bukan ✅.
+> **Catatan metodologi:** Semua status di bawah dibuktikan dengan referensi `file:baris`. Item tanpa bukti kode dinyatakan ❌, bukan diasumsikan ada. Fitur yang UI-nya tampil tetapi logikanya tidak pernah dieksekusi dihitung ❌ atau ⚠️, bukan ✅. Baris kode yang dikutip mengikuti state file **sebelum** perbaikan sesi ini kecuali ditandai "state saat ini" — nomor baris bisa bergeser setelah commit perbaikan.
+
+---
+
+## 📌 Status Perbaikan (branch `feature-check`, belum di-deploy/merge)
+
+Setelah audit ini ditulis, dikerjakan lewat alur spec → plan → eksekusi (dokumen lengkap di `docs/superpowers/specs/` & `docs/superpowers/plans/`, tanggal 2026-07-12). Ringkasan mana yang **sudah** dan **belum** disentuh:
+
+| Temuan di laporan ini | Status | Commit |
+|---|---|---|
+| S1 — Privilege escalation `role` | ✅ **DIPERBAIKI PENUH** | `16b4837` |
+| S2 — Guru baca data medis siswa manapun | ⚠️ **SEBAGIAN** — 10 subkoleksi (health_daily/menstrual/meds/dst + ibadah) dibatasi per kelas; **profil `users/{uid}` inti (berat/tinggi/usia/gender/hash finPin) masih terbuka untuk semua guru** — lihat catatan di S2 di bawah | `99c3b05` |
+| S3 — PIN tanpa salt + fallback plaintext | ❌ **BELUM** — di luar scope 3 putaran perbaikan ini | — |
+| S4 — Kredensial Supabase ter-commit, bucket publik | ❌ **BELUM** — butuh rotasi kredensial manual di dashboard Supabase, di luar scope | — |
+| S5 — Otorisasi hanya di UI (`school_roster`, `class_tasks`) | ⚠️ **SEBAGIAN** — `school_roster` dibatasi admin+guru; write `class_tasks` dibatasi ke kelas milik guru. `school_classes` read tetap terbuka (disengaja, dipakai siswa pilih kelas); **read `class_tasks` masih terbuka untuk semua user login** (disengaja dikeluarkan dari scope, risiko rendah) | `5a3a995` |
+| S6 — Tidak ada enkripsi data medis | ❌ **BELUM** — butuh arsitektur enkripsi sisi klien, di luar scope | — |
+| 1.11 Medication Reminder | ✅ **DIPERBAIKI** — scheduler nyata (`App.startMedReminder`, cek tiap 30 detik) + permintaan izin notifikasi otomatis saat obat berjadwal pertama disimpan | `f33f6a9`, `4d7cbb2`, `961026f` |
+| 2a.5 Jurnal Mengajar (auto-hadir) | ✅ **Bug tersembunyi ditemukan & diperbaiki** — laporan ini awalnya menilai fitur ini ✅ OK, tapi audit terpisah menemukan filter absensi mengabaikan `pertemuan` (2 pertemuan di tanggal sama saling menimpa data hadir). Sekarang difilter juga per `pertemuan`. | `d70739e` |
+| 2b.1 To-Do List (bug arsitektur `tasks` vs `class_tasks`) | ✅ **DIPERBAIKI** — tab "Tugas Pribadi" baru membaca/menulis `tasks` secara konsisten dengan CRUD penuh (sebelumnya tugas pribadi bisa dibuat lalu terjebak selamanya) | `c6c9397` |
+| 2b.4 Recurring Tasks | ⚠️ **SEBAGIAN** — field `ulang` sekarang ditampilkan sebagai badge (🔁 Harian/Mingguan/Bulanan) di tab Tugas Pribadi, tapi **belum ada recurrence engine** (tidak auto-regenerasi saat tugas selesai) — rekomendasi #11 di bawah masih berlaku | `c6c9397` |
+| 2b.5 Kategorisasi (Label/Tag) | ✅ **DIPERBAIKI** — label tugas pribadi sekarang dirender sebagai badge di tab Tugas Pribadi (sebelumnya data tulis-saja, tak pernah tampil) | `c6c9397` |
+| 3.3 Multiple Accounts/Wallets | ✅ OK (tidak berubah) + **peningkatan**: transaksi sekarang bisa ditautkan ke dompet (`walletId` opsional) dan saldo otomatis menyesuaikan saat transaksi dicatat/diedit/dihapus. Saldo manual murni (sesuai spec "tanpa integrasi bank") tetap jadi cara utama entri saldo awal. | `0e6c2e8` |
+| 3.4 Budget Planning | ✅ **DIPERBAIKI** — budget sekarang benar-benar per-bulan (field `bulan` + doc id per-bulan); dokumen lama tetap fallback lintas-bulan sampai diedit ulang | `5c48caf` |
+| Rekomendasi #7 (item 1.11 & 1.1 disclaimer) | ⚠️ **SEBAGIAN** — disclaimer obat (`health.js:274`) sudah jujur & akurat sekarang. Disclaimer biometrik (`health.js:85`, janji "memvisualkan trennya") **belum disentuh** — masih tidak akurat. | `961026f` |
+| Semua item lain (§2a drag&drop, §2a upload tugas siswa, §3.5 alert anggaran, §4 checklist shalat granular, §4 Qur'an 114 surat, dll) | ❌ **BELUM DIKERJAKAN** — di luar scope 3 putaran ini (didorong ke "P3" di `spec-compliance-report.md`) | — |
+
+**Belum di-deploy, belum di-merge ke `main`.** Semua commit di atas ada di `feature-check`, menunggu approval.
 
 ---
 
@@ -38,7 +64,7 @@
 | 1.8 | Log Makanan | ⚠️ Partial | 7 preset (`health.js:189-197`) + entri kustom, total kalori harian. Record yang disimpan hanya `{tanggal, nama, kalori, emoji, waktu}` (`health.js:222`) → **tidak ada makronutrien maupun mikronutrien**, padahal diminta eksplisit oleh spec. |
 | 1.9 | Panduan Isi Piringku | ✅ OK | Versi Kemenkes RI (`health.js:164-173`, `:861-882`). |
 | 1.10 | Water Reminder | ✅ OK | **Notifikasi periodik ADA** — `setInterval` + browser `Notification` (`app.js:247-255`), dijalankan saat boot (`app.js:115`), interval dipilih user **30/60/90/120 menit** (`profile.js:151-158`), izin diminta di `profile.js:269-272`. Target gelas **dihitung otomatis dari berat badan** dan di-clamp 6–12 (`calc.js:98-102`) — bukan input manual. |
-| 1.11 | Medication Reminder | ⚠️ Partial | CRUD jadwal (`health.js:296-319`) dan riwayat per slot waktu (`health.js:247`, `:284-293`) berfungsi. **Tetapi tidak ada alarm/pengingat sama sekali** — satu-satunya timer notifikasi di seluruh aplikasi adalah water reminder. Disclaimer `health.js:274` ("Pengingat tampil sebagai notifikasi") **tidak benar**. Spec meminta "alarm untuk jadwal minum obat" → tidak terpenuhi. |
+| 1.11 | Medication Reminder | ✅ **DIPERBAIKI** | ~~CRUD jadwal ada, alarm tidak ada~~ — **diperbaiki** (`f33f6a9`, `4d7cbb2`, `961026f`): `App.startMedReminder()` mengecek jadwal tiap 30 detik dan mengirim notifikasi nyata via `App.notify()` (fallback toast), dipanggil otomatis saat init, dihentikan saat logout. Izin notifikasi diminta otomatis saat obat berjadwal pertama disimpan. Disclaimer `health.js:274` sekarang jujur soal batasannya (hanya jalan selagi tab terbuka). |
 | 1.12 | Manajemen Stres | ✅ OK | Box breathing 4-4-4-4 (`health.js:371-390`). Tidak ada konten meditasi lain atau penghitung siklus. |
 | 1.13 | Mood Tracker | ✅ OK | 5 level emoji (`health.js:325-329`), tampil sebagai chips (`health.js:354-357`), **14 entri terakhir** (satu mood per hari — `health.js:362` meng-update record hari ini, bukan menambah). |
 | 1.14 | Siklus Menstruasi | ✅ OK | Prediksi haid + masa subur (`calc.js:75-86`), dibatasi `jenisKelamin === 'P'` (`health.js:13`). Catatan: komentar `calc.js:80` ("5 hari sebelum + 1 sesudah") tidak cocok dengan kodenya (`ovul-3` … `ovul+1`). |
@@ -61,7 +87,7 @@
 | 2a.2 | Jadwal Pelajaran | ✅ OK | CRUD menyimpan `{hari, jamMulai, jamSelesai, kelas, mapel}` (`teacher.js:776`). Tidak ada field "jam ke-". Field `ruang` hanya ada di Jadwal Kelas wali kelas (`teacher.js:954`, `:963`). |
 | 2a.3 | Unduh Jadwal | ⚠️ Partial | **Ekspor CSV ADA** — tombol `#exportJadwal` (`teacher.js:706`) → `downloadCSV(rows, 'jadwal_mengajar.csv')` (`teacher.js:743-747`), dengan BOM UTF-8 agar terbuka rapi di Excel (`utils.js:259`). **PDF dan .xlsx native tidak ada.** |
 | 2a.4 | Absensi H/S/I/A/D | ✅ OK | Status di `teacher.js:25-31`. Warna sesuai draft — `css/style.css:1125-1129`: H `#3b82f6` biru, S `#f59e0b` kuning/amber, I `#10b981` hijau, A `#ef4444` merah, D `#22d3ee` biru muda. |
-| 2a.5 | Jurnal Mengajar | ✅ OK | `_jurnalModal` (`teacher.js:623-693`). Sinkronisasi kehadiran nyata: jumlah hadir dihitung otomatis dari record absensi kelas+tanggal yang sama (`teacher.js:672-680`). |
+| 2a.5 | Jurnal Mengajar | ✅ OK | `_jurnalModal` (`teacher.js:623-693`). Sinkronisasi kehadiran nyata: jumlah hadir dihitung otomatis dari record absensi. **Catatan tambahan (`d70739e`):** audit terpisah menemukan filter aslinya hanya kelas+tanggal (mengabaikan `pertemuan`) — dua pertemuan di tanggal sama saling menimpa. **Sudah diperbaiki**, sekarang filter juga per `pertemuan` dan tidak menebak kalau nomor pertemuan kosong. |
 | 2a.6 | Upload Foto Pembelajaran | ✅ OK | `<input type="file" accept="image/*">` (`teacher.js:643`) → `Storage.uploadFoto()` (`teacher.js:657`). **Foto dikompresi** sebelum upload — `compressImage(maxDim 1000, quality 0.6)` (`supabase-storage.js:35` → `utils.js:265-283`). |
 | 2a.7 | Unduh Jurnal (KOP Sekolah) | ❌ TIDAK | `renderJurnal` (`teacher.js:565-621`) tidak punya tombol cetak/ekspor. Satu-satunya pemanggilan `printHTML` di file ini ada di `teacher.js:515` — untuk daftar nilai, dan header-nya (`teacher.js:512`) hanya judul + nama guru + tanggal, **tanpa kop surat**. |
 | 2a.8 | Gradebook / Penilaian | ✅ OK | Kolom dinamis (`teacher.js:445-455`, `_colModal` `:519-561`), input nilai auto-save ter-debounce (`teacher.js:488-500`). |
@@ -82,11 +108,11 @@
 
 | # | Fitur | Status | Catatan (terverifikasi di kode) |
 |---|---|---|---|
-| 2b.1 | To-Do List | ⚠️ Partial | **Bug arsitektur, bukan bug tombol.** Tombol "+ Tugas" di Beranda (`dashboard.js:64-67`) memanggil `Prod.openTaskModal()` (`dashboard.js:171`) yang menulis ke koleksi **`tasks`** (`productivity.js:300`). Tetapi tab Tugas membaca koleksi **`class_tasks`** (`productivity.js:196`) — koleksi yang berbeda. Akibatnya tugas buatan siswa **hanya bisa dibuat**: tampil di kartu dashboard (maks. 3 — `dashboard.js:117-124`), lalu **tidak bisa diedit, dihapus, atau ditandai selesai selamanya** (tidak ada `DB.remove('tasks', …)` di mana pun, dan tidak ada kode yang menyetel `status: 'selesai'`). |
-| 2b.2 | Prioritas Tugas | ⚠️ Partial | Model punya 3 level. Dashboard **merender ketiganya** sebagai titik warna (`dashboard.js:121`: merah/amber/hijau). Tab Tugas hanya merender badge untuk `'tinggi'` (`productivity.js:227`) — dan moot, karena modal kirim-tugas guru hanya menawarkan `sedang`/`tinggi` (`teacher.js:848-853`). |
-| 2b.3 | Pengingat & Notifikasi Deadline | ⚠️ Partial | Hanya badge in-app (`utils.js:59-63`, dipakai `productivity.js:226` & `dashboard.js:123`). API Notification tersedia (`app.js:236-245`) tetapi **hanya terhubung ke water reminder** — nol notifikasi deadline, nol push subscription, nol `showNotification` di `sw.js`. |
-| 2b.4 | Recurring Tasks | ❌ TIDAK | Dropdown harian/mingguan/bulanan ada di modal (`productivity.js:282-286`) dan nilainya disimpan sebagai `ulang` (`productivity.js:297`), **tetapi field `ulang` tidak pernah dibaca di mana pun di repo**. Tidak ada recurrence engine, tidak ada regenerasi tugas. UI-only. |
-| 2b.5 | Kategorisasi (Label/Tag) | ⚠️ Partial | **Catatan:** label berfungsi penuh — input `productivity.js:365`, dirender `:334`, ikut dicari `:317`. **Tugas:** input label ada (`productivity.js:265-267`) dan disimpan (`:294`), tetapi **tidak pernah dirender di mana pun** — data tulis-saja. |
+| 2b.1 | To-Do List | ✅ **DIPERBAIKI** (`c6c9397`) | ~~Bug arsitektur~~: tombol "+ Tugas" di Beranda menulis ke koleksi `tasks`, tapi tab Tugas lama membaca `class_tasks`. **Sekarang ada tab "Tugas Pribadi" terpisah** yang membaca/menulis `tasks` secara konsisten, memakai `Prod.openTaskModal()` yang sudah ada (sebelumnya tak pernah dipanggil dengan argumen edit) — CRUD penuh: tambah, edit, hapus, tandai selesai. |
+| 2b.2 | Prioritas Tugas | ⚠️ Partial (tidak berubah) | Model punya 3 level. Tab Tugas Pribadi baru **masih hanya merender badge untuk `'tinggi'`** (mengikuti pola lama), belum menambahkan badge untuk `sedang`/`rendah`. Modal kirim-tugas guru hanya menawarkan `sedang`/`tinggi` (`teacher.js:848-853`). |
+| 2b.3 | Pengingat & Notifikasi Deadline | ⚠️ Partial (tidak berubah) | Hanya badge in-app (`utils.js:59-63`). API Notification tersedia tapi **hanya terhubung ke water reminder + (baru) medication reminder** — nol notifikasi deadline tugas, nol push subscription, nol `showNotification` di `sw.js`. |
+| 2b.4 | Recurring Tasks | ⚠️ **SEBAGIAN diperbaiki** (`c6c9397`) | Field `ulang` **sekarang ditampilkan** sebagai badge "🔁 Harian/Mingguan/Bulanan" di tab Tugas Pribadi (sebelumnya benar-benar tak pernah dibaca di mana pun). **Recurrence engine (auto-regenerasi tugas) masih belum ada** — didorong sengaja ke luar scope, lihat rekomendasi #11. |
+| 2b.5 | Kategorisasi (Label/Tag) | ✅ **DIPERBAIKI** (`c6c9397`) | Catatan: sudah OK sejak awal. **Tugas:** label sekarang **dirender** sebagai badge di tab Tugas Pribadi (sebelumnya data tulis-saja, tak pernah tampil di mana pun). |
 | 2b.6 | Notes / Journaling | ✅ OK | `productivity.js:311-396` — CRUD, pencarian ter-debounce, label. |
 | 2b.7 | Habit Tracker | ✅ OK | Grid 7 hari (`productivity.js:41`, `:60`, `:68`), streak (`:43-47`), emoji picker (`:100-145`). |
 | 2b.8 | Statistik Kebiasaan | ⚠️ Partial | Yang ada hanya angka streak (`productivity.js:69`) + grid 7 hari. Tidak ada view statistik terpisah, persentase penyelesaian, grafik tren, atau riwayat di atas 7 hari. |
@@ -100,8 +126,8 @@
 |---|---|---|---|
 | 3.1 | Input Transaksi Cepat | ✅ OK | Tombol di section header (`finance.js:458-461`) → modal (`finance.js:511`). Kategori preset + kustom via sentinel `__custom__` (`finance.js:516-518`, `:570-574`). |
 | 3.2 | Kategorisasi | ⚠️ Partial | **8 preset** (`finance.js:10-23`): 3 pemasukan (Uang Saku, Hadiah, Beasiswa) + 5 pengeluaran (Makanan & Jajan, Transportasi, Hiburan, Alat Tulis & Buku, Tabungan). Kategori kustom didukung. |
-| 3.3 | Multiple Accounts / Wallets | ✅ OK | **4 tipe** (`finance.js:154`): tunai, bank, e-wallet, lainnya. Saldo manual (disclaimer `finance.js:142`) — sesuai spec ("tanpa integrasi bank"). |
-| 3.4 | Budget Planning | ⚠️ Partial | Limit disimpan dengan ID turunan-kategori dan **hanya berisi `{kategori, limit}` — tanpa field bulan** (`finance.js:320`, `:337`). `renderBudget` memfilter *transaksi* per bulan (`finance.js:223-227`) tapi memakai limit global yang sama untuk setiap bulan. Jadi ini **satu limit permanen per kategori**, bukan "limit per kategori per bulan". |
+| 3.3 | Multiple Accounts / Wallets | ✅ OK + **ditingkatkan** (`0e6c2e8`) | **4 tipe** (`finance.js:154`): tunai, bank, e-wallet, lainnya. Saldo awal tetap manual (disclaimer `finance.js:142`) — sesuai spec ("tanpa integrasi bank"). **Baru:** transaksi bisa ditautkan opsional ke dompet (`walletId`) dan saldo dompet otomatis menyesuaikan saat transaksi dicatat/diedit/dihapus — sebelumnya saldo dompet murni angka statis yang tak pernah bergerak walau transaksi dicatat di app yang sama. |
+| 3.4 | Budget Planning | ✅ **DIPERBAIKI** (`5c48caf`) | ~~Limit global sama untuk semua bulan~~ — **diperbaiki**: dokumen budget sekarang punya field `bulan` (YYYY-MM) + doc id per-bulan. Dokumen lama tanpa `bulan` tetap fallback lintas-bulan sampai diedit ulang untuk bulan spesifik (kompatibilitas tanpa migrasi data). |
 | 3.5 | Peringatan Anggaran (Alerts) | ⚠️ Partial | Tiga state ada (`finance.js:243-249`): Aman / Hampir Habis (≥80%) / Lewat Batas. **Tetapi ini hanya badge berwarna yang dirender saat tab Anggaran dibuka** — nol kode notifikasi, nol pengecekan saat transaksi disimpan. Spec meminta "notifikasi otomatis" → tidak terpenuhi. |
 | 3.6 | Target Menabung | ✅ OK | Progress bar (`finance.js:618`) + tombol Tabung (`finance.js:620`, `:691`), opsional mencatat pengeluaran kategori Tabungan (`finance.js:717-722`). |
 | 3.7 | Pie Chart & Bar Chart | ✅ OK | Inline SVG murni — `barChartSVG` (`utils.js:161-179`) dan `donutSVG` (`utils.js:182-203`). Bukan Canvas 2D. Dipakai di `finance.js:778` & `:790`. |
@@ -159,30 +185,38 @@
 
 Empat dari lima temuan ini **lebih mendesak daripada seluruh daftar fitur di atas**, karena sudah aktif di production.
 
-### S1 — 🔴 KRITIS: Privilege escalation (siswa bisa jadi admin)
+### S1 — 🔴 KRITIS: Privilege escalation (siswa bisa jadi admin) — ✅ DIPERBAIKI PENUH (`16b4837`)
 `firestore.rules:27` mengizinkan user meng-update dokumennya sendiri **tanpa memvalidasi field `role`**:
 ```
 allow create, update: if request.auth != null && (request.auth.uid == uid || isAdmin());
 ```
 Siswa mana pun bisa membuka console browser dan menjalankan `updateDoc(doc(db,'users',myUid), {role:'admin'})`. Setelah itu `isAdmin()` (`firestore.rules:6-10`) mengembalikan `true`, dan `firestore.rules:37-39` memberinya akses baca/tulis ke **seluruh subkoleksi milik semua user**. Kode klien menyetel `role` saat registrasi (`db.js:339`, `:385`) — server tidak pernah membatasinya.
-**Perbaikan:** tolak perubahan `role` dari user biasa: `request.resource.data.role == resource.data.role || isAdmin()`.
+**Diperbaiki:** `create`/`update` dipisah dan divalidasi — user biasa hanya boleh membuat dokumen dengan `role:'siswa'`, dan tidak bisa mengubah `role` dokumennya sendiri sama sekali (`request.resource.data.role == resource.data.role`), kecuali email login cocok allowlist bootstrap admin (`isBootstrapAdminEmail()`, mirror manual dari `js/firebase-config.js:ADMIN_EMAILS` — **wajib disinkron manual** kalau daftar itu berubah, rules tidak bisa `import` JS). Diverifikasi via emulator (compile bersih) + trace 4 skenario (self-register siswa, self-promote ditolak, bootstrap admin tetap jalan, admin buat akun guru tak terpengaruh).
 
-### S2 — 🔴 KRITIS: Guru mana pun bisa membaca data medis siswa mana pun
-`firestore.rules:54-74` memberi `allow read: if isGuru()` pada `health_daily`, `workouts`, `biometrics`, `weights`, `meds`, `foods`, dan **`menstrual`** — untuk **setiap** `users/{uid}`, **tanpa pengecekan apakah siswa itu ada di kelas guru tersebut**. Artinya satu akun guru bisa membaca catatan siklus menstruasi dan daftar obat siswa mana pun di seluruh sekolah. `firestore.rules:23-24` juga membuka profil lengkap siswa (berat, tinggi, usia, jenis kelamin, hash `finPin`) untuk semua guru.
-**Perbaikan:** batasi ke siswa dalam kelas guru yang bersangkutan, dan keluarkan `menstrual` + `meds` dari cakupan baca guru sepenuhnya.
+### S2 — 🔴 KRITIS: Guru mana pun bisa membaca data medis siswa mana pun — ⚠️ SEBAGIAN DIPERBAIKI (`99c3b05`)
+`firestore.rules:54-74` memberi `allow read: if isGuru()` pada `health_daily`, `workouts`, `biometrics`, `weights`, `meds`, `foods`, dan **`menstrual`** — untuk **setiap** `users/{uid}`, **tanpa pengecekan apakah siswa itu ada di kelas guru tersebut**. Artinya satu akun guru bisa membaca catatan siklus menstruasi dan daftar obat siswa mana pun di seluruh sekolah.
 
-### S3 — 🟠 TINGGI: PIN keuangan tanpa salt, dengan fallback plaintext
+**Yang sudah diperbaiki:** ke-10 subkoleksi ini (health_daily/workouts/biometrics/weights/meds/foods/menstrual + ibadah_daily/quran_log/hafalan) sekarang dibatasi lewat helper baru `isGuruOfStudent(studentUid)` — guru cuma bisa baca data siswa yang `kelasId`-nya ada di `kelasAmpu` guru itu.
+
+**⚠️ Yang BELUM diperbaiki — masih terbuka:** `firestore.rules:43-44` (rule baca dokumen `users/{uid}` itu sendiri, bukan subkoleksinya) **tidak disentuh** oleh perbaikan ini:
+```
+allow read: if request.auth != null
+  && (request.auth.uid == uid || isAdmin() || (isGuru() && resource.data.role == 'siswa'));
+```
+Ini masih mengizinkan **guru mana pun membaca profil lengkap siswa mana pun** — termasuk berat badan, tinggi, usia, jenis kelamin, dan hash `finPin` — tanpa pengecekan kelas sama sekali. Gap ini butuh perbaikan terpisah (pola sama seperti S1: tambahkan syarat `isGuruOfStudent`-style pada rule baca `users/{uid}` utama, bukan hanya subkoleksinya).
+
+### S3 — 🟠 TINGGI: PIN keuangan tanpa salt, dengan fallback plaintext — ❌ BELUM DIPERBAIKI (di luar scope sesi ini)
 `finance.js:74` melakukan `SHA-256('tumara-pin::' + pin)`. Prefix itu **konstanta yang sama untuk semua user** (pepper yang tertulis terang-terangan di file JS publik), bukan salt — PIN yang sama menghasilkan hash yang sama, sehingga satu rainbow table dari seluruh 1,1 juta kemungkinan PIN 4–6 digit membobol semua akun. Tanpa KDF, tanpa iterasi. Lebih buruk lagi, `finance.js:76` punya fallback `return 'p' + pin;` — jika `crypto.subtle` gagal (misalnya konteks non-HTTPS), **PIN tersimpan sebagai plaintext di Firestore**. Pola yang sama dipakai untuk password mode lokal (`db.js:20`).
 
-### S4 — 🟠 TINGGI: Kredensial Supabase ter-commit, bucket publik
-`supabase-storage.js:13-15` memuat URL project dan anon JWT (kedaluwarsa 2099) langsung di repo, dengan bucket `jurnal-foto` bersifat **publik** (`getPublicUrl`, `:46`). Setiap foto pembelajaran yang diunggah dapat diakses siapa pun yang memegang URL-nya, tanpa autentikasi.
+### S4 — 🟠 TINGGI: Kredensial Supabase ter-commit, bucket publik — ❌ BELUM DIPERBAIKI (di luar scope sesi ini)
+`supabase-storage.js:13-15` memuat URL project dan anon JWT (kedaluwarsa 2099) langsung di repo, dengan bucket `jurnal-foto` bersifat **publik** (`getPublicUrl`, `:46`). Setiap foto pembelajaran yang diunggah dapat diakses siapa pun yang memegang URL-nya, tanpa autentikasi. Perbaikan butuh rotasi kredensial manual di dashboard Supabase (tidak bisa dilakukan lewat perubahan kode saja) — belum dikerjakan.
 
-### S5 — 🟡 SEDANG: Otorisasi hanya di sisi UI
-- `firestore.rules:80-87`: `school_classes` dan `school_roster` bisa dibaca **setiap user yang login** — siswa mana pun bisa membaca nama + **NIS** seluruh siswa satu sekolah.
-- `firestore.rules:90-94`: `class_tasks` bisa ditulis guru mana pun dan dibaca user mana pun. Komentar di `firestore.rules:90` mengakuinya sendiri: *"cakupan kelas dijaga di UI"* — artinya otorisasi hanya ditegakkan di JavaScript, yang bisa dilewati sepenuhnya.
+### S5 — 🟡 SEDANG: Otorisasi hanya di sisi UI — ⚠️ SEBAGIAN DIPERBAIKI (`5a3a995`)
+- `firestore.rules:80-87` *(nomor baris sebelum perbaikan)*: `school_classes` dan `school_roster` bisa dibaca **setiap user yang login** — siswa mana pun bisa membaca nama + **NIS** seluruh siswa satu sekolah. **Diperbaiki untuk `school_roster`**: sekarang dibatasi `isAdmin() || isGuru()`, siswa tidak lagi bisa membacanya. **`school_classes` sengaja dibiarkan terbuka** — dipakai siswa memilih kelasnya sendiri saat registrasi, isinya cuma nama kelas (tidak sensitif).
+- `firestore.rules:90-94` *(nomor baris sebelum perbaikan)*: `class_tasks` bisa ditulis guru mana pun dan dibaca user mana pun. Komentar aslinya mengakui sendiri: *"cakupan kelas dijaga di UI"*. **Write diperbaiki**: sekarang guru hanya bisa membuat/ubah/hapus tugas untuk kelas yang ada di `kelasAmpu`-nya. **Read masih terbuka untuk semua user login** — disengaja dikeluarkan dari scope perbaikan ini (risiko rendah: judul tugas & jadwal, bukan PII), dicatat sebagai kandidat perbaikan terpisah bila diperlukan.
 
-### S6 — Spec tidak terpenuhi: tidak ada enkripsi data medis
-Spec meminta "enkripsi data medis pengguna yang ketat". Satu-satunya kriptografi di seluruh repo adalah `crypto.subtle.digest('SHA-256')` untuk password mode lokal (`db.js:20`) dan PIN keuangan (`finance.js:74`). **Semua data kesehatan tersimpan plaintext di Firestore.** Enkripsi at-rest yang ada hanyalah enkripsi disk default Google — tidak ada enkripsi field-level maupun envelope encryption di sisi klien.
+### S6 — Spec tidak terpenuhi: tidak ada enkripsi data medis — ❌ BELUM DIPERBAIKI (di luar scope sesi ini)
+Spec meminta "enkripsi data medis pengguna yang ketat". Satu-satunya kriptografi di seluruh repo adalah `crypto.subtle.digest('SHA-256')` untuk password mode lokal (`db.js:20`) dan PIN keuangan (`finance.js:74`). **Semua data kesehatan tersimpan plaintext di Firestore.** Enkripsi at-rest yang ada hanyalah enkripsi disk default Google — tidak ada enkripsi field-level maupun envelope encryption di sisi klien. Membutuhkan desain arsitektur enkripsi sisi klien tersendiri (key management, dst.) — bukan perbaikan satu-file, belum dikerjakan.
 
 ---
 
@@ -193,23 +227,23 @@ Fitur yang **diminta spec tetapi tidak ada di kode**:
 1. Sinkronisasi wearable (spec §1) — nol kode
 2. Makronutrien & mikronutrien di log makanan (spec §1) — hanya kalori
 3. Grafik tren harian/mingguan/bulanan untuk data kesehatan (spec §1) — hanya 1 chart (berat badan)
-4. Alarm pengingat obat (spec §1) — CRUD ada, alarm tidak
+4. ~~Alarm pengingat obat (spec §1) — CRUD ada, alarm tidak~~ — **✅ DIPERBAIKI**, lihat item 1.11
 5. Input intensitas latihan (spec §1) — MET tetap per aktivitas
-6. Enkripsi data medis (spec §1) — plaintext
+6. Enkripsi data medis (spec §1) — plaintext (❌ masih terbuka, lihat S6)
 7. Dashboard drag & drop (spec §2) — layout statis
 8. Upload foto pekerjaan oleh siswa via tautan (spec §2) — siswa tidak punya jalur submission
 9. Review foto pekerjaan zoomable + nilai berdampingan (spec §2) — konsekuensi no.8
 10. Unduh jurnal dengan kop surat fleksibel, terpisah per kelas (spec §2) — tidak ada tombol ekspor jurnal
 11. Ekspor Excel native (spec §2 & §3) — hanya CSV
-12. Notifikasi otomatis anggaran (spec §3) — hanya badge warna
+12. Notifikasi otomatis anggaran (spec §3) — hanya badge warna (❌ tidak disentuh sesi ini)
 13. Peringatan dini sebelum waktu shalat (spec §4) — tidak ada
 14. Al-Qur'an 114 surat (spec §4) — hanya 4
 15. Audio murrotal (spec §4) — tautan eksternal
 16. Kalender Hijriyah dengan penanda hari penting (spec §4) — hanya string tanggal
 17. Panduan haji/umrah (spec §4) — hanya wudhu/shalat/adab
 18. Checklist shalat granular: Qobliyah, Ba'diyyah, rakaat Dhuha, Awwabin (spec §4) — user harus mengetik sendiri
-19. Recurring tasks (spec §5) — dropdown ada, engine tidak
-20. Pengingat/notifikasi deadline (spec §5) — hanya badge in-app
+19. Recurring tasks (spec §5) — ⚠️ **sebagian**: badge tampil sekarang, engine masih belum ada
+20. Pengingat/notifikasi deadline (spec §5) — hanya badge in-app (❌ tidak disentuh sesi ini)
 
 Fitur **di luar spec yang sudah ada** (nilai tambah): Pomodoro Timer, Ensiklopedia (15 artikel), Skor Keseimbangan, Monitoring Ibadah & Kesehatan siswa oleh guru, Tugas Kelas, Jadwal Kelas wali kelas, Mood Tracker, Bebas Rokok & Miras, PWA offline, bilingual ID/EN.
 
@@ -217,35 +251,40 @@ Fitur **di luar spec yang sudah ada** (nilai tambah): Pomodoro Timer, Ensikloped
 
 ## Kesimpulan
 
-**Tingkat kelengkapan fitur: ~70%** — 47 ✅ / 27 ⚠️ / 12 ❌ dari 86 item yang diaudit.
+**Tingkat kelengkapan fitur saat ini: ~73%** — 51 ✅ / 24 ⚠️ / 11 ❌ dari 86 item yang diaudit (naik dari 47/27/12 di audit awal, setelah 3 putaran perbaikan P0-P2 di branch `feature-check`, belum di-deploy).
 
-Angka ini lebih rendah daripada estimasi audit sebelumnya (~90%) karena tiga alasan: (1) fitur yang UI-nya tampil tetapi logikanya tidak pernah dieksekusi — recurring tasks, label tugas, data pedometer — dihitung sebagai belum jadi, bukan selesai; (2) requirement spec dinilai secara isi, bukan sekadar keberadaan tab-nya (log makanan tanpa makronutrien tidak dihitung selesai); (3) empat lubang keamanan yang sudah aktif di production dihitung sebagai kegagalan requirement, bukan catatan kaki.
+Angka audit awal (~70%) lebih rendah daripada estimasi sebelumnya (~90%) karena tiga alasan yang masih berlaku: (1) fitur yang UI-nya tampil tetapi logikanya tidak pernah dieksekusi dihitung sebagai belum jadi, bukan selesai; (2) requirement spec dinilai secara isi, bukan sekadar keberadaan tab-nya; (3) lubang keamanan yang sudah aktif di production dihitung sebagai kegagalan requirement, bukan catatan kaki.
 
-**Yang sudah kuat:** Ibadah (10 dari 17 ✅, termasuk Donasi & Sedekah yang lengkap), Keuangan (7 dari 12 ✅ dan tidak ada satu pun ❌), absensi + gradebook guru (H/S/I/A/D, KKM merah otomatis, rata-rata dengan kolom terpilih — semuanya persis sesuai spec), serta fondasi teknis: data layer dua-adapter, PWA offline, bilingual.
+**Yang sudah kuat (bertambah setelah perbaikan ini):** Ibadah (10 dari 17 ✅), Keuangan (**9 dari 12 ✅** setelah budget per-bulan & wallet-linking, tidak ada satu pun ❌), absensi + gradebook guru (semuanya persis sesuai spec, plus bug auto-hadir per-pertemuan yang baru ditemukan-dan-ditutup di sesi ini), medication reminder (kini fitur nyata, bukan janji kosong), serta fondasi teknis: data layer dua-adapter, PWA offline, bilingual.
 
-**Yang paling lemah:** alur tugas siswa. Tugas pribadi hanya bisa dibuat lalu terjebak selamanya karena `openTaskModal` menulis ke `tasks` sementara tab Tugas membaca `class_tasks` — satu bug arsitektur ini sendiri melumpuhkan To-Do, prioritas, label, dan recurring sekaligus. Di sisi guru, tiga alur end-to-end yang diminta spec (submission siswa → review zoomable → nilai berdampingan) belum punya fondasinya sama sekali.
+**Yang tadinya paling lemah, sekarang sudah diperbaiki:** alur tugas pribadi siswa (`openTaskModal` vs `class_tasks`) — satu bug arsitektur yang dulu melumpuhkan To-Do, label, dan recurring sekaligus sekarang punya tab "Tugas Pribadi" sendiri dengan CRUD penuh.
+
+**Yang masih paling lemah sekarang:**
+1. **Keamanan** — dari 6 temuan, cuma 1 (S1) yang tertutup penuh; S2 baru separuh jalan (profil inti `users/{uid}` masih bisa dibaca guru manapun); S3/S4/S6 belum disentuh sama sekali. **Ini masih layak jadi prioritas berikutnya**, bukan fitur baru.
+2. Di sisi guru, tiga alur end-to-end yang diminta spec (submission siswa → review zoomable → nilai berdampingan) masih belum punya fondasinya sama sekali — di luar scope 3 putaran perbaikan ini.
+3. Checklist shalat granular, Al-Qur'an 114 surat, dashboard drag & drop, dan notifikasi deadline/anggaran — semua masih di daftar tunggu.
 
 ---
 
 ## Rekomendasi Tindak Lanjut
 
 ### Prioritas 0 — Keamanan (kerjakan lebih dulu, ada di production)
-1. **S1** Tambahkan guard `role` di `firestore.rules:27` — tanpa ini, siapa pun bisa jadi admin.
-2. **S2** Batasi akses baca guru ke siswa di kelasnya sendiri; keluarkan `menstrual` & `meds` dari cakupan guru.
-3. **S3** Ganti PIN hash ke salt per-user (`crypto.getRandomValues`) + PBKDF2; **hapus fallback plaintext** di `finance.js:76` — lebih baik gagal terang-terangan daripada menyimpan PIN apa adanya.
-4. **S4** Rotasi kredensial Supabase, keluarkan dari repo, dan jadikan bucket `jurnal-foto` privat + signed URL.
+1. ~~**S1** Tambahkan guard `role` di `firestore.rules:27`~~ — **✅ DIPERBAIKI** (`16b4837`).
+2. **S2** Batasi akses baca guru ke siswa di kelasnya sendiri; keluarkan `menstrual` & `meds` dari cakupan guru. **⚠️ SEBAGIAN** — 10 subkoleksi sudah dibatasi (`99c3b05`), **tapi rule baca `users/{uid}` utama (`firestore.rules:43-44`) masih terbuka untuk semua guru** — ini masih perlu dikerjakan, prioritas sama tingginya dengan saat laporan ini pertama ditulis.
+3. **S3** Ganti PIN hash ke salt per-user (`crypto.getRandomValues`) + PBKDF2; **hapus fallback plaintext** di `finance.js:76` — lebih baik gagal terang-terangan daripada menyimpan PIN apa adanya. **❌ Belum dikerjakan.**
+4. **S4** Rotasi kredensial Supabase, keluarkan dari repo, dan jadikan bucket `jurnal-foto` privat + signed URL. **❌ Belum dikerjakan** (butuh aksi manual di dashboard Supabase).
 
 ### Prioritas 1 — Bug yang melumpuhkan fitur
-5. **Satukan koleksi tugas siswa.** Buat tab Tugas membaca `tasks` **dan** `class_tasks`, lalu tambahkan handler edit/hapus/tandai-selesai untuk `tasks`. Satu perbaikan ini sekaligus menyelesaikan 2b.1, 2b.2, dan 2b.5.
-6. **Bug klasifikasi tekanan darah** — `calc.js:61` ganti `||` menjadi `&&`.
-7. **Perbaiki disclaimer yang tidak benar** — `health.js:274` mengklaim ada notifikasi pengingat obat (tidak ada); `health.js:85` mengklaim ada visualisasi tren biometrik (tidak ada). Hapus klaimnya atau implementasikan fiturnya.
+5. ~~**Satukan koleksi tugas siswa.**~~ — **✅ DIPERBAIKI** (`c6c9397`): tab "Tugas Pribadi" baru membaca/menulis `tasks` secara konsisten dengan CRUD penuh. Menyelesaikan 2b.1 & 2b.5 penuh; 2b.2 (badge prioritas hanya untuk `'tinggi'`) **belum** ikut diperbaiki — masih perlu ditambahkan badge untuk `sedang`/`rendah` bila diinginkan.
+6. **Bug klasifikasi tekanan darah** — `calc.js:61` ganti `||` menjadi `&&`. **❌ Belum dikerjakan** (tidak masuk salah satu dari 3 putaran perbaikan sesi ini).
+7. **Perbaiki disclaimer yang tidak benar** — `health.js:274` mengklaim ada notifikasi pengingat obat: **✅ diperbaiki, sekarang benar** (`961026f`) karena fiturnya sungguh diimplementasikan. `health.js:85` mengklaim ada visualisasi tren biometrik: **❌ belum disentuh**, masih tidak akurat.
 
 ### Prioritas 2 — Fitur inti spec yang hilang
 8. Unduh Jurnal dengan kop surat, terpisah per kelas — tambahkan tombol ekspor di `renderJurnal` (`teacher.js:565-621`), pola `printHTML` sudah tersedia di `teacher.js:510-516`.
 9. Alur upload tugas siswa → review zoomable → nilai berdampingan. `Storage.uploadFoto` (`supabase-storage.js:31`) sudah ada dan sudah mengompresi; tinggal muat `supabase-storage.js` di `app.html` dan tambahkan field submission di `class_tasks`.
 10. Al-Qur'an 114 surat + audio murrotal via API (mis. EveryAyah / Quran.com API) menggantikan array 4 surat hardcoded.
-11. Recurrence engine untuk `ulang` — saat ini nilainya disimpan tapi tidak pernah dibaca.
-12. Notifikasi deadline & anggaran. Infrastrukturnya sudah ada — `App.notify` (`app.js:236-245`) tinggal dipanggil dari luar water reminder.
+11. Recurrence engine untuk `ulang` — ⚠️ **sebagian diperbaiki**: nilainya sekarang ditampilkan sebagai badge (`c6c9397`), tapi belum ada auto-regenerasi tugas saat yang lama selesai.
+12. Notifikasi deadline & anggaran. Infrastrukturnya sudah ada — `App.notify` (`app.js:236-245`) **sekarang juga dipakai medication reminder** (`f33f6a9`), pola yang sama tinggal direplikasi untuk deadline tugas & alert anggaran (❌ belum dikerjakan untuk dua yang terakhir ini).
 
 ### Prioritas 3
 13. Grafik tren untuk data biometrik (`barChartSVG` sudah ada di `utils.js:161`, tinggal dipakai di Kesehatan).
@@ -255,4 +294,4 @@ Angka ini lebih rendah daripada estimasi audit sebelumnya (~90%) karena tiga ala
 
 ---
 
-*Report disusun murni dari analisis source code pada branch `feature-check`. Setiap klaim dapat ditelusuri ke `file:baris` yang tercantum. Audit UI, visual, dan responsive tidak termasuk dalam ruang lingkup dokumen ini.*
+*Report disusun murni dari analisis source code pada branch `feature-check`. Setiap klaim dapat ditelusuri ke `file:baris` yang tercantum (nomor baris untuk item yang belum diperbaiki mengikuti state sebelum sesi perbaikan; item yang sudah diperbaiki ditandai commit hash-nya). Audit UI, visual, dan responsive tidak termasuk dalam ruang lingkup dokumen ini. Update perbaikan P0-P2 (2026-07-12) didokumentasikan lengkap di `docs/superpowers/specs/` & `docs/superpowers/plans/`; detail P3 yang belum dikerjakan ada di `spec-compliance-report.md`.*

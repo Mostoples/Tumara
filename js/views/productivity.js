@@ -6,6 +6,7 @@
 const Prod = {
   tab: 'tugas',
   taskFilter: 'aktif',
+  personalTaskFilter: 'aktif',
   noteQuery: '',
   selectedDay: new Date().getDay(), // 0=Minggu
 
@@ -13,6 +14,7 @@ const Prod = {
     el.innerHTML = `
       <div class="tabs">
         <button class="tab ${this.tab === 'tugas' ? 'active' : ''}" data-tab="tugas"><ion-icon name="checkbox-outline"></ion-icon>${tr('Tugas', 'Tasks')}</button>
+        <button class="tab ${this.tab === 'pribadi' ? 'active' : ''}" data-tab="pribadi"><ion-icon name="person-outline"></ion-icon>${tr('Tugas Pribadi', 'Personal Tasks')}</button>
         <button class="tab ${this.tab === 'catatan' ? 'active' : ''}" data-tab="catatan"><ion-icon name="document-text-outline"></ion-icon>${tr('Catatan', 'Notes')}</button>
         <button class="tab ${this.tab === 'kebiasaan' ? 'active' : ''}" data-tab="kebiasaan"><ion-icon name="repeat-outline"></ion-icon>${tr('Kebiasaan', 'Habits')}</button>
         <button class="tab ${this.tab === 'jadwal' ? 'active' : ''}" data-tab="jadwal"><ion-icon name="calendar-outline"></ion-icon>${tr('Jadwal', 'Schedule')}</button>
@@ -24,6 +26,7 @@ const Prod = {
 
     const body = $('#prodBody', el);
     if (this.tab === 'tugas') await this.renderTasks(body);
+    else if (this.tab === 'pribadi') await this.renderPersonalTasks(body);
     else if (this.tab === 'catatan') await this.renderNotes(body);
     else if (this.tab === 'kebiasaan') await this.renderHabits(body);
     else if (this.tab === 'jadwal') await this.renderSchedule(body);
@@ -303,6 +306,76 @@ const Prod = {
           App.refresh();
         };
       }
+    });
+  },
+
+  /* ============ TAB: TUGAS PRIBADI ============ */
+
+  async renderPersonalTasks(el) {
+    const tasks = (await DB.list('tasks'))
+      .sort((a, b) => (a.tenggat || '9999-99-99') < (b.tenggat || '9999-99-99') ? -1 : 1);
+    const isDone = t => t.status === 'selesai';
+
+    let shown = tasks;
+    if (this.personalTaskFilter === 'aktif') shown = tasks.filter(t => !isDone(t));
+    else if (this.personalTaskFilter === 'selesai') shown = tasks.filter(isDone);
+
+    const doneCount = tasks.filter(isDone).length;
+    const filterLabel = { aktif: tr('Aktif', 'Active'), selesai: tr('Selesai', 'Done'), semua: tr('Semua', 'All') };
+    const ulangLabel = { harian: tr('Harian', 'Daily'), mingguan: tr('Mingguan', 'Weekly'), bulanan: tr('Bulanan', 'Monthly') };
+
+    el.innerHTML = `
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:12px;">
+        <div style="font-size:.82rem;color:var(--text-3);"><ion-icon name="person-outline" style="vertical-align:-2px;"></ion-icon> ${tr('Tugas pribadimu — bukan dari sekolah.', 'Your own tasks — not from school.')}</div>
+        <button class="btn btn-prod btn-sm" id="addPersonalTask"><ion-icon name="add"></ion-icon> ${tr('Tugas', 'Task')}</button>
+      </div>
+      <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:16px;">
+        ${['aktif', 'selesai', 'semua'].map(f => `
+          <button class="chip ${this.personalTaskFilter === f ? 'active' : ''}" data-pfilter="${f}">
+            ${filterLabel[f]}${f === 'selesai' && doneCount ? ` (${doneCount})` : ''}
+          </button>`).join('')}
+      </div>
+
+      ${shown.length ? `
+        <div style="display:flex;flex-direction:column;gap:10px;">
+          ${shown.map(t => `
+            <div class="list-item">
+              <button class="task-check ${isDone(t) ? 'done' : ''}" data-ptoggle="${t.id}"><ion-icon name="checkmark"></ion-icon></button>
+              <div style="flex:1;min-width:0;">
+                <div style="font-weight:700;font-size:.92rem;" class="${isDone(t) ? 'task-title-done' : ''}">${esc(t.judul)}</div>
+                <div style="display:flex;gap:8px;align-items:center;margin-top:4px;flex-wrap:wrap;">
+                  ${t.mapel ? `<span class="badge badge-purple">${esc(t.mapel)}</span>` : ''}
+                  ${t.label ? `<span class="badge badge-gray">${esc(t.label)}</span>` : ''}
+                  ${t.tenggat && !isDone(t) ? deadlineBadge(t.tenggat) : t.tenggat ? `<span class="badge badge-gray">${fmtDate(t.tenggat, { short: true })}</span>` : ''}
+                  ${t.prioritas === 'tinggi' ? `<span class="badge badge-red">${tr('Prioritas tinggi', 'High priority')}</span>` : ''}
+                  ${t.ulang && t.ulang !== 'tidak' ? `<span class="badge badge-gray">🔁 ${ulangLabel[t.ulang] || t.ulang}</span>` : ''}
+                </div>
+              </div>
+              <button class="mini-icon-btn" data-pedit="${t.id}"><ion-icon name="create-outline"></ion-icon></button>
+              <button class="mini-icon-btn danger" data-pdel="${t.id}"><ion-icon name="trash-outline"></ion-icon></button>
+            </div>`).join('')}
+        </div>` : `
+        <div class="card empty-state">
+          <ion-icon name="${this.personalTaskFilter === 'selesai' ? 'trophy-outline' : 'checkbox-outline'}"></ion-icon>
+          <div class="es-title">${this.personalTaskFilter === 'selesai' ? tr('Belum ada tugas selesai', 'No finished tasks yet') : tr('Belum ada tugas pribadi', 'No personal tasks yet')}</div>
+          <div class="es-sub">${tr('Tambahkan tugas pribadimu sendiri 📌', 'Add your own personal tasks 📌')}</div>
+        </div>`}`;
+
+    $('#addPersonalTask', el).onclick = () => this.openTaskModal();
+    $$('[data-pfilter]', el).forEach(c => c.onclick = () => { this.personalTaskFilter = c.dataset.pfilter; App.refresh(); });
+    $$('[data-ptoggle]', el).forEach(b => b.onclick = async () => {
+      const t = tasks.find(x => x.id === b.dataset.ptoggle);
+      const status = isDone(t) ? 'aktif' : 'selesai';
+      if (status === 'selesai') toast(tr('Tugas selesai — mantap! 🎉', 'Task done — nice work! 🎉'));
+      await DB.update('tasks', t.id, { status });
+      App.refresh();
+    });
+    $$('[data-pedit]', el).forEach(b => b.onclick = () => this.openTaskModal(tasks.find(x => x.id === b.dataset.pedit)));
+    $$('[data-pdel]', el).forEach(b => b.onclick = async () => {
+      if (!await confirmDialog(tr('Hapus tugas ini?', 'Delete this task?'), { danger: true, okText: tr('Hapus', 'Delete') })) return;
+      await DB.remove('tasks', b.dataset.pdel);
+      toast(tr('Tugas dihapus.', 'Task deleted.'));
+      App.refresh();
     });
   },
 

@@ -35,7 +35,9 @@ const AdminView = {
 
     let users = [];
     try {
-      users = await DB.adminListUsers();
+      // Disimpan agar mencari/memfilter tidak perlu mengambil ulang data dari
+      // server (dulu tiap ketikan memanggil render() → spinner + fetch ulang).
+      users = this._users = await DB.adminListUsers();
     } catch (e) {
       el.innerHTML = `<div class="card empty-state">
         <ion-icon name="alert-circle-outline"></ion-icon>
@@ -47,33 +49,6 @@ const AdminView = {
 
     const counts = { admin: 0, guru: 0, siswa: 0 };
     users.forEach(u => { counts[u.role || 'siswa'] = (counts[u.role || 'siswa'] || 0) + 1; });
-
-    const q = this.query.toLowerCase();
-    let shown = users.filter(u => {
-      if (this.filter !== 'all' && (u.role || 'siswa') !== this.filter) return false;
-      if (!q) return true;
-      return (u.nama || '').toLowerCase().includes(q) || (u.email || '').toLowerCase().includes(q)
-        || (u.kelas || '').toLowerCase().includes(q) || (u.mapel || '').toLowerCase().includes(q);
-    });
-    shown.sort((a, b) => {
-      const order = { admin: 0, guru: 1, siswa: 2 };
-      const r = (order[a.role] ?? 3) - (order[b.role] ?? 3);
-      return r !== 0 ? r : (a.nama || '').localeCompare(b.nama || '');
-    });
-
-    const roleBadge = r => {
-      const map = { admin: 'badge-purple', guru: 'badge-green', siswa: 'badge-blue' };
-      return `<span class="badge ${map[r] || 'badge-gray'}">${roleLabel(r)}</span>`;
-    };
-
-    // Avatar: pakai foto profil (fotoUrl/photoURL) bila ada, selain itu inisial.
-    // referrerpolicy diperlukan agar foto akun Google tidak diblokir (403).
-    const avatarInner = u => {
-      const foto = u.fotoUrl || u.photoURL;
-      return foto
-        ? `<img src="${esc(foto)}" alt="${esc(u.nama || 'Foto profil')}" referrerpolicy="no-referrer">`
-        : esc((u.nama || '?').trim().split(/\s+/).map(w => w[0]).slice(0, 2).join('').toUpperCase());
-    };
 
     el.innerHTML = `
       ${this._switcher()}
@@ -102,45 +77,102 @@ const AdminView = {
         </div>
       </div>
 
-      ${shown.length ? `
-        <div class="table-wrap stack">
-          <table class="data-table stack">
-            <thead><tr>
-              <th>${tr('Nama', 'Name')}</th><th>Email</th><th>${tr('Peran', 'Role')}</th>
-              <th>${tr('Detail', 'Detail')}</th><th style="text-align:right;">${tr('Aksi', 'Actions')}</th>
-            </tr></thead>
-            <tbody>
-              ${shown.map(u => `
-                <tr>
-                  <td class="cell-primary"><div style="display:flex;align-items:center;gap:10px;">
-                    <span class="avatar avatar-sm${(u.fotoUrl || u.photoURL) ? ' avatar-photo' : ''}">${avatarInner(u)}</span>
-                    <b>${esc(u.nama || '-')}</b>
-                  </div></td>
-                  <td data-label="Email" style="color:var(--text-3);">${esc(u.email || '-')}</td>
-                  <td data-label="${tr('Peran', 'Role')}">${roleBadge(u.role || 'siswa')}</td>
-                  <td data-label="${tr('Detail', 'Detail')}" style="color:var(--text-3);font-size:.82rem;">${esc(u.mapel || u.kelas || u.sekolah || '-')}</td>
-                  <td data-label="${tr('Aksi', 'Actions')}" style="text-align:right;white-space:nowrap;">
-                    <button class="mini-icon-btn" data-edit="${u.id}" title="${tr('Ubah', 'Edit')}"><ion-icon name="create-outline"></ion-icon></button>
-                    <button class="mini-icon-btn danger" data-del="${u.id}" title="${(u.role || 'siswa') === 'admin' ? tr('Akun admin tidak bisa dihapus', 'Admin accounts cannot be deleted') : tr('Hapus', 'Delete')}" ${u.id === DB.user.id || (u.role || 'siswa') === 'admin' ? 'disabled' : ''}><ion-icon name="trash-outline"></ion-icon></button>
-                  </td>
-                </tr>`).join('')}
-            </tbody>
-          </table>
-        </div>` : `
-        <div class="card empty-state">
-          <ion-icon name="people-outline"></ion-icon>
-          <div class="es-title">${tr('Tidak ada akun yang cocok', 'No matching accounts')}</div>
-          <div class="es-sub">${this.query || this.filter !== 'all' ? tr('Coba ubah pencarian/filter', 'Try changing the search/filter') : tr('Buat akun pertama dengan tombol di atas', 'Create the first account with the button above')}</div>
-        </div>`}`;
+      <div id="uList"></div>`;
 
     this._bindSwitcher(el);
-    let deb;
-    $('#uSearch', el).oninput = e => { clearTimeout(deb); deb = setTimeout(() => { this.query = e.target.value; this.render(el); }, 250); };
-    $$('[data-filter]', el).forEach(b => b.onclick = () => { this.filter = b.dataset.filter; this.render(el); });
     $('#addUser', el).onclick = () => this._userModal();
-    $$('[data-edit]', el).forEach(b => b.onclick = () => this._userModal(users.find(u => u.id === b.dataset.edit)));
-    $$('[data-del]', el).forEach(b => b.onclick = async () => {
-      const u = users.find(x => x.id === b.dataset.del);
+
+    /* Mencari TIDAK me-render ulang halaman: kotak search-nya sendiri tak
+       disentuh, jadi fokus & kursor tetap di tempat (dulu input-nya ikut
+       dibuat ulang → fokus hilang, dan spinner "Memuat…" membuat kedip).
+       Yang digambar ulang hanya isi #uList, dari data yang sudah di memori. */
+    const input = $('#uSearch', el);
+    let deb;
+    input.oninput = () => {
+      this.query = input.value;
+      clearTimeout(deb);
+      deb = setTimeout(() => this._paintUsers(el), 120);
+    };
+
+    $$('[data-filter]', el).forEach(b => b.onclick = () => {
+      this.filter = b.dataset.filter;
+      $$('[data-filter]', el).forEach(x => x.classList.toggle('active', x.dataset.filter === this.filter));
+      this._paintUsers(el);
+    });
+
+    this._paintUsers(el);
+  },
+
+  // Menyaring akun sesuai kotak pencarian + chip peran (dari data di memori).
+  _filterUsers() {
+    const q = this.query.trim().toLowerCase();
+    const shown = (this._users || []).filter(u => {
+      if (this.filter !== 'all' && (u.role || 'siswa') !== this.filter) return false;
+      if (!q) return true;
+      return (u.nama || '').toLowerCase().includes(q) || (u.email || '').toLowerCase().includes(q)
+        || (u.kelas || '').toLowerCase().includes(q) || (u.mapel || '').toLowerCase().includes(q);
+    });
+    const order = { admin: 0, guru: 1, siswa: 2 };
+    return shown.sort((a, b) => {
+      const r = (order[a.role] ?? 3) - (order[b.role] ?? 3);
+      return r !== 0 ? r : (a.nama || '').localeCompare(b.nama || '');
+    });
+  },
+
+  // Gambar ulang HANYA daftar akun (#uList) + pasang lagi tombol barisnya.
+  _paintUsers(el) {
+    const list = $('#uList', el);
+    if (!list) return;
+    const shown = this._filterUsers();
+
+    const roleBadge = r => {
+      const map = { admin: 'badge-purple', guru: 'badge-green', siswa: 'badge-blue' };
+      return `<span class="badge ${map[r] || 'badge-gray'}">${roleLabel(r)}</span>`;
+    };
+
+    // Avatar: pakai foto profil (fotoUrl/photoURL) bila ada, selain itu inisial.
+    // referrerpolicy diperlukan agar foto akun Google tidak diblokir (403).
+    const avatarInner = u => {
+      const foto = u.fotoUrl || u.photoURL;
+      return foto
+        ? `<img src="${esc(foto)}" alt="${esc(u.nama || 'Foto profil')}" referrerpolicy="no-referrer">`
+        : esc((u.nama || '?').trim().split(/\s+/).map(w => w[0]).slice(0, 2).join('').toUpperCase());
+    };
+
+    list.innerHTML = shown.length ? `
+      <div class="table-wrap stack">
+        <table class="data-table stack">
+          <thead><tr>
+            <th>${tr('Nama', 'Name')}</th><th>Email</th><th>${tr('Peran', 'Role')}</th>
+            <th>${tr('Detail', 'Detail')}</th><th style="text-align:right;">${tr('Aksi', 'Actions')}</th>
+          </tr></thead>
+          <tbody>
+            ${shown.map(u => `
+              <tr>
+                <td class="cell-primary"><div style="display:flex;align-items:center;gap:10px;">
+                  <span class="avatar avatar-sm${(u.fotoUrl || u.photoURL) ? ' avatar-photo' : ''}">${avatarInner(u)}</span>
+                  <b>${esc(u.nama || '-')}</b>
+                </div></td>
+                <td data-label="Email" style="color:var(--text-3);">${esc(u.email || '-')}</td>
+                <td data-label="${tr('Peran', 'Role')}">${roleBadge(u.role || 'siswa')}</td>
+                <td data-label="${tr('Detail', 'Detail')}" style="color:var(--text-3);font-size:.82rem;">${esc(u.mapel || u.kelas || u.sekolah || '-')}</td>
+                <td data-label="${tr('Aksi', 'Actions')}" style="text-align:right;white-space:nowrap;">
+                  <button class="mini-icon-btn" data-edit="${u.id}" title="${tr('Ubah', 'Edit')}"><ion-icon name="create-outline"></ion-icon></button>
+                  <button class="mini-icon-btn danger" data-del="${u.id}" title="${(u.role || 'siswa') === 'admin' ? tr('Akun admin tidak bisa dihapus', 'Admin accounts cannot be deleted') : tr('Hapus', 'Delete')}" ${u.id === DB.user.id || (u.role || 'siswa') === 'admin' ? 'disabled' : ''}><ion-icon name="trash-outline"></ion-icon></button>
+                </td>
+              </tr>`).join('')}
+          </tbody>
+        </table>
+      </div>` : `
+      <div class="card empty-state">
+        <ion-icon name="people-outline"></ion-icon>
+        <div class="es-title">${tr('Tidak ada akun yang cocok', 'No matching accounts')}</div>
+        <div class="es-sub">${this.query || this.filter !== 'all' ? tr('Coba ubah pencarian/filter', 'Try changing the search/filter') : tr('Buat akun pertama dengan tombol di atas', 'Create the first account with the button above')}</div>
+      </div>`;
+
+    $$('[data-edit]', list).forEach(b => b.onclick = () => this._userModal((this._users || []).find(u => u.id === b.dataset.edit)));
+    $$('[data-del]', list).forEach(b => b.onclick = async () => {
+      const u = (this._users || []).find(x => x.id === b.dataset.del);
       if ((u.role || 'siswa') === 'admin') return toast(tr('Akun admin tidak bisa dihapus.', 'Admin accounts cannot be deleted.'), 'warning');
       if (!await confirmDialog(
         tr(`Hapus akun "${u.nama}" (${u.email})? Data profilnya akan dihapus. Tindakan ini tidak bisa dibatalkan.`,

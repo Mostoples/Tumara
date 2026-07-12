@@ -19,14 +19,14 @@ Aplikasi juga menyediakan portal **Guru** (beranda, kelas, absensi, penilaian, j
 | **Kesehatan** | Kalkulator kalori (BMR/TDEE) & BMI, pengingat minum, log & target olahraga (+ estimasi kalori terbakar MET), siklus tidur, log berat & tren, biometrik (detak jantung, SpO2, tekanan darah, gula darah, langkah — input manual), nutrisi (log makanan + panduan *Isi Piringku*), pengingat obat, kesehatan mental (box-breathing + mood), siklus menstruasi (akun perempuan) |
 | **Produktivitas** | Catatan, **tugas dari guru** (read-only, bisa dicentang selesai — progres pribadi), **jadwal kelas dari wali** (read-only), timer fokus Pomodoro, habit tracker (streak) |
 | **Keuangan** | Pemasukan/pengeluaran + kategori, target menabung, anggaran per kategori, utang/piutang, dompet & aset (tunai/bank/e-wallet, emas/saham/reksadana), kunci PIN, laporan grafik + ekspor CSV |
-| **Ibadah** | Checklist sholat & amalan (**auto-reset tengah malam** waktu lokal perangkat), jadwal sholat + arah kiblat (GPS + Aladhan API), Al-Qur'an digital, tracker tilawah/hafalan, dzikir & doa harian, kalkulator zakat, catatan sedekah |
+| **Ibadah** | Checklist sholat & amalan (**auto-reset tengah malam** waktu lokal perangkat), jadwal sholat (Aladhan API) + **kompas arah kiblat** (bearing *great-circle* ke Ka'bah, sensor kompas absolut, lokasi dipantau langsung), Al-Qur'an digital, tracker tilawah/hafalan, dzikir & doa harian, kalkulator zakat, catatan sedekah |
 | **Lainnya** | Dashboard **Skor Keseimbangan**, profil (termasuk **kelas + NIS**) & onboarding, tema terang/gelap, dwibahasa (ID/EN) |
 
 Onboarding siswa (login Google pertama) juga meminta **kelas** (dari daftar admin) & **NIS** agar akun tertaut ke kelasnya.
 
 ### 👨‍🏫 Guru (`guru.html`)
 - **Beranda** — dashboard ringkas (statistik + menu pintasan).
-- **Kelas & Siswa** — pilih **kelas yang diampu** (dari daftar admin); roster berisi siswa yang sudah login Google & memilih kelas itu.
+- **Kelas & Siswa** — pilih **kelas yang diampu** (dari daftar admin), lalu buka **halaman detail kelas**: ringkasan jumlah siswa, menu pintasan ke fitur kelas itu (absensi/penilaian/jurnal/tugas/jadwal/pemantauan), dan daftar siswanya. Di HP dibuka dengan menekan kartu kelas; di layar lebar (≥900px) daftar kelas & detailnya tampil berdampingan (tanpa perlu menekan apa pun). Masuk ke tab lain lewat menu ini memunculkan tombol **"Kembali ke Kelas"**.
 - **Absensi** (kode warna H/S/I/A/D + ekspor CSV), **Penilaian** (KKM otomatis, rata-rata, ekspor CSV/PDF), **Jurnal mengajar** (foto terkompres), **Jadwal Mengajar** (jadwal pribadi guru).
 - **Tugas Kelas** — kirim tugas (judul, mapel, tenggat, prioritas) ke kelas yang diampu; siswa menerimanya.
 - **Jadwal Kelas** — *khusus wali kelas*; menyusun jadwal kelas yang diterima siswa. Tab ini hanya muncul bila guru menandai dirinya wali (via form **Data Guru**).
@@ -35,7 +35,7 @@ Onboarding siswa (login Google pertama) juga meminta **kelas** (dari daftar admi
 Saat pertama login, guru mengisi form **Data Guru**: nama, mapel, dan status wali kelas (+ kelas yang di-wali-i). Bisa dibuka ulang dari topbar.
 
 ### 🛡️ Admin (`admin.html`)
-- **Akun** — buat akun guru/siswa, ubah peran, hapus akun.
+- **Akun** — buat akun guru/siswa, ubah peran, hapus akun; pencarian & filter peran berjalan **di memori** (mengetik tidak memuat ulang halaman maupun data).
 - **Kelas & Siswa** (data induk) — buat daftar **kelas** sekolah; data siswa (nama + **NIS**, maks 20 angka) per kelas dengan **import massal** (tempel dari Excel/Sheets) + tambah/edit/hapus + ekspor CSV. Data ini jadi acuan; roster aktif guru berasal dari siswa yang sudah login.
 
 ### 📖 Ensiklopedia (`encyclopedia.html`)
@@ -147,6 +147,7 @@ firebase deploy
 
 - **Disclaimer kesehatan:** modul kesehatan menyasar remaja — dirancang dengan bingkai positif (kebiasaan sehat, streak, cukup istirahat/minum), bukan tekanan menurunkan berat badan. Aplikasi **bukan pengganti nasihat tenaga kesehatan**.
 - **Keterbatasan web:** pengukuran otomatis via sensor (detak jantung, SpO2, pedometer), sinkronisasi wearable, dan sidik jari tidak tersedia di web → diganti input manual + kunci PIN.
+- **Kompas kiblat:** butuh **magnetometer**, yang praktis hanya ada di HP/tablet. Laptop & PC tidak punya sensor ini — memutar laptop tak akan menggerakkan jarum (batas perangkat keras, bukan bug). Di perangkat tanpa kompas, aplikasi beralih ke **mode tanpa kompas**: sudut kiblat tetap ditampilkan akurat + penggeser "arah hadapmu" agar jarum bisa disejajarkan manual. Lokasi laptop juga hanya taksiran Wi-Fi/IP (bisa meleset km) → ada peringatan + opsi **Set Manual**.
 - Alur Firebase (secondary-app create user, admin rules) perlu diuji sekali di lingkungan Firebase nyata + deploy rules sebelum produksi.
 
 ---

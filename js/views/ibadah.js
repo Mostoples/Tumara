@@ -38,6 +38,10 @@ const Ibadah = {
     this._lastDate = todayStr();
     this._watchDayChange(el);
 
+    // Sensor kompas & GPS hanya hidup selama tab Sholat & Kiblat terbuka.
+    this._stopCompass();
+    this._stopGeoWatch();
+
     el.innerHTML = `
       <div class="tabs">
         <button class="tab ${this.tab === 'hari' ? 'active' : ''}" data-tab="hari"><ion-icon name="checkbox-outline"></ion-icon>${tr('Hari Ini', 'Today')}</button>
@@ -162,16 +166,48 @@ const Ibadah = {
           <div class="card-title"><ion-icon name="compass" style="color:#0891b2"></ion-icon>${tr('Arah Kiblat', 'Qibla Direction')}</div>
           ${loc ? `
             <div style="display:flex;align-items:center;gap:24px;flex-wrap:wrap;justify-content:center;margin-top:12px;">
-              <div class="qibla-compass" id="qiblaCompass">
-                <div class="qibla-needle" id="qiblaNeedle">🕋</div>
-                <div class="qibla-n">N</div>
+              <div class="qibla-compass">
+                <!-- mawar kompas: ikut berputar agar N benar-benar menunjuk utara -->
+                <div class="qibla-rose" id="qiblaRose">
+                  <span class="qibla-dir qd-n">N</span>
+                  <span class="qibla-dir qd-e">E</span>
+                  <span class="qibla-dir qd-s">S</span>
+                  <span class="qibla-dir qd-w">W</span>
+                </div>
+                <!-- jarum: berputar mengelilingi pusat, 🕋 di ujungnya -->
+                <div class="qibla-dial" id="qiblaNeedle"><span class="qibla-kaaba">🕋</span></div>
               </div>
               <div style="text-align:center;">
-                <div style="font-size:2rem;font-weight:800;color:#0891b2;">${Math.round(this._qiblaBearing(loc.lat, loc.lng))}°</div>
-                <div style="font-size:.8rem;color:var(--text-3);">${tr('dari Utara (searah jarum jam)', 'from North (clockwise)')}</div>
-                <div id="qiblaHint" style="font-size:.78rem;color:var(--text-3);margin-top:8px;max-width:200px;">${tr('Di HP, izinkan sensor kompas & putar perangkat sampai 🕋 mengarah ke atas.', 'On mobile, allow compass sensor & rotate your device until 🕋 points up.')}</div>
+                <div style="font-size:2rem;font-weight:800;color:#0891b2;" id="qiblaDeg">${this._qiblaBearing(loc.lat, loc.lng).toFixed(1)}°</div>
+                <div style="font-size:.8rem;color:var(--text-3);">${tr('dari Utara sejati (searah jarum jam)', 'from true North (clockwise)')}</div>
+                <div style="font-size:.78rem;color:var(--text-3);margin-top:8px;" id="qiblaMeta">
+                  ${tr('Arah HP', 'Device facing')}: <b id="qiblaHeading">—</b> ·
+                  ${tr('Ka\'bah', 'Kaaba')} <b>${Math.round(this._kaabaDistance(loc.lat, loc.lng)).toLocaleString('id-ID')} km</b>
+                </div>
+                <div style="font-size:.75rem;color:var(--text-3);margin-top:2px;" id="qiblaPos">
+                  📍 ${loc.lat.toFixed(5)}, ${loc.lng.toFixed(5)}
+                </div>
+                <div id="qiblaHint" style="font-size:.78rem;color:var(--text-3);margin-top:8px;max-width:230px;">${tr('Pegang HP mendatar, lalu putar badanmu sampai 🕋 tepat di atas.', 'Hold the phone flat, then turn until 🕋 is exactly at the top.')}</div>
               </div>
             </div>
+
+            <!-- Mode tanpa kompas (laptop/PC): pengguna sendiri yang memberi
+                 tahu ke arah mana ia menghadap, lalu jarum menyesuaikan. -->
+            <div id="qiblaNoCompass" style="display:none;margin-top:14px;padding-top:14px;border-top:1px solid var(--border);">
+              <div style="font-size:.8rem;color:var(--text-2);font-weight:700;margin-bottom:4px;">
+                <ion-icon name="desktop-outline" style="vertical-align:-2px;"></ion-icon>
+                ${tr('Mode tanpa kompas', 'No-compass mode')}
+              </div>
+              <div id="qiblaNoCompassMsg" style="font-size:.78rem;color:var(--text-3);margin-bottom:10px;"></div>
+              <label style="font-size:.78rem;color:var(--text-3);display:block;margin-bottom:6px;">
+                ${tr('Arah hadapmu sekarang', 'Direction you are facing')}: <b id="qiblaManualVal">0°</b> ${tr('dari utara', 'from north')}
+              </label>
+              <input type="range" id="qiblaManualDeg" min="0" max="359" step="1" value="0" style="width:100%;accent-color:#0891b2;">
+              <div style="font-size:.73rem;color:var(--text-3);margin-top:6px;">
+                ${tr('Biarkan 0° bila layarmu menghadap utara. Tak tahu utara? Matahari terbit di timur (pagi) & terbenam di barat (sore) — atau buka halaman ini di HP.', 'Leave at 0° if your screen faces north. Not sure? The sun rises in the east & sets in the west — or open this page on a phone.')}
+              </div>
+            </div>
+
             <button class="btn btn-sm btn-block" id="enableCompass" style="margin-top:16px;"><ion-icon name="compass-outline"></ion-icon> ${tr('Aktifkan Kompas', 'Enable Compass')}</button>` : `
             <p style="font-size:.85rem;color:var(--text-3);margin-top:10px;">${tr('Set lokasimu dulu untuk menghitung arah kiblat.', 'Set your location first to compute the qibla direction.')}</p>`}
         </div>
@@ -190,12 +226,40 @@ const Ibadah = {
     }
   },
 
+  /* ---- KIBLAT ----
+     Ka'bah, Masjidil Haram, Mekkah:
+       21°25'21,00" LU  → 21 + 25/60 + 21,00/3600
+       39°49'34,20" BT  → 39 + 49/60 + 34,20/3600 */
+  KAABA: {
+    lat: 21 + 25 / 60 + 21.00 / 3600,   // 21.4225°
+    lng: 39 + 49 / 60 + 34.20 / 3600    // 39.826167°
+  },
+
+  // Arah kiblat = bearing awal lingkaran-besar (great-circle) dari posisi
+  // pengguna ke Ka'bah, dalam derajat searah jarum jam dari UTARA SEJATI.
+  // Ini arah terpendek di permukaan bumi — bukan garis lurus di peta datar.
   _qiblaBearing(lat, lng) {
-    const kLat = 21.4225 * Math.PI / 180, kLng = 39.8262 * Math.PI / 180;
-    const φ1 = lat * Math.PI / 180, Δλ = kLng - lng * Math.PI / 180;
-    const y = Math.sin(Δλ);
-    const x = Math.cos(φ1) * Math.tan(kLat) - Math.sin(φ1) * Math.cos(Δλ);
-    return (Math.atan2(y, x) * 180 / Math.PI + 360) % 360;
+    const rad = Math.PI / 180;
+    const φ1 = lat * rad, φ2 = this.KAABA.lat * rad;
+    const Δλ = (this.KAABA.lng - lng) * rad;
+    const y = Math.sin(Δλ) * Math.cos(φ2);
+    const x = Math.cos(φ1) * Math.sin(φ2) - Math.sin(φ1) * Math.cos(φ2) * Math.cos(Δλ);
+    return (Math.atan2(y, x) / rad + 360) % 360;
+  },
+
+  // Jarak dua titik di permukaan bumi (km) — haversine.
+  _jarakKm(lat1, lng1, lat2, lng2) {
+    const rad = Math.PI / 180, R = 6371;
+    const dφ = (lat2 - lat1) * rad, dλ = (lng2 - lng1) * rad;
+    const a = Math.sin(dφ / 2) ** 2 +
+      Math.cos(lat1 * rad) * Math.cos(lat2 * rad) * Math.sin(dλ / 2) ** 2;
+    return 2 * R * Math.asin(Math.sqrt(a));
+  },
+
+  // Jarak ke Ka'bah (km) — penanda bahwa posisi yang dipakai memang lokasi
+  // pengguna saat ini (angkanya ikut berubah kalau ia berpindah).
+  _kaabaDistance(lat, lng) {
+    return this._jarakKm(lat, lng, this.KAABA.lat, this.KAABA.lng);
   },
 
   async _fetchTimes(lat, lng) {
@@ -220,12 +284,14 @@ const Ibadah = {
           const r = await fetch(`https://api.aladhan.com/v1/timings/${new Date().getDate()}-${new Date().getMonth() + 1}-${new Date().getFullYear()}?latitude=${lat}&longitude=${lng}&method=20`);
           const j = await r.json(); kota = j?.data?.meta?.timezone || '';
         } catch (_) {}
-        await DB.updateUser({ lokasi: { lat, lng, kota } });
+        await DB.updateUser({ lokasi: { lat, lng, kota, akurasi: Math.round(pos.coords.accuracy || 0) } });
         toast(tr('Lokasi diperbarui 📍', 'Location updated 📍'));
         App.refresh();
       }, err => {
         toast(tr('Gagal mengambil lokasi. Izinkan akses lokasi atau set manual.', 'Failed to get location. Allow location access or set manually.'), 'error');
-      }, { enableHighAccuracy: false, timeout: 12000 });
+      // enableHighAccuracy → pakai GPS/Wi-Fi, bukan perkiraan kasar dari IP.
+      // maximumAge 0 → jangan pakai posisi lama yang tersimpan di cache.
+      }, { enableHighAccuracy: true, timeout: 20000, maximumAge: 0 });
     };
     $('#refreshLoc', el) && ($('#refreshLoc', el).onclick = getGPS);
     $('#manualLoc', el) && ($('#manualLoc', el).onclick = () => {
@@ -248,24 +314,234 @@ const Ibadah = {
       });
     });
 
-    // kompas kiblat
+    // Kompas kiblat + pemantau lokasi (hanya bila lokasi sudah diketahui)
+    if (!loc) return;
+    this._qibla = {
+      lat: loc.lat, lng: loc.lng,
+      akurasi: loc.akurasi || 0,
+      bearing: this._qiblaBearing(loc.lat, loc.lng),
+      heading: null
+    };
+    this._paintQibla(el);
+    this._startGeoWatch(el);
+
     const enable = $('#enableCompass', el);
-    if (enable && loc) {
-      const bearing = this._qiblaBearing(loc.lat, loc.lng);
-      const needle = $('#qiblaNeedle', el);
-      const applyHeading = h => { if (needle) needle.style.transform = `rotate(${bearing - h}deg)`; };
-      enable.onclick = async () => {
-        try {
-          if (typeof DeviceOrientationEvent !== 'undefined' && DeviceOrientationEvent.requestPermission) {
-            const p = await DeviceOrientationEvent.requestPermission();
-            if (p !== 'granted') return toast(tr('Izin sensor ditolak.', 'Sensor permission denied.'), 'warning');
-          }
-          window.addEventListener('deviceorientationabsolute', e => { if (e.alpha != null) applyHeading(360 - e.alpha); }, true);
-          window.addEventListener('deviceorientation', e => { const h = e.webkitCompassHeading ?? (e.alpha != null ? 360 - e.alpha : null); if (h != null) applyHeading(h); }, true);
-          toast(tr('Kompas aktif — putar perangkatmu.', 'Compass on — rotate your device.'), 'info');
-        } catch (_) { toast(tr('Kompas tidak tersedia di perangkat ini.', 'Compass not available on this device.'), 'warning'); }
-      };
+    if (enable) enable.onclick = () => this._startCompass(el);
+    // iOS wajib lewat gestur (requestPermission). Android/desktop tidak perlu
+    // izin → langsung nyalakan supaya jarum bergerak tanpa menekan tombol.
+    const perluIzin = typeof DeviceOrientationEvent !== 'undefined' &&
+      typeof DeviceOrientationEvent.requestPermission === 'function';
+    if (!perluIzin) this._startCompass(el, { diam: true });
+  },
+
+  /* ---- KOMPAS ----
+     Hanya event orientasi ABSOLUT yang dipakai. Pada event relatif
+     ('deviceorientation' biasa di Android), `alpha` dihitung dari acuan acak
+     saat halaman dibuka — bukan dari utara — sehingga jarumnya pasti salah.
+     Ini sumber bug lama: jarum ikut "bergerak" tapi tak menunjuk ke mana pun. */
+  _compass: null,   // { off() }
+  _qibla: null,     // { lat, lng, bearing, heading }
+
+  _stopCompass() {
+    if (this._compass) this._compass.off();
+    this._compass = null;
+  },
+
+  // Sudut hadap perangkat: 0–360, searah jarum jam dari utara.
+  _headingOf(e) {
+    // iOS: sudah berupa arah kompas dari utara.
+    if (typeof e.webkitCompassHeading === 'number') return e.webkitCompassHeading;
+    if (e.alpha == null) return null;
+    if (e.type !== 'deviceorientationabsolute' && e.absolute !== true) return null;
+    // Layar yang diputar (landscape) menggeser acuan sensor → dikompensasi.
+    const layar = (screen.orientation && screen.orientation.angle) || window.orientation || 0;
+    return (360 - e.alpha + layar + 360) % 360;
+  },
+
+  // Gambar ulang jarum, mawar kompas, & angka — dari state _qibla.
+  _paintQibla(el) {
+    const q = this._qibla;
+    if (!q) return;
+    const needle = $('#qiblaNeedle', el), rose = $('#qiblaRose', el);
+    const deg = $('#qiblaDeg', el), head = $('#qiblaHeading', el), pos = $('#qiblaPos', el);
+    // Tanpa kompas, jarum tetap benar dibaca sebagai sudut dari Utara (N di atas).
+    const h = q.heading ?? 0;
+    if (needle) needle.style.transform = `rotate(${q.bearing - h}deg)`;
+    if (rose) rose.style.transform = `rotate(${-h}deg)`;
+    if (deg) deg.textContent = `${q.bearing.toFixed(1)}°`;
+    if (head) head.textContent = q.heading == null ? '—' : `${Math.round(q.heading)}°`;
+    if (pos) {
+      // Laptop/PC menaksir lokasi dari Wi-Fi atau alamat IP — bisa meleset
+      // ribuan meter, bahkan salah kota. Katakan bila taksirannya kasar.
+      const kasar = q.akurasi > 1000;
+      pos.innerHTML = `📍 ${q.lat.toFixed(5)}, ${q.lng.toFixed(5)}` +
+        (q.akurasi ? ` (±${q.akurasi >= 1000 ? (q.akurasi / 1000).toFixed(1) + ' km' : q.akurasi + ' m'})` : '') +
+        (kasar ? `<div style="color:#d97706;margin-top:3px;">⚠ ${tr('Lokasi ini hanya taksiran dari Wi-Fi/IP. Pakai "Set Manual" agar tepat.', 'This location is only a Wi-Fi/IP estimate. Use "Set Manually" for precision.')}</div>` : '');
     }
+  },
+
+  async _startCompass(el, { diam = false } = {}) {
+    this._stopCompass();
+    const needle = $('#qiblaNeedle', el);
+    const hint = $('#qiblaHint', el);
+    if (!needle || !this._qibla) return;
+
+    // iOS 13+: izin sensor harus diminta dari gestur pengguna.
+    if (typeof DeviceOrientationEvent !== 'undefined' &&
+        typeof DeviceOrientationEvent.requestPermission === 'function') {
+      try {
+        const p = await DeviceOrientationEvent.requestPermission();
+        if (p !== 'granted') return toast(tr('Izin sensor kompas ditolak.', 'Compass permission denied.'), 'warning');
+      } catch (_) {
+        return toast(tr('Kompas tidak tersedia di perangkat ini.', 'Compass not available on this device.'), 'warning');
+      }
+    }
+
+    let hidup = false, tunggu;
+    const onOrient = e => {
+      if (!needle.isConnected) return this._stopCompass();   // pindah tab → lepas sensor
+      const h = this._headingOf(e);
+      if (h == null) return;                                 // event relatif → abaikan
+      if (!hidup) {
+        hidup = true;
+        clearTimeout(tunggu);
+        if (!diam) toast(tr('Kompas aktif — putar badanmu perlahan.', 'Compass on — turn slowly.'), 'info');
+      }
+      this._qibla.heading = h;
+      this._paintQibla(el);
+    };
+
+    window.addEventListener('deviceorientationabsolute', onOrient, true);
+    window.addEventListener('deviceorientation', onOrient, true);
+    this._compass = {
+      off: () => {
+        clearTimeout(tunggu);
+        window.removeEventListener('deviceorientationabsolute', onOrient, true);
+        window.removeEventListener('deviceorientation', onOrient, true);
+      }
+    };
+
+    // Tak ada pembacaan absolut dari DeviceOrientation → coba Generic Sensor
+    // API (sebagian laptop 2-in-1 & tablet punya magnetometer yang hanya
+    // terbaca lewat jalur ini). Kalau itu pun gagal, perangkat memang tak
+    // punya kompas → beralih ke mode manual, jangan biarkan pengguna menunggu
+    // jarum yang tak akan pernah bergerak.
+    tunggu = setTimeout(async () => {
+      if (hidup || !needle.isConnected) return;
+      if (await this._trySensorAPI(el, () => hidup, v => { hidup = v; })) return;
+      this._noCompassMode(el);
+    }, 2500);
+  },
+
+  // Jalur kedua: AbsoluteOrientationSensor (Chrome, butuh magnetometer nyata).
+  // Dibungkus try/catch total — di perangkat tanpa sensor ini melempar error,
+  // dan itu wajar, bukan kondisi gagal yang perlu ditampilkan.
+  async _trySensorAPI(el, isHidup, setHidup) {
+    if (typeof AbsoluteOrientationSensor === 'undefined') return false;
+    try {
+      const sensor = new AbsoluteOrientationSensor({ frequency: 20, referenceFrame: 'screen' });
+      const needle = $('#qiblaNeedle', el);
+
+      const onRead = () => {
+        if (!needle || !needle.isConnected) { try { sensor.stop(); } catch (_) {} return; }
+        const q = sensor.quaternion;
+        if (!q) return;
+        const [x, y, z, w] = q;
+        // Yaw (rotasi terhadap sumbu z) → arah hadap, searah jarum jam dari utara.
+        const yaw = Math.atan2(2 * (w * z + x * y), 1 - 2 * (y * y + z * z));
+        setHidup(true);
+        this._qibla.heading = (360 - yaw * 180 / Math.PI) % 360;
+        this._paintQibla(el);
+      };
+      sensor.addEventListener('reading', onRead);
+      sensor.addEventListener('error', () => { try { sensor.stop(); } catch (_) {} });
+      sensor.start();
+
+      // Beri sensor waktu untuk pembacaan pertama sebelum menyerah.
+      await new Promise(r => setTimeout(r, 1200));
+      if (!isHidup()) { try { sensor.stop(); } catch (_) {} return false; }
+
+      const off = this._compass?.off;
+      this._compass = { off: () => { off && off(); try { sensor.stop(); } catch (_) {} } };
+      return true;
+    } catch (_) {
+      return false;   // tak ada magnetometer / diblokir kebijakan izin
+    }
+  },
+
+  // Perangkat tanpa kompas (laptop/PC): tampilkan apa adanya + kendali manual
+  // agar arah kiblat tetap bisa dipakai.
+  _noCompassMode(el) {
+    this._qibla.heading = 0;      // 0° = layar dianggap menghadap utara
+    this._qibla.manual = true;
+    this._paintQibla(el);
+
+    const hint = $('#qiblaHint', el);
+    if (hint) {
+      hint.innerHTML = tr(
+        `Perangkat ini <b>tidak punya sensor kompas</b> — laptop/PC memang tak punya, jadi memutarnya tak akan menggerakkan jarum.`,
+        `This device has <b>no compass sensor</b> — laptops/PCs simply don't have one, so rotating it cannot move the needle.`
+      );
+    }
+
+    const panel = $('#qiblaNoCompass', el);
+    if (!panel) return;
+    panel.style.display = '';
+
+    const msg = $('#qiblaNoCompassMsg', el);
+    if (msg) {
+      msg.innerHTML = tr(
+        `Arah kiblat dari lokasimu tetap akurat: <b>${this._qibla.bearing.toFixed(1)}° dari utara</b> (searah jarum jam). Karena laptop tak tahu arah hadapnya, beri tahu lewat penggeser di bawah — jarum langsung menyesuaikan.`,
+        `The qibla from your location is still accurate: <b>${this._qibla.bearing.toFixed(1)}° from north</b> (clockwise). Since the laptop cannot sense its facing, tell it below — the needle follows immediately.`
+      );
+    }
+
+    const slider = $('#qiblaManualDeg', el), val = $('#qiblaManualVal', el);
+    if (slider) slider.oninput = () => {
+      this._qibla.heading = +slider.value;
+      if (val) val.textContent = `${slider.value}°`;
+      this._paintQibla(el);
+    };
+  },
+
+  /* ---- LOKASI LANGSUNG ----
+     Arah kiblat bergantung pada posisi, jadi posisi diikuti terus selagi tab
+     ini terbuka: sudut, jarak, & koordinat diperbarui tanpa render ulang. */
+  _geoWatch: null,
+
+  _stopGeoWatch() {
+    if (this._geoWatch != null && navigator.geolocation) navigator.geolocation.clearWatch(this._geoWatch);
+    this._geoWatch = null;
+  },
+
+  _startGeoWatch(el) {
+    this._stopGeoWatch();
+    if (!navigator.geolocation || !this._qibla) return;
+
+    this._geoWatch = navigator.geolocation.watchPosition(async pos => {
+      if (!el.isConnected) return this._stopGeoWatch();
+      const lat = pos.coords.latitude, lng = pos.coords.longitude;
+
+      this._qibla.lat = lat;
+      this._qibla.lng = lng;
+      this._qibla.akurasi = Math.round(pos.coords.accuracy || 0);
+      this._qibla.bearing = this._qiblaBearing(lat, lng);
+      this._paintQibla(el);
+
+      const meta = $('#qiblaMeta', el);
+      if (meta) {
+        const jarak = Math.round(this._kaabaDistance(lat, lng)).toLocaleString('id-ID');
+        meta.innerHTML = `${tr('Arah HP', 'Device facing')}: <b id="qiblaHeading">${this._qibla.heading == null ? '—' : Math.round(this._qibla.heading) + '°'}</b> · ${tr('Ka\'bah', 'Kaaba')} <b>${jarak} km</b>`;
+      }
+
+      // Simpan ke profil hanya bila benar-benar berpindah (>200 m), supaya
+      // pembaruan posisi kecil tidak membanjiri Firestore dengan tulisan.
+      const l = DB.user?.lokasi;
+      if (!l || this._jarakKm(l.lat, l.lng, lat, lng) * 1000 > 200) {
+        await DB.updateUser({ lokasi: { lat, lng, kota: l?.kota || '', akurasi: this._qibla.akurasi } });
+      }
+    }, () => { /* izin ditolak / GPS mati → angka dari lokasi tersimpan tetap tampil */ },
+       { enableHighAccuracy: true, timeout: 20000, maximumAge: 0 });
   },
 
   /* ============ TAB: PANDUAN IBADAH ============ */

@@ -1448,12 +1448,38 @@ ion-icon { pointer-events: none; flex-shrink: 0; }
   border: 3px solid var(--border); background: radial-gradient(circle, var(--surface), var(--surface-2));
   flex-shrink: 0;
 }
-.qibla-needle {
-  position: absolute; top: 50%; left: 50%; font-size: 2rem;
-  transform: translate(-50%, -50%); transition: transform .2s ease-out;
-  transform-origin: center;
+/* Jarum kiblat: lapisan seukuran piringan yang diputar terhadap PUSAT, dengan
+   🕋 duduk di ujung atasnya — jadi 🕋 benar-benar mengelilingi lingkaran.
+   (Dulu 🕋 diputar terhadap dirinya sendiri di tengah piringan, sehingga hanya
+   berputar di tempat dan tak pernah menunjuk arah.) */
+.qibla-dial {
+  position: absolute; inset: 0;
+  transform-origin: 50% 50%;
+  transition: transform .15s ease-out;
 }
-.qibla-n { position: absolute; top: 4px; left: 50%; transform: translateX(-50%); font-size: .7rem; font-weight: 800; color: var(--text-3); }
+.qibla-dial::before {                    /* batang jarum dari pusat ke 🕋 */
+  content: ''; position: absolute; left: 50%; top: 26px;
+  width: 3px; height: 39px; margin-left: -1.5px;
+  background: #0891b2; border-radius: 3px;
+}
+.qibla-kaaba {
+  position: absolute; top: -2px; left: 50%;
+  transform: translateX(-50%); font-size: 1.6rem; line-height: 1;
+}
+
+/* Mawar kompas: ikut diputar berlawanan arah kompas agar N menunjuk utara asli */
+.qibla-rose {
+  position: absolute; inset: 0;
+  transform-origin: 50% 50%;
+  transition: transform .15s ease-out;
+}
+.qibla-dir {
+  position: absolute; font-size: .68rem; font-weight: 800; color: var(--text-3);
+}
+.qd-n { top: 5px; left: 50%; transform: translateX(-50%); color: #ef4444; }
+.qd-s { bottom: 5px; left: 50%; transform: translateX(-50%); }
+.qd-e { right: 6px; top: 50%; transform: translateY(-50%); }
+.qd-w { left: 6px; top: 50%; transform: translateY(-50%); }
 .guide-steps li { margin-bottom: 3px; }
 
 /* Teks Arab — font naskhi yang jelas & mudah dibaca */
@@ -1540,4 +1566,120 @@ ion-icon { pointer-events: none; flex-shrink: 0; }
     top: calc(100% + 8px);
     bottom: auto;
   }
+}
+
+/* ============================================================
+   KELAS & SISWA (guru) — halaman detail kelas: ringkasan jumlah
+   siswa, menu baris (ikon + chevron), lalu daftar siswa.
+   Di HP dibuka dengan menekan kartu kelas; di desktop (≥900px)
+   tampil berdampingan dengan daftar kelas (master–detail).
+   Memakai token warna yang sudah ada — tidak menambah warna baru.
+   ============================================================ */
+.kelas-hero {
+  display: flex; flex-direction: column; align-items: center; gap: 10px;
+  padding: 22px 18px; text-align: center;
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius-sm); box-shadow: var(--shadow-sm);
+}
+.kelas-hero-ic {
+  width: 54px; height: 54px; border-radius: 50%; flex-shrink: 0;
+  display: grid; place-items: center; font-size: 1.65rem;
+  color: var(--brand-dark); background: var(--brand-soft);
+}
+.kelas-hero-body { min-width: 0; }
+.kelas-hero-nama {
+  font-size: .95rem; font-weight: 800; color: var(--text); letter-spacing: -.01em;
+}
+.kelas-hero-count {
+  margin-top: 3px; font-size: .95rem; font-weight: 800; color: var(--brand-dark);
+}
+[data-theme="dark"] .kelas-hero-ic,
+[data-theme="dark"] .kelas-hero-count { color: #34d399; }
+
+/* Judul kelompok: Menu · Pemantauan · Siswa */
+.kelas-sec {
+  display: flex; align-items: center; gap: 8px; margin: 20px 0 10px;
+  font-size: .8rem; font-weight: 800; color: var(--text-3); letter-spacing: .02em;
+}
+.kelas-sec-count {
+  font-size: .7rem; font-weight: 700; color: var(--brand-dark);
+  background: var(--brand-soft); padding: 2px 9px; border-radius: 999px;
+}
+[data-theme="dark"] .kelas-sec-count { color: #34d399; }
+
+.kmenu-list, .siswa-list {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius-sm); overflow: hidden;
+}
+
+/* Baris menu → membuka tab yang sudah ada dengan kelas ini terpilih */
+.kmenu-row {
+  width: 100%; display: flex; align-items: center; gap: 12px;
+  padding: 13px 14px; background: transparent; border: 0; cursor: pointer;
+  font-family: var(--font); text-align: left; transition: background .15s;
+}
+.kmenu-row + .kmenu-row { border-top: 1px solid var(--border); }
+.kmenu-row:hover { background: var(--surface-2); }
+.kmenu-row:active { background: var(--surface-3); }
+.kmenu-ic {
+  width: 34px; height: 34px; border-radius: 50%; flex-shrink: 0;
+  display: grid; place-items: center; font-size: 1.05rem;
+}
+.kmenu-lb { flex: 1; min-width: 0; font-size: .88rem; font-weight: 700; color: var(--text-2); }
+.kmenu-go { flex-shrink: 0; font-size: 1.05rem; color: var(--text-3); }
+
+/* Daftar siswa (roster: nama + NIS, read-only) */
+.siswa-row { display: flex; align-items: center; gap: 11px; padding: 11px 14px; }
+.siswa-row + .siswa-row { border-top: 1px solid var(--border); }
+.siswa-no {
+  width: 22px; flex-shrink: 0; text-align: center;
+  font-size: .78rem; font-weight: 700; color: var(--text-3);
+  font-variant-numeric: tabular-nums;
+}
+.siswa-info { min-width: 0; display: flex; flex-direction: column; }
+.siswa-info b {
+  font-size: .88rem; font-weight: 700; color: var(--text);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.siswa-nis { font-size: .75rem; color: var(--text-3); font-variant-numeric: tabular-nums; }
+
+/* ---- Desktop: master–detail (daftar kelas kiri, detail kanan) ---- */
+.kelas-split { display: grid; grid-template-columns: 250px 1fr; gap: 20px; align-items: start; }
+.kelas-aside-list { display: flex; flex-direction: column; gap: 6px; }
+.kelas-aside-item {
+  display: flex; align-items: center; gap: 9px; width: 100%; padding: 10px 12px;
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius-xs); cursor: pointer; font-family: var(--font);
+  font-size: .85rem; font-weight: 700; color: var(--text-2); text-align: left;
+  transition: background .15s, border-color .15s, color .15s;
+}
+.kelas-aside-item ion-icon { flex-shrink: 0; font-size: 1.05rem; color: var(--text-3); }
+.kelas-aside-item span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.kelas-aside-item:hover { background: var(--surface-2); }
+.kelas-aside-item.active {
+  border-color: var(--brand); background: var(--brand-soft); color: var(--brand-dark);
+}
+.kelas-aside-item.active ion-icon { color: var(--brand-dark); }
+[data-theme="dark"] .kelas-aside-item.active,
+[data-theme="dark"] .kelas-aside-item.active ion-icon { color: #34d399; }
+
+@media (min-width: 900px) {
+  /* Panel detail lebih lebar → ringkasan mendatar, menu & siswa 2 kolom
+     agar tidak memanjang ke bawah. */
+  .kelas-detail .kelas-hero {
+    flex-direction: row; text-align: left; gap: 14px; padding: 18px 20px;
+  }
+
+  .kelas-detail .kmenu-list,
+  .kelas-detail .siswa-list { display: grid; grid-template-columns: 1fr 1fr; }
+  .kelas-detail .kmenu-row,
+  .kelas-detail .siswa-row { border-top: 1px solid var(--border); }
+  .kelas-detail .kmenu-row:nth-child(-n+2),
+  .kelas-detail .siswa-row:nth-child(-n+2) { border-top: 0; }
+  .kelas-detail .kmenu-row:nth-child(odd),
+  .kelas-detail .siswa-row:nth-child(odd) { border-right: 1px solid var(--border); }
+}
+
+@media (max-width: 899px) {
+  .kelas-split { grid-template-columns: 1fr; }
 }

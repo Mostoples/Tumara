@@ -2,6 +2,32 @@
 
 > Catatan handoff untuk melanjutkan pengerjaan di sesi Claude Code berikutnya.
 
+## Status: ✅ v1.4 — Halaman detail kelas + search admin mulus + kompas kiblat benar
+
+### 1. Guru: halaman detail Kelas & Siswa (`js/views/teacher.js`, `css/style.css`)
+- Tab **Kelas & Siswa** kini punya **halaman detail kelas**: kartu ringkas (nama kelas + jumlah siswa **nyata** dari roster) → daftar menu baris (ikon + chevron) → daftar siswa (avatar, nama, NIS).
+- **HP**: gerbang kartu kelas → tekan satu kelas → halaman detail. **Desktop (≥900px)**: master–detail (`.kelas-split`) — daftar kelas di kiri, detail langsung terbuka di kanan (kelas pertama auto-terpilih, tak perlu menekan tombol). `_isKelasDesktop()` + `_watchKelasLayout()` (matchMedia) → render ulang saat layar melintasi ambang (rotasi iPad).
+- Menu detail (`_kelasMenu`) **hanya menautkan ke fitur yang sudah ada**: Catat Absensi, Buat Penilaian, Buat Jurnal, Kirim Tugas Kelas, Atur Jadwal Kelas (**hanya bila `waliKelasId === classId`**), Ibadah Siswa, Kesehatan Siswa. Tidak ada "Tambah Siswa" — siswa mendaftar sendiri via login Google (lihat v1.3 #2).
+- Menekan menu → tab tujuan dengan **kelas tetap terpilih** (`_keepClassId`, dibaca di blok reset `render()`), plus tombol **"Kembali ke Kelas"** (`_backKelasBtn`/`_backKelasBar`/`_bindBackKelas`, penanda `_fromKelas`) yang **hanya muncul bila tab dibuka dari halaman detail kelas**. Tombol **"Ganti Kelas"** perilakunya TIDAK berubah (pilih ulang kelas di dalam tab), tapi menekannya menghapus `_fromKelas` (agar tak menuntun balik ke kelas lama).
+- CSS baru: `.kelas-hero/.kelas-sec/.kmenu-*/.siswa-*/.kelas-split/.kelas-aside-*` — memakai token warna yang ada, tanpa warna baru.
+
+### 2. Admin: search akun tidak lagi "blink" (`js/views/admin.js`)
+- **Bug**: `#uSearch` `oninput` memanggil `render(el)` → spinner "Memuat…" + **fetch ulang `adminListUsers()` tiap ketikan** + rebuild seluruh innerHTML → elemen input diganti → **fokus keyboard hilang** (harus klik kotak search lagi).
+- **Fix**: akun di-cache di `this._users`; mengetik hanya menggambar ulang `#uList` via **`_paintUsers()`** (+`_filterUsers()`), kotak search tak disentuh. Chip filter memakai jalur ringan yang sama. Debounce 250ms → 120ms (aman, filter di memori).
+- Terverifikasi: fokus tetap di `#uSearch`, caret utuh, elemen input sama, **0 fetch** saat mengetik, tanpa spinner.
+
+### 3. Ibadah: kompas kiblat diperbaiki total (`js/views/ibadah.js`, `css/style.css`)
+- **Bug A (visual)**: `.qibla-needle` punya `transform: translate(-50%,-50%)` di CSS, ditimpa `rotate()` dari JS → emoji 🕋 hanya **berputar di tempat** di pusat lingkaran, tak pernah menunjuk arah. → Diganti `.qibla-dial` (lapisan seukuran piringan, diputar terhadap pusat, 🕋 + batang jarum di ujung atas) + `.qibla-rose` (N/E/S/W ikut berputar agar N = utara asli).
+- **Bug B (sensor)**: kode lama memakai event `deviceorientation` **relatif** — `alpha`-nya diukur dari acuan acak saat halaman dibuka, bukan utara → jarum bergerak tapi salah. → `_headingOf()` kini **hanya menerima event absolut** (`deviceorientationabsolute` / `e.absolute === true`) atau `webkitCompassHeading` (iOS), + kompensasi `screen.orientation.angle`. Android: kompas nyala otomatis (tanpa izin); iOS: lewat tombol (`requestPermission` butuh gestur).
+- **Bug C (GPS)**: `enableHighAccuracy: false` + hanya sekali ambil. → `enableHighAccuracy: true, maximumAge: 0` + **`watchPosition`** (`_startGeoWatch`) selama tab Sholat terbuka: sudut, jarak ke Ka'bah, koordinat & akurasi diperbarui **tanpa render ulang** (`_paintQibla`). Tulis ke Firestore hanya bila berpindah **>200 m**. Sensor dilepas saat pindah tab (`_stopCompass`/`_stopGeoWatch` di awal `render()`).
+- **Akurasi**: `KAABA` = 21°25'21,00" LU / 39°49'34,20" BT; `_qiblaBearing` = bearing awal **great-circle**. Diuji vs rujukan: Jakarta 295,2° (ref 295,1), Medan 292,8° (292,9), New York 58,5° (58,5), jarak Jakarta→Ka'bah 7.920 km. Selisih ≤0,1°.
+- **Mode tanpa kompas** (laptop/PC — *tidak punya magnetometer, ini batas perangkat keras*): setelah 2,5 dtk tanpa pembacaan → coba `AbsoluteOrientationSensor` (Generic Sensor API, untuk 2-in-1) → bila gagal, `_noCompassMode()`: pesan jujur + **penggeser "arah hadapmu"** agar jarum bisa disejajarkan manual. Akurasi lokasi >1 km (Wi-Fi/IP) → peringatan + saran "Set Manual".
+
+### ⚠️ Deploy
+Tetap **wajib `firebase deploy` PENUH**. Tidak ada perubahan rules/index di v1.4 (murni hosting: JS/CSS).
+
+---
+
 ## Status: ✅ v1.3 — Enrolment terpusat + tugas/jadwal dari guru + wali kelas + beranda guru
 
 Fokus v1.3: menata alur **sekolah** (admin → guru → siswa) dan membuat tugas/jadwal mengalir dari guru ke siswa.

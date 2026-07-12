@@ -47,7 +47,13 @@ const Teacher = {
     // layar "pilih kelas". Render ulang di dalam tab yang sama tidak mereset.
     if (this._lastTab !== this.tab) {
       this._lastTab = this.tab;
-      this.classId = null;
+      // Kecuali bila perpindahan tab dipicu dari menu di halaman detail kelas
+      // (lihat _bindKelasDetail) — kelas itu tetap terpilih di tab tujuan, dan
+      // tab itu mendapat tombol "Kembali ke Kelas". Pindah lewat nav biasa
+      // menghapus keduanya.
+      this.classId = this._keepClassId || null;
+      this._fromKelas = this._keepClassId || null;
+      this._keepClassId = null;
     }
 
     // Hentikan polling ibadah/kesehatan jika pindah ke tab lain
@@ -159,12 +165,40 @@ const Teacher = {
       ${this._classGrid(classes)}`;
   },
 
+  /* Tombol "Kembali ke Kelas" — HANYA muncul bila tab ini dibuka dari menu di
+     halaman detail Kelas & Siswa (_fromKelas). Beda peran dengan "Ganti Kelas"
+     yang tetap seperti semula: memilih ulang kelas DI DALAM tab ini. Berpindah
+     tab lewat nav biasa tidak memunculkan tombol ini. */
+  _backKelasBtn() {
+    if (!this._fromKelas || this.tab === 'kelas') return '';
+    return `
+      <button class="btn btn-sm" id="tBackKelas">
+        <ion-icon name="chevron-back-outline"></ion-icon> ${tr('Kembali ke Kelas', 'Back to Class')}
+      </button>`;
+  },
+
+  // Baris tombol kembali berdiri sendiri — untuk tab yang tak punya .class-bar
+  // (Jadwal Kelas: kelasnya mengikuti wali, jadi tak ada pilihan kelas).
+  _backKelasBar() {
+    const btn = this._backKelasBtn();
+    return btn ? `<div class="class-bar">${btn}</div>` : '';
+  },
+
+  _bindBackKelas(el) {
+    const b = $('#tBackKelas', el);
+    if (b) b.onclick = () => {
+      this._keepClassId = this._fromKelas;   // kembali ke DETAIL kelas itu, bukan gerbang
+      this._goto('kelas');
+    };
+  },
+
   // Baris "kelas aktif + tombol ganti kelas" di atas konten tiap tab.
   // Nama kelas aktif dicatat di sini karena dipakai juga untuk nama file ekspor CSV.
   _classBar(cls) {
     this._activeClsNama = cls?.nama || '';
     return `
       <div class="class-bar">
+        ${this._backKelasBtn()}
         <button class="btn btn-sm" id="tBackCls">
           <ion-icon name="arrow-back-outline"></ion-icon> ${tr('Ganti Kelas', 'Change Class')}
         </button>
@@ -181,7 +215,10 @@ const Teacher = {
 
   _bindClassBar(el) {
     const b = $('#tBackCls', el);
-    if (b) b.onclick = () => { this.classId = null; this.render(this._el); };
+    // Ganti kelas → guru keluar dari konteks kelas asal, tombol "Kembali ke
+    // Kelas" ikut hilang agar tak menuntun balik ke kelas yang salah.
+    if (b) b.onclick = () => { this.classId = null; this._fromKelas = null; this.render(this._el); };
+    this._bindBackKelas(el);
   },
 
   /* ============ JAM (format Indonesia, 24 jam) ============
@@ -460,10 +497,111 @@ const Teacher = {
 
   /* ============ TAB: KELAS & SISWA ============ */
 
+  /* Dua tampilan (fiturnya sama, hanya penyajiannya berbeda):
+     • HP/tablet kecil → gerbang kartu kelas; menekan satu kelas membuka
+       HALAMAN DETAIL kelas itu (ringkasan jumlah siswa + menu + daftar siswa).
+     • Desktop (≥900px) → master–detail: daftar kelas di kolom kiri dan detail
+       kelas langsung terbuka di kanan, jadi tak perlu menekan tombol dulu. */
+  _KELAS_DESKTOP_Q: '(min-width: 900px)',
+  _isKelasDesktop() { return window.matchMedia(this._KELAS_DESKTOP_Q).matches; },
+
+  // Render ulang tab Kelas bila layar melintasi ambang desktop/HP (mis. rotasi
+  // iPad), agar tampilannya selalu cocok dengan lebar layar. Dipasang sekali.
+  _watchKelasLayout() {
+    if (this._kelasMQ) return;
+    this._kelasMQ = window.matchMedia(this._KELAS_DESKTOP_Q);
+    this._kelasMQ.addEventListener('change', () => {
+      if (this.tab === 'kelas' && this._el) this.render(this._el);
+    });
+  },
+
+  // Menu di halaman detail kelas. SEMUA menautkan ke tab/fitur yang sudah ada
+  // (tidak menambah fitur baru) dengan kelas ini otomatis terpilih di sana.
+  _kelasMenu(classId) {
+    const wali = DB.user?.waliKelasId === classId;
+    return [
+      {
+        group: tr('Menu', 'Menu'),
+        items: [
+          { route: 'absensi',    icon: 'checkbox-outline',      label: tr('Catat Absensi', 'Take Attendance'),        color: 'info' },
+          { route: 'nilai',      icon: 'clipboard-outline',     label: tr('Buat Penilaian', 'Add Grades'),            color: 'prod' },
+          { route: 'jurnal',     icon: 'document-text-outline', label: tr('Buat Jurnal', 'Write Journal'),            color: 'fin' },
+          { route: 'tugaskelas', icon: 'paper-plane-outline',   label: tr('Kirim Tugas Kelas', 'Send Class Task'),    color: 'brand' },
+          // Jadwal kelas hanya untuk wali kelas INI (sama seperti tab Jadwal Kelas).
+          ...(wali ? [{ route: 'jadwalkelas', icon: 'school-outline', label: tr('Atur Jadwal Kelas', 'Set Class Schedule'), color: 'prod' }] : [])
+        ]
+      },
+      {
+        group: tr('Pemantauan', 'Monitoring'),
+        items: [
+          { route: 'ibadah',    icon: 'moon-outline',  label: tr('Ibadah Siswa', 'Student Worship'), color: 'brand' },
+          { route: 'kesehatan', icon: 'heart-outline', label: tr('Kesehatan Siswa', 'Student Health'), color: 'fin' }
+        ]
+      }
+    ];
+  },
+
+  // Isi halaman detail kelas: ringkasan → menu → daftar siswa.
+  // Jumlah siswa mengikuti roster nyata (siswa yang sudah login & memilih kelas ini).
+  _kelasDetail(cls, students) {
+    return `
+      <div class="kelas-hero">
+        <div class="kelas-hero-ic"><ion-icon name="people-outline"></ion-icon></div>
+        <div class="kelas-hero-body">
+          <div class="kelas-hero-nama">${esc(cls.nama)}</div>
+          <div class="kelas-hero-count">${students.length} ${tr('Siswa', 'Students')}</div>
+        </div>
+      </div>
+
+      ${this._kelasMenu(cls.id).map(g => `
+        <div class="kelas-sec">${esc(g.group)}</div>
+        <div class="kmenu-list">
+          ${g.items.map(i => `
+            <button class="kmenu-row" data-kmenu="${i.route}">
+              <span class="kmenu-ic" style="color:var(--${i.color});background:var(--${i.color}-soft);">
+                <ion-icon name="${i.icon}"></ion-icon>
+              </span>
+              <span class="kmenu-lb">${i.label}</span>
+              <ion-icon name="chevron-forward-outline" class="kmenu-go"></ion-icon>
+            </button>`).join('')}
+        </div>`).join('')}
+
+      <div class="kelas-sec">
+        ${tr('Siswa', 'Students')} <span class="kelas-sec-count">${students.length}</span>
+      </div>
+      ${students.length ? `
+        <div class="siswa-list">
+          ${students.map((s, i) => `
+            <div class="siswa-row">
+              <span class="siswa-no">${i + 1}</span>
+              ${this._avatarHTML(s)}
+              <span class="siswa-info">
+                <b>${esc(s.nama)}</b>
+                <span class="siswa-nis">NIS ${esc(s.nis || '-')}</span>
+              </span>
+            </div>`).join('')}
+        </div>` : `
+        <div class="card empty-state" style="padding:24px 10px;">
+          <ion-icon name="people-outline"></ion-icon>
+          <div class="es-title">${tr('Belum ada siswa yang bergabung', 'No students have joined yet')}</div>
+          <div class="es-sub">${tr('Siswa akan muncul otomatis setelah login dengan Google & memilih kelas ini beserta NIS-nya.', 'Students appear automatically after they sign in with Google & pick this class with their NIS.')}</div>
+        </div>`}`;
+  },
+
+  // Menu detail kelas → buka tab tujuan dengan kelas ini tetap terpilih
+  // (tanpa harus memilih kelas lagi di gerbang tab tersebut).
+  _bindKelasDetail(el) {
+    $$('[data-kmenu]', el).forEach(b => b.onclick = () => {
+      this._keepClassId = this.classId;
+      this._goto(b.dataset.kmenu);
+    });
+  },
+
   // Guru memilih kelas yang diampu dari daftar kelas induk (school_classes)
   // yang dibuat admin. Pilihan disimpan di DB.user.kelasAmpu. Roster (nama+NIS)
   // ditampilkan read-only; pendataan siswa dilakukan admin.
   async renderKelas(el) {
+    this._watchKelasLayout();
     let allClasses = [];
     try {
       allClasses = (await DB.gList('school_classes')).sort(this._byOrder);
@@ -505,8 +643,14 @@ const Teacher = {
       return;
     }
 
-    // Gerbang: pilih kelas dulu (dikelompokkan per tingkat X / XI / XII).
     if (this.classId && !taught.find(c => c.id === this.classId)) this.classId = null;
+
+    const desktop = this._isKelasDesktop();
+    // Desktop: tak perlu menekan tombol kelas dulu — kelas pertama langsung
+    // terbuka; daftar kelas di kolom kiri untuk berpindah.
+    if (desktop && !this.classId) this.classId = taught[0].id;
+
+    // HP/tablet kecil: gerbang "pilih kelas" (dikelompokkan per tingkat X/XI/XII).
     if (!this.classId) {
       el.innerHTML = head + this._classGrid(taught);
       $('#pickKelas', el).onclick = () => this._pickKelasModal(allClasses);
@@ -514,36 +658,34 @@ const Teacher = {
       return;
     }
 
-    // Kelas terpilih → tampilkan roster siswanya.
+    // Kelas terpilih → halaman detail kelas.
     const active = taught.find(c => c.id === this.classId);
     const students = await this._students(active.id);
 
-    el.innerHTML = `
-      ${this._classBar(active)}
-      <div class="card">
-        <div class="card-title" style="margin:0;"><ion-icon name="people" style="color:var(--brand)"></ion-icon>${esc(active.nama)} <span class="badge badge-blue">${students.length} ${tr('siswa', 'students')}</span></div>
-        ${students.length ? `
-          <div class="table-wrap stack" style="margin-top:16px;">
-            <table class="data-table stack">
-              <thead><tr><th style="width:44px;">No</th><th>${tr('Nama Siswa', 'Student Name')}</th><th>NIS</th></tr></thead>
-              <tbody>
-                ${students.map((s, i) => `
-                  <tr>
-                    <td class="center">${i + 1}</td>
-                    <td class="cell-primary"><b>${esc(s.nama)}</b></td>
-                    <td data-label="NIS" style="color:var(--text-3);">${esc(s.nis || '-')}</td>
-                  </tr>`).join('')}
-              </tbody>
-            </table>
-          </div>` : `
-          <div class="empty-state" style="padding:24px 10px;">
-            <ion-icon name="people-outline"></ion-icon>
-            <div class="es-title">${tr('Belum ada siswa yang bergabung', 'No students have joined yet')}</div>
-            <div class="es-sub">${tr('Siswa akan muncul otomatis setelah login dengan Google & memilih kelas ini beserta NIS-nya.', 'Students appear automatically after they sign in with Google & pick this class with their NIS.')}</div>
-          </div>`}
-      </div>`;
+    if (desktop) {
+      el.innerHTML = head + `
+        <div class="kelas-split">
+          <aside class="kelas-aside">
+            <div class="kelas-sec" style="margin-top:0;">${tr('Kelas', 'Classes')}</div>
+            <div class="kelas-aside-list">
+              ${taught.map(c => `
+                <button class="kelas-aside-item${c.id === active.id ? ' active' : ''}" data-cls="${c.id}">
+                  <ion-icon name="school"></ion-icon>
+                  <span>${esc(c.nama)}</span>
+                </button>`).join('')}
+            </div>
+          </aside>
+          <div class="kelas-detail">${this._kelasDetail(active, students)}</div>
+        </div>`;
+      $('#pickKelas', el).onclick = () => this._pickKelasModal(allClasses);
+      this._bindClassGate(el);      // klik kelas di kolom kiri → ganti kelas aktif
+      this._bindKelasDetail(el);
+      return;
+    }
 
+    el.innerHTML = this._classBar(active) + `<div class="kelas-detail">${this._kelasDetail(active, students)}</div>`;
     this._bindClassBar(el);
+    this._bindKelasDetail(el);
   },
 
   // Modal: guru memilih kelas yang diampu HANYA dari daftar kelas yang sudah
@@ -1331,6 +1473,7 @@ const Teacher = {
       .sort((a, b) => (+a.hari - +b.hari) || (a.jamMulai || '').localeCompare(b.jamMulai || ''));
 
     el.innerHTML = `
+      ${this._backKelasBar()}
       <div class="portal-head" style="margin-bottom:16px;">
         <div>
           <h1 style="font-size:1.2rem;">${tr('Jadwal Kelas', 'Class Schedule')} — ${esc(clsNama)}</h1>
@@ -1362,6 +1505,7 @@ const Teacher = {
           <div class="es-sub">${tr('Tekan "Tambah" untuk mengisi jadwal.', 'Press "Add" to fill the schedule.')}</div>
         </div>`}`;
 
+    this._bindBackKelas(el);
     $('#addJadwalKelas', el) && ($('#addJadwalKelas', el).onclick = () => this._jadwalKelasModal(doc, null));
     $$('[data-edit]', el).forEach(b => b.onclick = () => this._jadwalKelasModal(doc, entries.find(s => s.id === b.dataset.edit)));
     $$('[data-del]', el).forEach(b => b.onclick = async () => {

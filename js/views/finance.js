@@ -42,10 +42,37 @@ const Fin = {
   },
 
   _unlocked: false,
+  _gagal: 0,            // percobaan PIN salah berturut-turut
+  _tundaSampai: 0,      // jeda anti-tebak (timestamp)
+  _autoKunciOn: false,  // penanda listener auto-kunci sudah dipasang
+
+  // Terkunci = PIN dipasang tapi belum dibuka di sesi ini.
+  // Dipakai juga oleh Beranda, supaya saldo tidak bocor di kartu Keuangan.
+  terkunci() { return !!DB.user?.finPin && !this._unlocked; },
+
+  /* Kunci lagi setelah aplikasi lama ditinggalkan — kebiasaan aplikasi bank.
+     Tanpa ini, sekali dibuka PIN tidak pernah mengunci lagi selama tab hidup,
+     jadi meminjamkan HP sebentar tetap membuka seluruh data keuangan. */
+  _pasangAutoKunci() {
+    if (this._autoKunciOn) return;
+    this._autoKunciOn = true;
+    let pergiPada = 0;
+    document.addEventListener('visibilitychange', () => {
+      if (document.hidden) { pergiPada = Date.now(); return; }
+      const lama = pergiPada && (Date.now() - pergiPada > 60000);   // > 1 menit
+      pergiPada = 0;
+      if (lama && DB.user?.finPin) {
+        this._unlocked = false;
+        if (App.route === 'finance') App.refresh();
+      }
+    });
+  },
 
   async render(el) {
+    this._pasangAutoKunci();
+
     // Kunci PIN keuangan (opsional) — melindungi data finansial sensitif
-    if (DB.user?.finPin && !this._unlocked) return this._renderLock(el);
+    if (this.terkunci()) return this._renderLock(el);
 
     el.innerHTML = `
       <div class="tabs">
@@ -56,9 +83,21 @@ const Fin = {
         <button class="tab ${this.tab === 'utang' ? 'active' : ''}" data-tab="utang"><ion-icon name="git-compare-outline"></ion-icon>${tr('Utang', 'Debts')}</button>
         <button class="tab ${this.tab === 'laporan' ? 'active' : ''}" data-tab="laporan"><ion-icon name="pie-chart-outline"></ion-icon>${tr('Laporan', 'Report')}</button>
       </div>
+
+      <div style="display:flex;justify-content:flex-end;gap:8px;margin:0 0 12px;">
+        ${Saldo.btnHTML('finEye')}
+        ${DB.user?.finPin ? `<button class="btn btn-sm" id="finLock"><ion-icon name="lock-closed-outline"></ion-icon> ${tr('Kunci', 'Lock')}</button>` : ''}
+      </div>
       <div id="finBody"></div>`;
 
     $$('.tab', el).forEach(t => t.onclick = () => { this.tab = t.dataset.tab; App.saveTab(this.tab); this.render(el); });
+
+    $('#finEye', el).onclick = () => { Saldo.toggle(); this.render(el); };
+    $('#finLock', el) && ($('#finLock', el).onclick = () => {
+      this._unlocked = false;
+      toast(tr('Keuangan dikunci 🔒', 'Finance locked 🔒'));
+      this.render(el);
+    });
 
     const body = $('#finBody', el);
     if (this.tab === 'transaksi') await this.renderTx(body);
@@ -82,17 +121,55 @@ const Fin = {
         <div style="font-size:2.4rem;">🔒</div>
         <div class="card-title" style="justify-content:center;margin-top:8px;">${tr('Keuangan Terkunci', 'Finance Locked')}</div>
         <p style="font-size:.85rem;color:var(--text-3);margin:6px 0 18px;">${tr('Masukkan PIN untuk membuka data keuanganmu.', 'Enter your PIN to unlock your finance data.')}</p>
-        <input type="password" inputmode="numeric" class="input" id="pinInput" maxlength="6" placeholder="••••" style="text-align:center;letter-spacing:8px;font-size:1.4rem;max-width:180px;margin:0 auto 16px;">
+        <input type="password" inputmode="numeric" class="input" id="pinInput" maxlength="6" placeholder="••••••" style="text-align:center;letter-spacing:8px;font-size:1.4rem;max-width:180px;margin:0 auto 16px;">
         <button class="btn btn-fin btn-block" id="pinUnlock"><ion-icon name="lock-open-outline"></ion-icon> ${tr('Buka', 'Unlock')}</button>
+        <button class="btn btn-sm" id="pinLupa" style="margin-top:12px;background:none;border:none;color:var(--text-3);text-decoration:underline;">${tr('Lupa PIN?', 'Forgot PIN?')}</button>
       </div>`;
+
     const tryUnlock = async () => {
-      const pin = $('#pinInput', el).value;
-      if (await this._pinHash(pin) === DB.user.finPin) { this._unlocked = true; this.render(el); }
-      else { toast(tr('PIN salah.', 'Wrong PIN.'), 'error'); $('#pinInput', el).value = ''; }
+      // Jeda anti-tebak: PIN 4 digit cuma 10.000 kemungkinan — tanpa jeda, orang
+      // yang memegang HP-nya bisa mencoba satu per satu sampai tembus.
+      const sisaTunda = Math.ceil((this._tundaSampai - Date.now()) / 1000);
+      if (sisaTunda > 0) {
+        return toast(tr(`Tunggu ${sisaTunda} detik lagi.`, `Wait ${sisaTunda}s.`), 'warning');
+      }
+      const input = $('#pinInput', el);
+      if (await this._pinHash(input.value) === DB.user.finPin) {
+        this._gagal = 0;
+        this._unlocked = true;
+        this.render(el);
+        return;
+      }
+      input.value = '';
+      this._gagal++;
+      if (this._gagal >= 5) {
+        this._gagal = 0;
+        this._tundaSampai = Date.now() + 30000;
+        toast(tr('Terlalu banyak percobaan. Coba lagi 30 detik.', 'Too many attempts. Try again in 30s.'), 'error');
+      } else {
+        toast(tr(`PIN salah. Sisa ${5 - this._gagal} percobaan.`, `Wrong PIN. ${5 - this._gagal} attempts left.`), 'error');
+      }
     };
+
     $('#pinUnlock', el).onclick = tryUnlock;
     $('#pinInput', el).onkeydown = e => { if (e.key === 'Enter') tryUnlock(); };
+    // Pemulihan PIN dilakukan di halaman Profil (tombol "Reset PIN Keuangan"),
+    // supaya jalan keluarnya satu pintu dan mudah ditemukan.
+    $('#pinLupa', el).onclick = () => {
+      toast(tr('Reset PIN ada di halaman Profil → Akun & Data.', 'Reset the PIN in Profile → Account & Data.'));
+      App.navigate('profile');
+    };
     setTimeout(() => $('#pinInput', el)?.focus(), 60);
+  },
+
+  /* Hapus PIN keuangan. Dipanggil dari halaman Profil (Akun & Data) — itulah
+     satu-satunya jalan keluar bila PIN lupa, jadi salah ketik saat membuat PIN
+     tidak lagi mengunci menu Keuangan selamanya. */
+  async resetPin() {
+    await DB.updateUser({ finPin: '' });
+    this._unlocked = true;
+    this._gagal = 0;
+    this._tundaSampai = 0;
   },
 
   /* ============ TAB: DOMPET & ASET ============ */
@@ -107,8 +184,8 @@ const Fin = {
 
     el.innerHTML = `
       <div class="grid grid-2 keep-2" style="margin-bottom:16px;">
-        <div class="card money-stat"><div class="ms-label">👛 ${tr('Total Saldo Dompet', 'Total Wallet Balance')}</div><div class="ms-value">${fmtRp(totalDompet)}</div></div>
-        <div class="card money-stat"><div class="ms-label">📈 ${tr('Total Nilai Aset', 'Total Asset Value')}</div><div class="ms-value">${fmtRp(totalAset)}</div></div>
+        <div class="card money-stat"><div class="ms-label">👛 ${tr('Total Saldo Dompet', 'Total Wallet Balance')}</div><div class="ms-value">${fmtRpM(totalDompet)}</div></div>
+        <div class="card money-stat"><div class="ms-label">📈 ${tr('Total Nilai Aset', 'Total Asset Value')}</div><div class="ms-value">${fmtRpM(totalAset)}</div></div>
       </div>
 
       <div class="section-head"><h2>${tr('Dompet / Rekening', 'Wallets / Accounts')}</h2><button class="btn btn-fin btn-sm" id="addWallet"><ion-icon name="add"></ion-icon> ${tr('Dompet', 'Wallet')}</button></div>
@@ -118,7 +195,7 @@ const Fin = {
             <div style="font-weight:700;">${walletIcon[w.tipe] || '💳'} ${esc(w.nama)}</div>
             <div style="display:flex;gap:4px;"><button class="mini-icon-btn" data-editw="${w.id}"><ion-icon name="create-outline"></ion-icon></button><button class="mini-icon-btn danger" data-delw="${w.id}"><ion-icon name="trash-outline"></ion-icon></button></div>
           </div>
-          <div class="stat-row" style="margin-top:8px;"><span class="stat-num" style="font-size:1.3rem;">${fmtRp(w.saldo)}</span></div>
+          <div class="stat-row" style="margin-top:8px;"><span class="stat-num" style="font-size:1.3rem;">${fmtRpM(w.saldo)}</span></div>
         </div>`).join('')}</div>` : `<div style="font-size:.83rem;color:var(--text-3);text-align:center;padding:12px;">${tr('Tambahkan dompet: tunai, bank, atau e-wallet (saldo manual).', 'Add wallets: cash, bank, or e-wallet (manual balance).')}</div>`}
 
       <div class="section-head" style="margin-top:22px;"><h2>${tr('Aset & Investasi', 'Assets & Investments')}</h2><button class="btn btn-fin btn-sm" id="addAsset"><ion-icon name="add"></ion-icon> ${tr('Aset', 'Asset')}</button></div>
@@ -126,7 +203,7 @@ const Fin = {
         <div class="list-item">
           <div class="item-icon" style="background:var(--fin-soft);font-size:1.1rem;">${assetIcon[a.jenis] || '💰'}</div>
           <div style="flex:1;min-width:0;"><div style="font-weight:700;font-size:.9rem;">${esc(a.nama)}</div><div style="font-size:.76rem;color:var(--text-3);text-transform:capitalize;">${esc(a.jenis)}${a.jumlah ? ' · ' + esc(a.jumlah) : ''}</div></div>
-          <span style="font-weight:700;font-size:.9rem;">${fmtRp(a.nilai)}</span>
+          <span style="font-weight:700;font-size:.9rem;">${fmtRpM(a.nilai)}</span>
           <button class="mini-icon-btn" data-edita="${a.id}"><ion-icon name="create-outline"></ion-icon></button>
           <button class="mini-icon-btn danger" data-dela="${a.id}"><ion-icon name="trash-outline"></ion-icon></button>
         </div>`).join('')}</div>` : `<div style="font-size:.83rem;color:var(--text-3);text-align:center;padding:12px;">${tr('Pantau pertumbuhan emas, saham, reksa dana, dll.', 'Track growth of gold, stocks, mutual funds, etc.')}</div>`}
@@ -135,11 +212,20 @@ const Fin = {
       <div class="card">
         <div class="setting-row" style="cursor:pointer;" id="pinToggle">
           <ion-icon name="lock-closed-outline" style="font-size:1.2rem;color:var(--text-3);"></ion-icon>
-          <div class="sr-text"><div class="sr-title">${tr('Kunci PIN Keuangan', 'Finance PIN Lock')}</div><div class="sr-sub">${pinOn ? tr('Aktif — ketuk untuk ubah/matikan', 'On — tap to change/turn off') : tr('Lindungi data keuangan dengan PIN', 'Protect finance data with a PIN')}</div></div>
+          <div class="sr-text">
+            <div class="sr-title">${tr('Kunci PIN Keuangan', 'Finance PIN Lock')}</div>
+            <div class="sr-sub">${pinOn
+              ? tr('Aktif — ketuk untuk ubah/matikan', 'On — tap to change/turn off')
+              : tr('Sembunyikan seluruh menu Keuangan di balik PIN', 'Hide the whole Finance menu behind a PIN')}</div>
+          </div>
           <span class="badge ${pinOn ? 'badge-green' : 'badge-gray'}">${pinOn ? tr('Aktif', 'On') : tr('Nonaktif', 'Off')}</span>
         </div>
+        ${pinOn ? `
+          <button class="btn btn-sm btn-block" id="lockNow" style="margin-top:12px;">
+            <ion-icon name="lock-closed-outline"></ion-icon> ${tr('Kunci sekarang', 'Lock now')}
+          </button>` : ''}
       </div>
-      <div class="disclaimer" style="margin-top:14px;"><ion-icon name="information-circle"></ion-icon><span>${tr('Saldo dompet & aset diisi manual (Tumara tidak terhubung ke rekening bank demi keamanan). PIN melindungi tampilan di perangkat ini.', 'Wallet & asset balances are entered manually (Tumara does not connect to bank accounts for safety). The PIN protects the view on this device.')}</span></div>`;
+      <div class="disclaimer" style="margin-top:14px;"><ion-icon name="information-circle"></ion-icon><span>${tr('Saldo dompet & aset diisi manual (Tumara tidak terhubung ke rekening bank demi keamanan). PIN menyembunyikan menu Keuangan — termasuk saldo di Beranda — sampai PIN dimasukkan, dan mengunci lagi otomatis bila aplikasi ditinggalkan lebih dari 1 menit.', 'Wallet & asset balances are entered manually (Tumara does not connect to bank accounts for safety). The PIN hides the Finance menu — including the balance on Home — until the PIN is entered, and re-locks automatically if the app is left for over a minute.')}</span></div>`;
 
     $('#addWallet', el).onclick = () => this._walletModal();
     $('#addAsset', el).onclick = () => this._assetModal();
@@ -148,6 +234,11 @@ const Fin = {
     $$('[data-delw]', el).forEach(b => b.onclick = async () => { if (!await confirmDialog(tr('Hapus dompet ini?', 'Delete this wallet?'), { danger: true, okText: tr('Hapus', 'Delete') })) return; await DB.remove('wallets', b.dataset.delw); toast(tr('Dompet dihapus.', 'Wallet deleted.')); App.refresh(); });
     $$('[data-dela]', el).forEach(b => b.onclick = async () => { if (!await confirmDialog(tr('Hapus aset ini?', 'Delete this asset?'), { danger: true, okText: tr('Hapus', 'Delete') })) return; await DB.remove('assets', b.dataset.dela); toast(tr('Aset dihapus.', 'Asset deleted.')); App.refresh(); });
     $('#pinToggle', el).onclick = () => this._pinModal();
+    $('#lockNow', el) && ($('#lockNow', el).onclick = () => {
+      this._unlocked = false;
+      toast(tr('Keuangan dikunci 🔒', 'Finance locked 🔒'));
+      App.refresh();
+    });
   },
 
   _walletModal(w = null) {
@@ -198,22 +289,66 @@ const Fin = {
     openModal({
       title: tr('Kunci PIN Keuangan', 'Finance PIN Lock'),
       body: `
-        ${on ? `<p style="font-size:.84rem;color:var(--text-3);margin-bottom:12px;">${tr('PIN aktif. Buat PIN baru untuk mengubah, atau matikan.', 'PIN is on. Enter a new PIN to change, or turn it off.')}</p>` : `<p style="font-size:.84rem;color:var(--text-3);margin-bottom:12px;">${tr('Buat PIN 4–6 digit untuk mengunci menu Keuangan.', 'Create a 4–6 digit PIN to lock the Finance menu.')}</p>`}
-        <div class="field"><label>${tr('PIN baru (4–6 digit)', 'New PIN (4–6 digits)')}</label><input type="password" inputmode="numeric" maxlength="6" class="input" id="mPin" placeholder="••••"></div>
+        <p style="font-size:.84rem;color:var(--text-3);margin-bottom:12px;">
+          ${on
+            ? tr('PIN aktif. Masukkan PIN saat ini untuk mengubah atau mematikannya.',
+                 'PIN is on. Enter your current PIN to change or turn it off.')
+            : tr('PIN menyembunyikan seluruh menu Keuangan (saldo, transaksi, target, utang) sampai PIN dimasukkan — berguna saat HP dipinjam orang lain.',
+                 'The PIN hides the whole Finance menu (balance, transactions, goals, debts) until the PIN is entered — useful when someone borrows your phone.')}
+        </p>
+
+        ${on ? `<div class="field"><label>${tr('PIN saat ini', 'Current PIN')}</label>
+          <input type="password" inputmode="numeric" maxlength="6" class="input" id="mPinLama" placeholder="••••"></div>` : ''}
+
+        <div class="field"><label>${tr('PIN baru (4–6 digit)', 'New PIN (4–6 digits)')}</label>
+          <input type="password" inputmode="numeric" maxlength="6" class="input" id="mPin" placeholder="••••"></div>
+
+        <div class="field"><label>${tr('Ulangi PIN baru', 'Repeat new PIN')}</label>
+          <input type="password" inputmode="numeric" maxlength="6" class="input" id="mPin2" placeholder="••••"></div>
+
         <div style="display:flex;gap:10px;">
           ${on ? `<button class="btn btn-soft-danger" id="mOff">${tr('Matikan', 'Turn off')}</button>` : ''}
           <button class="btn btn-fin btn-block" id="mSave"><ion-icon name="checkmark"></ion-icon> ${tr('Simpan PIN', 'Save PIN')}</button>
         </div>`,
       onMount: m => {
+        // PIN lama wajib benar sebelum diubah/dimatikan — sesi yang sudah terbuka
+        // (mis. HP yang sedang dipinjam) tidak boleh bisa mengganti kuncinya.
+        const cekPinLama = async () => {
+          if (!on) return true;
+          const lama = $('#mPinLama', m).value;
+          if (await this._pinHash(lama) === DB.user.finPin) return true;
+          toast(tr('PIN saat ini salah.', 'Current PIN is incorrect.'), 'error');
+          return false;
+        };
+
         $('#mSave', m).onclick = async () => {
           const pin = $('#mPin', m).value;
+          const pin2 = $('#mPin2', m).value;
           if (!/^\d{4,6}$/.test(pin)) return toast(tr('PIN harus 4–6 digit angka.', 'PIN must be 4–6 digits.'), 'warning');
-          await DB.updateUser({ finPin: await this._pinHash(pin) });
-          this._unlocked = true;
-          closeModal(); toast(tr('PIN keuangan aktif 🔒', 'Finance PIN enabled 🔒')); App.refresh();
+          // Konfirmasi ulang: tanpa ini, satu salah ketik langsung mengunci
+          // Keuangan dengan PIN yang tidak pernah diketahui pemiliknya.
+          if (pin !== pin2) return toast(tr('PIN baru tidak sama. Ulangi.', 'New PINs do not match. Try again.'), 'warning');
+          if (!await cekPinLama()) return;
+
+          const btn = $('#mSave', m); btn.disabled = true;
+          try {
+            await DB.updateUser({ finPin: await this._pinHash(pin) });
+            this._unlocked = true;
+            closeModal();
+            toast(on ? tr('PIN diperbarui 🔒', 'PIN updated 🔒') : tr('PIN keuangan aktif 🔒', 'Finance PIN enabled 🔒'));
+            App.refresh();
+          } catch (e) { btn.disabled = false; toast(e.message, 'error'); }
         };
+
         const off = $('#mOff', m);
-        if (off) off.onclick = async () => { await DB.updateUser({ finPin: '' }); this._unlocked = true; closeModal(); toast(tr('PIN dimatikan.', 'PIN turned off.')); App.refresh(); };
+        if (off) off.onclick = async () => {
+          if (!await cekPinLama()) return;
+          await DB.updateUser({ finPin: '' });
+          this._unlocked = true;
+          closeModal();
+          toast(tr('PIN dimatikan.', 'PIN turned off.'));
+          App.refresh();
+        };
       }
     });
   },
@@ -249,12 +384,12 @@ const Fin = {
                 ${over ? `<span class="badge badge-red"><ion-icon name="alert-circle"></ion-icon> ${tr('Lewat batas!', 'Over budget!')}</span>` : near ? `<span class="badge badge-amber">${tr('Hampir habis', 'Almost used up')}</span>` : `<span class="badge badge-green">${tr('Aman', 'On track')}</span>`}
               </div>
               <div style="display:flex;justify-content:space-between;align-items:baseline;margin:12px 0 7px;">
-                <span style="font-weight:800;font-size:1.05rem;color:${warna};">${fmtRp(pakai)}</span>
-                <span style="font-size:.8rem;color:var(--text-3);font-weight:600;">${tr('dari', 'of')} ${fmtRp(b.limit)} · ${pct}%</span>
+                <span style="font-weight:800;font-size:1.05rem;color:${warna};">${fmtRpM(pakai)}</span>
+                <span style="font-size:.8rem;color:var(--text-3);font-weight:600;">${tr('dari', 'of')} ${fmtRpM(b.limit)} · ${pct}%</span>
               </div>
               <div class="progress"><div class="progress-fill" style="width:${clamp(pct, 0, 100)}%;background:${warna};"></div></div>
               <div style="font-size:.8rem;color:${over ? 'var(--danger)' : 'var(--text-3)'};margin-top:8px;">
-                ${over ? tr(`Kelebihan ${fmtRp(pakai - b.limit)} 😬`, `Over by ${fmtRp(pakai - b.limit)} 😬`) : tr(`Sisa ${fmtRp(b.limit - pakai)}`, `${fmtRp(b.limit - pakai)} left`)}
+                ${over ? tr(`Kelebihan ${fmtRpM(pakai - b.limit)} 😬`, `Over by ${fmtRpM(pakai - b.limit)} 😬`) : tr(`Sisa ${fmtRpM(b.limit - pakai)}`, `${fmtRpM(b.limit - pakai)} left`)}
               </div>
             </div>`;
           }).join('')}
@@ -363,8 +498,8 @@ const Fin = {
       </div>
 
       <div class="grid grid-2 keep-2" style="margin-bottom:16px;">
-        <div class="card money-stat"><div class="ms-label"><ion-icon name="arrow-up-circle" style="color:var(--danger);"></ion-icon> ${tr('Utang (aku pinjam)', 'I owe')}</div><div class="ms-value tx-amount-out">${fmtRp(utang)}</div></div>
-        <div class="card money-stat"><div class="ms-label"><ion-icon name="arrow-down-circle" style="color:var(--brand);"></ion-icon> ${tr('Piutang (dipinjam)', 'Owed to me')}</div><div class="ms-value tx-amount-in">${fmtRp(piutang)}</div></div>
+        <div class="card money-stat"><div class="ms-label"><ion-icon name="arrow-up-circle" style="color:var(--danger);"></ion-icon> ${tr('Utang (aku pinjam)', 'I owe')}</div><div class="ms-value tx-amount-out">${fmtRpM(utang)}</div></div>
+        <div class="card money-stat"><div class="ms-label"><ion-icon name="arrow-down-circle" style="color:var(--brand);"></ion-icon> ${tr('Piutang (dipinjam)', 'Owed to me')}</div><div class="ms-value tx-amount-in">${fmtRpM(piutang)}</div></div>
       </div>
 
       ${debts.length ? `
@@ -376,7 +511,7 @@ const Fin = {
                 <div style="font-weight:700;font-size:.9rem;${d.lunas ? 'text-decoration:line-through;' : ''}">${esc(d.nama)}</div>
                 <div style="font-size:.78rem;color:var(--text-3);">${d.tipe === 'utang' ? tr('Aku berutang', 'I owe') : tr('Dipinjam', 'Owed to me')}${d.tenggat ? ' · ' + fmtDate(d.tenggat, { short: true }) : ''}</div>
               </div>
-              <span class="${d.tipe === 'utang' ? 'tx-amount-out' : 'tx-amount-in'}" style="font-size:.9rem;">${fmtRp(d.jumlah)}</span>
+              <span class="${d.tipe === 'utang' ? 'tx-amount-out' : 'tx-amount-in'}" style="font-size:.9rem;">${fmtRpM(d.jumlah)}</span>
               <button class="mini-icon-btn" data-lunas="${d.id}" title="${d.lunas ? tr('Tandai belum lunas', 'Mark unpaid') : tr('Tandai lunas', 'Mark paid')}"><ion-icon name="${d.lunas ? 'refresh' : 'checkmark-circle'}"></ion-icon></button>
               <button class="mini-icon-btn danger" data-del="${d.id}"><ion-icon name="trash-outline"></ion-icon></button>
             </div>`).join('')}
@@ -463,15 +598,15 @@ const Fin = {
       <div class="grid grid-3">
         <div class="card money-stat">
           <div class="ms-label"><ion-icon name="arrow-down-circle" style="color:var(--brand);font-size:1.1rem;"></ion-icon> ${tr('Pemasukan', 'Income')}</div>
-          <div class="ms-value tx-amount-in">${fmtRp(masuk)}</div>
+          <div class="ms-value tx-amount-in">${fmtRpM(masuk)}</div>
         </div>
         <div class="card money-stat">
           <div class="ms-label"><ion-icon name="arrow-up-circle" style="color:var(--danger);font-size:1.1rem;"></ion-icon> ${tr('Pengeluaran', 'Expenses')}</div>
-          <div class="ms-value tx-amount-out">${fmtRp(keluar)}</div>
+          <div class="ms-value tx-amount-out">${fmtRpM(keluar)}</div>
         </div>
         <div class="card money-stat">
           <div class="ms-label"><ion-icon name="wallet" style="color:var(--fin);font-size:1.1rem;"></ion-icon> ${tr('Sisa Saldo', 'Balance')}</div>
-          <div class="ms-value" style="color:${saldo >= 0 ? 'inherit' : 'var(--danger)'}">${fmtRp(saldo)}</div>
+          <div class="ms-value" style="color:${saldo >= 0 ? 'inherit' : 'var(--danger)'}">${fmtRpM(saldo)}</div>
         </div>
       </div>
 
@@ -485,7 +620,7 @@ const Fin = {
                 <div style="font-weight:700;font-size:.9rem;">${esc(this._katLabel(t.tipe, t.kategori))}</div>
                 ${t.catatan ? `<div style="font-size:.78rem;color:var(--text-3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${esc(t.catatan)}</div>` : ''}
               </div>
-              <span class="${t.tipe === 'masuk' ? 'tx-amount-in' : 'tx-amount-out'}" style="font-size:.9rem;">${t.tipe === 'masuk' ? '+' : '−'}${fmtRp(t.jumlah)}</span>
+              <span class="${t.tipe === 'masuk' ? 'tx-amount-in' : 'tx-amount-out'}" style="font-size:.9rem;">${t.tipe === 'masuk' ? '+' : '−'}${fmtRpM(t.jumlah)}</span>
               <button class="mini-icon-btn" data-edit="${t.id}"><ion-icon name="create-outline"></ion-icon></button>
               <button class="mini-icon-btn danger" data-del="${t.id}"><ion-icon name="trash-outline"></ion-icon></button>
             </div>`).join('')}
@@ -612,8 +747,8 @@ const Fin = {
                 ${tercapai ? `<span class="badge badge-green">${tr('🎉 Tercapai!', '🎉 Achieved!')}</span>` : (g.tenggat ? deadlineBadge(g.tenggat) : '')}
               </div>
               <div style="display:flex;justify-content:space-between;align-items:baseline;margin:14px 0 7px;">
-                <span style="font-weight:800;font-size:1.05rem;">${fmtRp(g.terkumpul)}</span>
-                <span style="font-size:.8rem;color:var(--text-3);font-weight:600;">${tr(`dari ${fmtRp(g.target)}`, `of ${fmtRp(g.target)}`)} · ${pct}%</span>
+                <span style="font-weight:800;font-size:1.05rem;">${fmtRpM(g.terkumpul)}</span>
+                <span style="font-size:.8rem;color:var(--text-3);font-weight:600;">${tr(`dari ${fmtRpM(g.target)}`, `of ${fmtRpM(g.target)}`)} · ${pct}%</span>
               </div>
               <div class="progress"><div class="progress-fill amber" style="width:${pct}%"></div></div>
               <div style="display:flex;gap:8px;margin-top:16px;">
@@ -694,7 +829,7 @@ const Fin = {
       title: tr(`Tabung: ${goal.nama}`, `Save up: ${goal.nama}`),
       body: `
         <p style="font-size:.85rem;color:var(--text-3);margin-bottom:14px;">
-          ${tr(`Terkumpul <b>${fmtRp(goal.terkumpul)}</b> dari ${fmtRp(goal.target)} — kurang <b>${fmtRp(sisa)}</b> lagi.`, `Saved <b>${fmtRp(goal.terkumpul)}</b> of ${fmtRp(goal.target)} — <b>${fmtRp(sisa)}</b> to go.`)}
+          ${tr(`Terkumpul <b>${fmtRpM(goal.terkumpul)}</b> dari ${fmtRpM(goal.target)} — kurang <b>${fmtRpM(sisa)}</b> lagi.`, `Saved <b>${fmtRpM(goal.terkumpul)}</b> of ${fmtRpM(goal.target)} — <b>${fmtRpM(sisa)}</b> to go.`)}
         </p>
         <div class="field">
           <label>${tr('Jumlah yang ditabung', 'Amount to save')}</label>
@@ -723,7 +858,7 @@ const Fin = {
           closeModal();
           toast(total >= goal.target
             ? tr(`Target "${goal.nama}" tercapai — keren banget! 🎉`, `Goal "${goal.nama}" achieved — awesome! 🎉`)
-            : tr(`${fmtRp(jumlah)} masuk celengan 🐖`, `${fmtRp(jumlah)} added to your piggy bank 🐖`));
+            : tr(`${fmtRpM(jumlah)} masuk celengan 🐖`, `${fmtRpM(jumlah)} added to your piggy bank 🐖`));
           App.refresh();
         };
       }
@@ -766,7 +901,7 @@ const Fin = {
       <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:16px;">
         <input type="month" class="input" id="rpMonth" value="${this.month}" style="max-width:180px;">
         <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
-          ${terbesar ? `<span class="badge badge-amber">${tr('Total pengeluaran:', 'Total spending:')} ${fmtRp(totalKeluar)}</span>` : ''}
+          ${terbesar ? `<span class="badge badge-amber">${tr('Total pengeluaran:', 'Total spending:')} ${fmtRpM(totalKeluar)}</span>` : ''}
           <button class="btn btn-sm" id="exportCsv"><ion-icon name="download-outline"></ion-icon> ${tr('Ekspor CSV', 'Export CSV')}</button>
         </div>
       </div>
@@ -793,15 +928,15 @@ const Fin = {
                   <div class="lg-item">
                     <span class="lg-dot" style="background:${k.color}"></span>
                     ${this._emoji('keluar', k.label)} ${esc(this._katLabel('keluar', k.label))}
-                    <span class="lg-val">${fmtRp(k.value)} · ${Math.round(k.value / totalKeluar * 100)}%</span>
+                    <span class="lg-val">${fmtRpM(k.value)} · ${Math.round(k.value / totalKeluar * 100)}%</span>
                   </div>`).join('')}
               </div>
             </div>
             <div class="disclaimer" style="margin-top:18px;">
               <ion-icon name="bulb-outline"></ion-icon>
               <span>${tr(
-                `Pengeluaran terbesarmu bulan ini: <b>${this._emoji('keluar', terbesar.label)} ${esc(this._katLabel('keluar', terbesar.label))}</b> (${fmtRp(terbesar.value)}, ${Math.round(terbesar.value / totalKeluar * 100)}% dari total). ${terbesar.label === 'Tabungan' ? 'Mantap — menabung memang pengeluaran terbaik! 🐖' : 'Coba cek: masih bisa dihemat, nggak? 😉'}`,
-                `Your biggest spending this month: <b>${this._emoji('keluar', terbesar.label)} ${esc(this._katLabel('keluar', terbesar.label))}</b> (${fmtRp(terbesar.value)}, ${Math.round(terbesar.value / totalKeluar * 100)}% of total). ${terbesar.label === 'Tabungan' ? 'Nice — saving is the best kind of spending! 🐖' : 'Worth a check: could you trim it down? 😉'}`
+                `Pengeluaran terbesarmu bulan ini: <b>${this._emoji('keluar', terbesar.label)} ${esc(this._katLabel('keluar', terbesar.label))}</b> (${fmtRpM(terbesar.value)}, ${Math.round(terbesar.value / totalKeluar * 100)}% dari total). ${terbesar.label === 'Tabungan' ? 'Mantap — menabung memang pengeluaran terbaik! 🐖' : 'Coba cek: masih bisa dihemat, nggak? 😉'}`,
+                `Your biggest spending this month: <b>${this._emoji('keluar', terbesar.label)} ${esc(this._katLabel('keluar', terbesar.label))}</b> (${fmtRpM(terbesar.value)}, ${Math.round(terbesar.value / totalKeluar * 100)}% of total). ${terbesar.label === 'Tabungan' ? 'Nice — saving is the best kind of spending! 🐖' : 'Worth a check: could you trim it down? 😉'}`
               )}</span>
             </div>` : `
             <div class="empty-state" style="padding:28px 10px;">

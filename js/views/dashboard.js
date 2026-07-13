@@ -34,6 +34,9 @@ const Dashboard = {
     const saldo = masuk - keluar;
     const topGoal = goals.filter(g => g.terkumpul < g.target)
       .sort((a, b) => (b.terkumpul / b.target) - (a.terkumpul / a.target))[0];
+    // Kalau menu Keuangan sedang dikunci PIN, saldo TIDAK boleh bocor di sini —
+    // sebelumnya kartu ini tetap memampangkannya, membuat PIN itu praktis sia-sia.
+    const finTerkunci = Fin.terkunci();
 
     el.innerHTML = `
       <!-- HERO -->
@@ -141,17 +144,26 @@ const Dashboard = {
             </div>
             <span class="badge badge-amber">${score.fin}</span>
           </div>
-          <div style="font-size:.78rem;font-weight:700;color:var(--text-3);">${tr('SISA SALDO BULAN INI', "THIS MONTH'S BALANCE")}</div>
-          <div class="stat-row" style="margin:3px 0 13px;">
-            <span class="stat-num" style="color:${saldo >= 0 ? 'inherit' : 'var(--danger)'}">${fmtRp(saldo)}</span>
-          </div>
-          ${topGoal ? `
-            <div style="font-size:.8rem;font-weight:600;color:var(--text-2);display:flex;justify-content:space-between;margin-bottom:6px;">
-              <span>🎯 ${esc(topGoal.nama)}</span>
-              <span>${Math.round(topGoal.terkumpul / topGoal.target * 100)}%</span>
+          ${finTerkunci ? `
+            <div class="empty-state" style="padding:22px 10px;">
+              <ion-icon name="lock-closed-outline"></ion-icon>
+              <div class="es-title">${tr('Keuangan terkunci', 'Finance locked')}</div>
+              <div class="es-sub">${tr('Masukkan PIN di menu Keuangan untuk melihat saldo', 'Enter your PIN in the Finance menu to see the balance')}</div>
+            </div>` : `
+            <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;">
+              <div style="font-size:.78rem;font-weight:700;color:var(--text-3);">${tr('SISA SALDO BULAN INI', "THIS MONTH'S BALANCE")}</div>
+              ${Saldo.btnHTML('dashEye')}
             </div>
-            <div class="progress"><div class="progress-fill amber" style="width:${clamp(Math.round(topGoal.terkumpul / topGoal.target * 100), 0, 100)}%"></div></div>` : `
-            <div style="font-size:.8rem;color:var(--text-3);">${tr('Belum ada target menabung — yuk buat satu! 🎯', 'No savings goal yet — create one! 🎯')}</div>`}
+            <div class="stat-row" style="margin:3px 0 13px;">
+              <span class="stat-num" style="color:${saldo >= 0 ? 'inherit' : 'var(--danger)'}">${fmtRpM(saldo)}</span>
+            </div>
+            ${topGoal ? `
+              <div style="font-size:.8rem;font-weight:600;color:var(--text-2);display:flex;justify-content:space-between;margin-bottom:6px;">
+                <span>🎯 ${esc(topGoal.nama)}</span>
+                <span>${Math.round(topGoal.terkumpul / topGoal.target * 100)}%</span>
+              </div>
+              <div class="progress"><div class="progress-fill amber" style="width:${clamp(Math.round(topGoal.terkumpul / topGoal.target * 100), 0, 100)}%"></div></div>` : `
+              <div style="font-size:.8rem;color:var(--text-3);">${tr('Belum ada target menabung — yuk buat satu! 🎯', 'No savings goal yet — create one! 🎯')}</div>`}`}
         </div>
       </div>
 
@@ -162,6 +174,14 @@ const Dashboard = {
 
     /* --- interaksi --- */
     $$('[data-goto]', el).forEach(c => c.onclick = () => App.navigate(c.dataset.goto));
+
+    // Tombol mata berada DI DALAM kartu yang bisa diklik → hentikan bubbling,
+    // supaya menyembunyikan saldo tidak ikut membuka halaman Keuangan.
+    $('#dashEye', el) && ($('#dashEye', el).onclick = e => {
+      e.stopPropagation();
+      Saldo.toggle();
+      App.refresh();
+    });
 
     $('#qaWater', el).onclick = async () => {
       const d = await DB.getDaily();

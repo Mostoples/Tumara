@@ -177,6 +177,15 @@ const Profile = {
                 <div class="sr-text"><div class="sr-title">${tr('Ganti kata sandi', 'Change password')}</div></div>
                 <ion-icon name="chevron-forward" style="color:var(--text-3);"></ion-icon>
               </div>
+              ${u.finPin ? `
+                <div class="setting-row" style="cursor:pointer;" id="pfResetPin">
+                  <ion-icon name="lock-open-outline" style="font-size:1.2rem;color:var(--text-3);"></ion-icon>
+                  <div class="sr-text">
+                    <div class="sr-title">${tr('Reset PIN Keuangan', 'Reset Finance PIN')}</div>
+                    <div class="sr-sub">${tr('Lupa PIN? Hapus PIN-nya, lalu buat yang baru', 'Forgot your PIN? Remove it, then set a new one')}</div>
+                  </div>
+                  <ion-icon name="chevron-forward" style="color:var(--text-3);"></ion-icon>
+                </div>` : ''}
               <div class="setting-row" style="cursor:pointer;" id="pfExport">
                 <ion-icon name="download-outline" style="font-size:1.2rem;color:var(--text-3);"></ion-icon>
                 <div class="sr-text">
@@ -302,6 +311,19 @@ const Profile = {
     if (window.PWA) PWA.sync();
 
     $('#pfPass', el).onclick = () => this._passwordModal();
+
+    // Satu-satunya jalan keluar bila PIN Keuangan lupa. Baris ini hanya muncul
+    // saat PIN memang terpasang (lihat u.finPin di atas).
+    $('#pfResetPin', el) && ($('#pfResetPin', el).onclick = async () => {
+      const yakin = await confirmDialog(
+        tr('Hapus PIN Keuangan? Menu Keuangan jadi terbuka tanpa PIN sampai kamu membuat PIN baru.',
+           'Remove the Finance PIN? The Finance menu will open without a PIN until you set a new one.'),
+        { title: tr('Reset PIN Keuangan', 'Reset Finance PIN'), danger: true, okText: tr('Hapus PIN', 'Remove PIN') });
+      if (!yakin) return;
+      await Fin.resetPin();
+      toast(tr('PIN dihapus. Buat PIN baru di Keuangan → Dompet & Aset.', 'PIN removed. Set a new one in Finance → Wallets & Assets.'));
+      App.refresh();
+    });
 
     $('#pfExport', el).onclick = async () => {
       downloadJSON(await DB.exportAll(), 'tumara-data.json');

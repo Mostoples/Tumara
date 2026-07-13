@@ -49,6 +49,37 @@ function fmtRp(n) {
   return `${sign}Rp${Math.abs(num).toLocaleString('id-ID')}`;
 }
 
+/* ============================================================
+   Sembunyikan saldo — seperti tombol "mata" di aplikasi bank.
+   ------------------------------------------------------------
+   Preferensi tampilan (bukan keamanan), jadi cukup di localStorage
+   dan berlaku per perangkat: menyembunyikan angka di HP tidak ikut
+   menyembunyikannya di laptop. Dipakai halaman Keuangan & Beranda.
+   ============================================================ */
+const Saldo = {
+  _KEY: 'tumara_saldo_hide',
+  get tersembunyi() { return localStorage.getItem(this._KEY) === '1'; },
+  set tersembunyi(v) { localStorage.setItem(this._KEY, v ? '1' : '0'); },
+  toggle() { this.tersembunyi = !this.tersembunyi; return this.tersembunyi; },
+
+  // Tombol mata untuk dipasang di header kartu/tab.
+  btnHTML(id = 'saldoEye') {
+    const s = this.tersembunyi;
+    return `<button class="btn btn-sm saldo-eye" id="${id}"
+      title="${s ? tr('Tampilkan saldo', 'Show balance') : tr('Sembunyikan saldo', 'Hide balance')}"
+      aria-label="${s ? tr('Tampilkan saldo', 'Show balance') : tr('Sembunyikan saldo', 'Hide balance')}">
+      <ion-icon name="${s ? 'eye-off-outline' : 'eye-outline'}"></ion-icon>
+    </button>`;
+  }
+};
+
+// Rupiah yang menghormati mode sembunyi. Dipakai untuk SEMUA angka uang milik
+// pengguna (saldo, transaksi, anggaran, target, utang) — bukan untuk hasil
+// hitung kalkulator zakat, yang memang harus selalu terbaca.
+function fmtRpM(n) {
+  return Saldo.tersembunyi ? 'Rp ••••••' : fmtRp(n);
+}
+
 // Selisih hari (tanggal target - hari ini), dalam hari kalender
 function daysUntil(iso) {
   const target = parseDate(iso);

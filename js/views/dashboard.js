@@ -20,8 +20,10 @@ const Dashboard = {
     const pctAir = clamp(Math.round((daily.air / targetAir) * 100), 0, 100);
 
     /* --- data tugas --- */
+    // Prioritas dulu (P1 → P3), lalu tenggat — yang krusial tampil paling atas.
     const aktif = tasks.filter(t => t.status !== 'selesai')
-      .sort((a, b) => (a.tenggat || '9999') < (b.tenggat || '9999') ? -1 : 1);
+      .sort((a, b) => prioUrut(a.prioritas) - prioUrut(b.prioritas)
+                   || (a.tenggat || '9999-99-99').localeCompare(b.tenggat || '9999-99-99'));
     const dueToday = aktif.filter(t => t.tenggat === todayStr()).length;
 
     /* --- data keuangan --- */
@@ -118,7 +120,7 @@ const Dashboard = {
             <div style="display:flex;flex-direction:column;gap:9px;">
               ${aktif.slice(0, 3).map(t => `
                 <div style="display:flex;align-items:center;gap:10px;padding:9px 12px;background:var(--surface-2);border-radius:11px;">
-                  <span style="width:8px;height:8px;border-radius:50%;flex-shrink:0;background:${t.prioritas === 'tinggi' ? 'var(--danger)' : t.prioritas === 'sedang' ? 'var(--fin)' : 'var(--brand)'}"></span>
+                  ${prioTag(t.prioritas)}
                   <span style="flex:1;font-size:.83rem;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${esc(t.judul)}</span>
                   ${t.tenggat ? deadlineBadge(t.tenggat) : ''}
                 </div>`).join('')}

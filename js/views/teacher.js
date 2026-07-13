@@ -20,6 +20,7 @@ const Teacher = {
   attDate: todayStr(),
   attPertemuan: 1,
   healthDate: todayStr(),
+  aturMenu: false,        // beranda: mode susun ulang tile menu (drag & drop)
   _el: null,
 
   ABSEN: [
@@ -380,11 +381,22 @@ const Teacher = {
       { route: 'nilai',       icon: 'clipboard-outline',     label: tr('Penilaian', 'Grades'),             color: 'prod' },
       { route: 'jurnal',      icon: 'document-text-outline', label: tr('Jurnal', 'Journal'),               color: 'fin' },
       { route: 'jadwal',      icon: 'calendar-outline',      label: tr('Jadwal Mengajar', 'My Schedule'),  color: 'info' },
-      { route: 'tugaskelas',  icon: 'paper-plane-outline',   label: tr('Tugas Kelas', 'Class Tasks'),      color: 'brand', badge: true },
-      ...(isWali ? [{ route: 'jadwalkelas', icon: 'school-outline', label: tr('Jadwal Kelas', 'Class Schedule'), color: 'prod', badge: true }] : []),
+      { route: 'tugaskelas',  icon: 'paper-plane-outline',   label: tr('Tugas Kelas', 'Class Tasks'),      color: 'brand' },
+      ...(isWali ? [{ route: 'jadwalkelas', icon: 'school-outline', label: tr('Jadwal Kelas', 'Class Schedule'), color: 'prod' }] : []),
       { route: 'ibadah',      icon: 'moon-outline',          label: tr('Ibadah Siswa', 'Worship'),         color: 'brand' },
       { route: 'kesehatan',   icon: 'heart-outline',         label: tr('Kesehatan Siswa', 'Health'),       color: 'fin' }
     ];
+
+    // Dasbor bisa disusun sendiri tiap guru: urutan hasil geser + tile yang
+    // disembunyikan, tersimpan di profil (users/{uid}.guruTiles).
+    const pref     = DB.user.guruTiles || {};
+    const urutan   = Array.isArray(pref.urutan) ? pref.urutan : [];
+    const sembunyi = new Set(Array.isArray(pref.sembunyi) ? pref.sembunyi : []);
+    const posisi   = r => { const i = urutan.indexOf(r); return i === -1 ? 999 : i; };
+    // Tile baru (belum ada di urutan tersimpan) jatuh ke belakang, tapi tetap muncul.
+    const tilesUrut = [...tiles].sort((a, b) => posisi(a.route) - posisi(b.route));
+    // Mode atur menampilkan semua tile (yang tersembunyi tampak redup) agar bisa dimunculkan lagi.
+    const tilesTampil = this.aturMenu ? tilesUrut : tilesUrut.filter(t => !sembunyi.has(t.route));
 
     el.innerHTML = `
       <div class="guru-hero">
@@ -404,11 +416,21 @@ const Teacher = {
         <div class="guru-stat"><div class="guru-stat-ic" style="color:var(--brand);background:var(--brand-soft);"><ion-icon name="albums"></ion-icon></div><div class="guru-stat-num">${classes.length}</div><div class="guru-stat-lb">${tr('Kelas', 'Classes')}</div></div>
       </div>
 
-      <div class="section-head" style="margin-top:24px;"><h2>${tr('Menu', 'Menu')}</h2></div>
-      <div class="guru-menu-grid">
-        ${tiles.map(t => `
-          <button class="guru-tile" data-goto="${t.route}">
-            ${t.badge ? `<span class="guru-tile-new">${tr('BARU', 'NEW')}</span>` : ''}
+      <div class="section-head" style="margin-top:24px;">
+        <h2>${tr('Menu', 'Menu')}</h2>
+        <div style="display:flex;gap:6px;">
+          ${this.aturMenu ? `<button class="btn btn-sm" id="resetMenu"><ion-icon name="refresh-outline"></ion-icon> ${tr('Reset', 'Reset')}</button>` : ''}
+          <button class="btn btn-sm ${this.aturMenu ? 'btn-primary' : ''}" id="aturMenu">
+            <ion-icon name="${this.aturMenu ? 'checkmark' : 'options-outline'}"></ion-icon> ${this.aturMenu ? tr('Selesai', 'Done') : tr('Atur', 'Arrange')}
+          </button>
+        </div>
+      </div>
+      ${this.aturMenu ? `<div class="ts-note"><ion-icon name="move-outline" style="vertical-align:-2px;"></ion-icon> ${tr('Geser tile untuk menyusun ulang. Ketuk mata untuk menyembunyikan.', 'Drag tiles to reorder. Tap the eye to hide.')}</div>` : ''}
+      <div class="guru-menu-grid ${this.aturMenu ? 'sort-on' : ''}" id="menuGrid">
+        ${tilesTampil.map(t => `
+          <button class="guru-tile ${this.aturMenu ? 'guru-tile-atur' : ''} ${sembunyi.has(t.route) ? 'guru-tile-off' : ''}"
+                  data-route="${t.route}" ${this.aturMenu ? '' : `data-goto="${t.route}"`}>
+            ${this.aturMenu ? `<span class="guru-tile-eye" data-hide="${t.route}"><ion-icon name="${sembunyi.has(t.route) ? 'eye-off-outline' : 'eye-outline'}"></ion-icon></span>` : ''}
             <span class="guru-tile-ic" style="color:var(--${t.color});background:var(--${t.color}-soft);"><ion-icon name="${t.icon}"></ion-icon></span>
             <span class="guru-tile-lb">${t.label}</span>
           </button>`).join('')}
@@ -500,6 +522,43 @@ const Teacher = {
         </div>` : ''}`;
 
     $$('[data-goto]', el).forEach(b => b.onclick = () => this._goto(b.dataset.goto));
+
+    $('#aturMenu', el).onclick = () => { this.aturMenu = !this.aturMenu; this.render(this._el); };
+
+    $('#resetMenu', el) && ($('#resetMenu', el).onclick = async () => {
+      await this._simpanMenu({ urutan: [], sembunyi: [] });
+      toast(tr('Menu dikembalikan ke susunan awal.', 'Menu restored to its default layout.'));
+      this.render(this._el);
+    });
+
+    // Sembunyikan/munculkan tile. Urutan saat ini ikut disimpan supaya hasil
+    // geser yang belum sempat tersimpan tidak hilang saat menekan mata.
+    $$('[data-hide]', el).forEach(b => b.onclick = async () => {
+      const route = b.dataset.hide;
+      const baru = new Set(sembunyi);
+      baru.has(route) ? baru.delete(route) : baru.add(route);
+      await this._simpanMenu({ urutan: this._urutanMenu(el), sembunyi: [...baru] });
+      this.render(this._el);
+    });
+
+    makeSortable($('#menuGrid', el), {
+      itemSelector: '.guru-tile',
+      key: 'route',
+      ignore: '[data-hide]',
+      onEnd: urutanBaru => this._simpanMenu({ urutan: urutanBaru, sembunyi: [...sembunyi] })
+    });
+  },
+
+  _urutanMenu(el) {
+    return $$('#menuGrid .guru-tile', el).map(t => t.dataset.route);
+  },
+
+  async _simpanMenu(pref) {
+    try {
+      await DB.updateUser({ guruTiles: pref });
+    } catch (e) {
+      toast(tr('Gagal menyimpan susunan menu.', 'Failed to save the menu layout.'), 'error');
+    }
   },
 
   /* ============ TAB: KELAS & SISWA ============ */
@@ -811,6 +870,8 @@ const Teacher = {
         <div style="display:flex;gap:10px;margin-top:16px;flex-wrap:wrap;">
           <button class="btn btn-primary" id="saveAtt"><ion-icon name="save-outline"></ion-icon> ${tr('Simpan Absensi', 'Save Attendance')}</button>
           <button class="btn" id="exportAtt"><ion-icon name="download-outline"></ion-icon> ${tr('Ekspor CSV', 'Export CSV')}</button>
+          <button class="btn" id="printAtt"><ion-icon name="print-outline"></ion-icon> PDF</button>
+          ${Kop.btnHTML('kopAtt')}
         </div>` : `
         <div class="card empty-state"><ion-icon name="people-outline"></ion-icon>
           <div class="es-title">${tr('Kelas ini belum punya siswa', 'This class has no students')}</div>
@@ -868,6 +929,39 @@ const Teacher = {
       students.forEach((s, i) => rows.push([i + 1, s.nama, s.nis || '', draft[s.id] || '']));
       downloadCSV(rows, `absensi_${(cls?.nama || 'kelas').replace(/\s+/g, '_')}_${this.attDate}_P${this.attPertemuan}.csv`);
     };
+
+    $('#kopAtt', el) && ($('#kopAtt', el).onclick = () => Kop.modal());
+
+    $('#printAtt', el) && ($('#printAtt', el).onclick = () => {
+      const namaStatus = k => { const a = this.ABSEN.find(x => x.k === k); return a ? tr(a.id, a.en) : '-'; };
+      const rekap = this.ABSEN
+        .map(a => `${a.k}: ${students.filter(s => draft[s.id] === a.k).length}`)
+        .join(' · ');
+      const kop = Kop.html({
+        judul: tr('DAFTAR HADIR SISWA', 'ATTENDANCE LIST'),
+        meta: [
+          [tr('Mata Pelajaran', 'Subject'), DB.user.mapel || ''],
+          [tr('Kelas', 'Class'), cls?.nama || ''],
+          [tr('Tanggal', 'Date'), fmtDate(this.attDate, { weekday: true })],
+          [tr('Pertemuan ke-', 'Meeting #'), this.attPertemuan],
+          [tr('Guru', 'Teacher'), DB.user.nama || '']
+        ]
+      });
+      const cols = `<colgroup>
+        <col style="width:6%"><col style="width:38%"><col style="width:16%"><col style="width:20%"><col style="width:20%">
+      </colgroup>`;
+      const th = `<tr><th>No</th><th>${tr('Nama Siswa', 'Student Name')}</th><th>NIS</th><th>${tr('Status', 'Status')}</th><th>${tr('Keterangan', 'Notes')}</th></tr>`;
+      const body = students.map((s, i) => `<tr>
+        <td class="center">${i + 1}</td>
+        <td>${esc(s.nama)}</td>
+        <td>${esc(s.nis || '')}</td>
+        <td class="center ${draft[s.id] === 'A' ? 'red' : ''}">${draft[s.id] ? `${draft[s.id]} — ${namaStatus(draft[s.id])}` : '-'}</td>
+        <td></td>
+      </tr>`).join('');
+      printHTML(`Absensi ${cls?.nama || ''}`,
+        `${kop}<table>${cols}<thead>${th}</thead><tbody>${body}</tbody></table>
+         <p class="muted"><b>${tr('Rekap', 'Summary')}:</b> ${rekap} · ${tr('Total', 'Total')}: ${students.length} ${tr('siswa', 'students')}</p>`);
+    });
   },
 
   /* ============ TAB: PENILAIAN ============ */
@@ -902,6 +996,7 @@ const Teacher = {
         <button class="btn btn-primary btn-sm" id="addCol" style="margin-bottom:1px;"><ion-icon name="add"></ion-icon> ${tr('Kolom Nilai', 'Grade Column')}</button>
         <button class="btn btn-sm" id="exportGrade" style="margin-bottom:1px;"><ion-icon name="download-outline"></ion-icon> ${tr('Ekspor CSV', 'Export CSV')}</button>
         <button class="btn btn-sm" id="printGrade" style="margin-bottom:1px;"><ion-icon name="print-outline"></ion-icon> PDF</button>
+        ${Kop.btnHTML('kopGrade')}
       </div>
 
       ${!students.length ? `
@@ -984,9 +1079,19 @@ const Teacher = {
       downloadCSV(rows, `nilai_${(cls?.nama || 'kelas').replace(/\s+/g, '_')}.csv`);
     });
 
+    $('#kopGrade', el) && ($('#kopGrade', el).onclick = () => Kop.modal());
+
     $('#printGrade', el) && ($('#printGrade', el).onclick = () => {
       const cls = classes.find(c => c.id === this.classId);
-      const head = `<h2>${tr('Daftar Nilai', 'Grade List')} — ${esc(cls?.nama || '')}</h2><div class="muted">${esc(DB.user.nama || '')}${DB.user.mapel ? ' · ' + esc(DB.user.mapel) : ''} · ${fmtDate(todayStr())}</div>`;
+      const head = Kop.html({
+        judul: tr('DAFTAR NILAI', 'GRADE LIST'),
+        meta: [
+          [tr('Mata Pelajaran', 'Subject'), DB.user.mapel || ''],
+          [tr('Kelas', 'Class'), cls?.nama || ''],
+          [tr('Guru', 'Teacher'), DB.user.nama || ''],
+          [tr('Tanggal cetak', 'Printed on'), fmtDate(todayStr())]
+        ]
+      });
       const th = `<tr><th>No</th><th>${tr('Nama', 'Name')}</th>${columns.map(c => `<th>${esc(c.nama)}<br><small>KKM ${+c.kkm || 0}</small></th>`).join('')}<th>${tr('Rata2', 'Avg')}</th></tr>`;
       const body = students.map((s, i) => `<tr><td class="center">${i + 1}</td><td>${esc(s.nama)}</td>${columns.map(c => { const v = scores[s.id]?.[c.id]; const below = v !== undefined && v !== '' && +v < (+c.kkm || 0); return `<td class="center ${below ? 'red' : ''}">${v ?? '-'}</td>`; }).join('')}<td class="center">${avgOf(s.id) ?? '-'}</td></tr>`).join('');
       printHTML(`Nilai ${cls?.nama || ''}`, `${head}<table><thead>${th}</thead><tbody>${body}</tbody></table>`);
@@ -1048,6 +1153,7 @@ const Teacher = {
       this._bindClassGate(el); return;
     }
     const activeCls = classes.find(c => c.id === this.classId);
+    const jmlSiswa = (await this._students(this.classId)).length;
 
     const journals = (await DB.list('journals'))
       .filter(j => j.classId === this.classId)
@@ -1057,6 +1163,17 @@ const Teacher = {
       ${this._classBar(activeCls)}
       <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end;margin-bottom:16px;">
         <button class="btn btn-primary btn-sm" id="addJurnal" style="margin-bottom:1px;"><ion-icon name="add"></ion-icon> ${tr('Jurnal Baru', 'New Journal')}</button>
+        ${journals.length ? `
+          <button class="btn btn-sm" id="exportJurnal" style="margin-bottom:1px;"><ion-icon name="download-outline"></ion-icon> ${tr('Ekspor CSV', 'Export CSV')}</button>
+          <button class="btn btn-sm" id="printJurnal" style="margin-bottom:1px;"><ion-icon name="print-outline"></ion-icon> PDF</button>` : ''}
+        ${Kop.btnHTML('kopJurnal')}
+      </div>
+
+      <div class="ts-note">
+        <ion-icon name="school-outline" style="vertical-align:-2px;"></ion-icon>
+        ${tr('Jurnal kelas', 'Journal for class')} <b>${esc(activeCls?.nama || '-')}</b>
+        ${DB.user.mapel ? ` · ${tr('mapel', 'subject')} <b>${esc(DB.user.mapel)}</b>` : ''}
+        · ${jmlSiswa} ${tr('siswa', 'students')}. ${tr('Unduhan hanya berisi kelas ini (tidak tercampur kelas lain).', 'Downloads contain only this class (never mixed with others).')}
       </div>
 
       ${journals.length ? `
@@ -1066,6 +1183,7 @@ const Teacher = {
               <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px;flex-wrap:wrap;">
                 <div style="flex:1;min-width:0;">
                   <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+                    <span class="badge badge-amber"><ion-icon name="school-outline"></ion-icon> ${esc(activeCls?.nama || '')}</span>
                     <span class="badge badge-purple">${fmtDate(j.tanggal, { weekday: true })}</span>
                     ${j.pertemuan ? `<span class="badge badge-blue">${tr('Pertemuan', 'Meeting')} ${j.pertemuan}</span>` : ''}
                     ${j.hadir != null ? `<span class="badge badge-green"><ion-icon name="people"></ion-icon> ${j.hadir} ${tr('hadir', 'present')}</span>` : ''}
@@ -1087,8 +1205,74 @@ const Teacher = {
         </div>`}`;
 
     this._bindClassBar(el);
-    $('#addJurnal', el).onclick = () => this._jurnalModal();
-    $$('[data-edit]', el).forEach(b => b.onclick = () => this._jurnalModal(journals.find(j => j.id === b.dataset.edit)));
+    $('#addJurnal', el).onclick = () => this._jurnalModal(null, classes);
+
+    // Ekspor: urut kronologis (terlama → terbaru) agar terbaca sebagai buku jurnal,
+    // berbeda dari daftar di layar yang menaruh jurnal terbaru di atas.
+    const jurnalUrut = () => [...journals].sort((a, b) => (a.tanggal || '').localeCompare(b.tanggal || ''));
+    const namaFile = `jurnal_${(activeCls?.nama || 'kelas').replace(/\s+/g, '_')}`;
+
+    $('#kopJurnal', el).onclick = () => Kop.modal();
+
+    $('#exportJurnal', el) && ($('#exportJurnal', el).onclick = () => {
+      const rows = [[
+        tr('No', 'No'), tr('Kelas', 'Class'), tr('Tanggal', 'Date'), tr('Pertemuan', 'Meeting'),
+        tr('Judul', 'Title'), tr('Materi & Kegiatan', 'Material & Activities'),
+        tr('Hadir', 'Present'), tr('Tidak Hadir', 'Absent')
+      ]];
+      jurnalUrut().forEach((j, i) => rows.push([
+        i + 1, activeCls?.nama || '', j.tanggal || '', j.pertemuan ?? '',
+        j.judul || '', j.materi || '', j.hadir ?? '',
+        j.hadir != null && jmlSiswa ? Math.max(0, jmlSiswa - j.hadir) : ''
+      ]));
+      downloadCSV(rows, `${namaFile}.csv`);
+    });
+
+    // PDF meniru form resmi "JURNAL GURU": kop sekolah, baris Mata Pelajaran &
+    // Kelas, lalu tabel per pertemuan. Kolom Ketercapaian & Tanda Tangan sengaja
+    // dibiarkan kosong — diisi tangan setelah dicetak, seperti form aslinya.
+    $('#printJurnal', el) && ($('#printJurnal', el).onclick = () => {
+      const kop = Kop.html({
+        judul: tr('JURNAL GURU', 'TEACHING JOURNAL'),
+        meta: [
+          [tr('Mata Pelajaran', 'Subject'), DB.user.mapel || ''],
+          [tr('Kelas', 'Class'), activeCls?.nama || ''],
+          [tr('Guru', 'Teacher'), DB.user.nama || '']
+        ]
+      });
+      // Lebar kolom dikunci: uraian materi mendapat porsi terbesar (seperti form
+      // aslinya), kolom angka dibuat sempit agar tidak memakan ruang.
+      const cols = `<colgroup>
+        <col style="width:5%"><col style="width:17%"><col style="width:7%"><col style="width:34%">
+        <col style="width:9%"><col style="width:8%"><col style="width:9%"><col style="width:11%">
+      </colgroup>`;
+      const th = `<tr>
+        <th>No</th>
+        <th>${tr('Hari, tanggal', 'Day, date')}</th>
+        <th>${tr('Pert. ke', 'Meeting')}</th>
+        <th>${tr('Judul / Materi & Kegiatan', 'Title / Material & Activities')}</th>
+        <th>${tr('Jumlah Siswa', 'Total')}</th>
+        <th>${tr('Hadir', 'Present')}</th>
+        <th>${tr('Tidak Hadir', 'Absent')}</th>
+        <th>${tr('Ket. / Tanda Tangan', 'Notes / Signature')}</th>
+      </tr>`;
+      const body = jurnalUrut().map((j, i) => {
+        const tidakHadir = j.hadir != null && jmlSiswa ? Math.max(0, jmlSiswa - j.hadir) : null;
+        return `<tr>
+          <td class="center">${i + 1}</td>
+          <td>${j.tanggal ? fmtDate(j.tanggal, { weekday: true }) : '-'}</td>
+          <td class="center">${j.pertemuan ?? '-'}</td>
+          <td><b>${esc(j.judul || '')}</b>${j.materi ? `<div style="white-space:pre-wrap;">${esc(j.materi)}</div>` : ''}</td>
+          <td class="center">${jmlSiswa || '-'}</td>
+          <td class="center">${j.hadir ?? '-'}</td>
+          <td class="center">${tidakHadir ?? '-'}</td>
+          <td></td>
+        </tr>`;
+      }).join('');
+      printHTML(`Jurnal ${activeCls?.nama || ''}`, `${kop}<table>${cols}<thead>${th}</thead><tbody>${body}</tbody></table>`);
+    });
+
+    $$('[data-edit]', el).forEach(b => b.onclick = () => this._jurnalModal(journals.find(j => j.id === b.dataset.edit), classes));
     $$('[data-del]', el).forEach(b => b.onclick = async () => {
       if (!await confirmDialog(tr('Hapus jurnal ini?', 'Delete this journal?'), { danger: true, okText: tr('Hapus', 'Delete') })) return;
       const jrn = journals.find(j => j.id === b.dataset.del);
@@ -1102,14 +1286,22 @@ const Teacher = {
     });
   },
 
-  async _jurnalModal(j = null) {
+  async _jurnalModal(j = null, classes = []) {
     // hitung jumlah hadir dari absensi tanggal tsb (bila ada) sebagai default
     const tanggal = j?.tanggal || todayStr();
     let fotoData = j?.foto || '';
+    const kelasTerpilih = j?.classId || this.classId;
 
     openModal({
       title: j ? tr('Ubah Jurnal', 'Edit Journal') : tr('Jurnal Mengajar Baru', 'New Teaching Journal'),
       body: `
+        <div class="field">
+          <label>${tr('Kelas yang diampu', 'Class taught')}</label>
+          <select class="select" id="mKelas">
+            ${classes.map(c => `<option value="${c.id}" ${c.id === kelasTerpilih ? 'selected' : ''}>${esc(c.nama)}</option>`).join('')}
+          </select>
+        </div>
+        ${DB.user.mapel ? `<div class="field"><label>${tr('Mata pelajaran', 'Subject')}</label><input type="text" class="input" value="${esc(DB.user.mapel)}" disabled></div>` : ''}
         <div class="grid grid-2 keep-2" style="gap:12px;">
           <div class="field"><label>${tr('Tanggal', 'Date')}</label><input type="date" class="input" id="mTgl" value="${tanggal}"></div>
           <div class="field"><label>${tr('Pertemuan ke-', 'Meeting #')}</label><input type="number" class="input" id="mPert" min="1" value="${j?.pertemuan || ''}"></div>
@@ -1150,21 +1342,25 @@ const Teacher = {
           if (!judul) return toast(tr('Isi judul/topik.', 'Enter a title/topic.'), 'warning');
           const tgl = $('#mTgl', m).value || todayStr();
           const pert = +$('#mPert', m).value || null;
+          const kelasId = $('#mKelas', m)?.value || this.classId;
           let hadir = $('#mHadir', m).value === '' ? null : +$('#mHadir', m).value;
           // auto hadir dari absensi bila kosong
           if (hadir === null) {
-            const att = (await DB.list('attendance')).filter(a => a.classId === this.classId && a.tanggal === tgl);
+            const att = (await DB.list('attendance')).filter(a => a.classId === kelasId && a.tanggal === tgl);
             if (att.length) {
               const merged = {};
               att.forEach(a => Object.assign(merged, a.entries || {}));
               hadir = Object.values(merged).filter(v => v === 'H').length || null;
             }
           }
-          const data = { classId: this.classId, tanggal: tgl, pertemuan: pert, judul, materi: $('#mMateri', m).value.trim(), hadir, foto: fotoData || '' };
+          const data = { classId: kelasId, tanggal: tgl, pertemuan: pert, judul, materi: $('#mMateri', m).value.trim(), hadir, foto: fotoData || '' };
           const btn = $('#mSave', m); btn.disabled = true;
           try {
             if (j) await DB.update('journals', j.id, data);
             else await DB.add('journals', data);
+            // Ikut pindah ke kelas yang dipilih, supaya jurnal yang baru disimpan
+            // langsung terlihat (daftar jurnal difilter per kelas aktif).
+            this.classId = kelasId;
             closeModal();
             toast(tr('Jurnal tersimpan 📝', 'Journal saved 📝'));
             this.render(this._el);
@@ -1196,8 +1392,10 @@ const Teacher = {
     el.innerHTML = `
       <div class="portal-head" style="margin-bottom:16px;">
         <div><h1 style="font-size:1.2rem;">${tr('Jadwal Mengajar', 'Teaching Schedule')}</h1></div>
-        <div style="display:flex;gap:8px;">
+        <div style="display:flex;gap:8px;flex-wrap:wrap;">
           <button class="btn btn-sm" id="exportJadwal"><ion-icon name="download-outline"></ion-icon> CSV</button>
+          <button class="btn btn-sm" id="printJadwal"><ion-icon name="print-outline"></ion-icon> PDF</button>
+          ${Kop.btnHTML('kopJadwal')}
           <button class="btn btn-primary btn-sm" id="addJadwal"><ion-icon name="add"></ion-icon> ${tr('Tambah', 'Add')}</button>
         </div>
       </div>
@@ -1273,6 +1471,33 @@ const Teacher = {
         this._jam(s.jamMulai), this._jam(s.jamSelesai), s.kelas || '', s.mapel || ''
       ]));
       downloadCSV(rows, 'jadwal_mengajar.csv');
+    };
+
+    $('#kopJadwal', el).onclick = () => Kop.modal();
+
+    $('#printJadwal', el).onclick = () => {
+      const kop = Kop.html({
+        judul: tr('JADWAL MENGAJAR', 'TEACHING SCHEDULE'),
+        meta: [
+          [tr('Guru', 'Teacher'), DB.user.nama || ''],
+          [tr('Mata Pelajaran', 'Subject'), DB.user.mapel || ''],
+          [tr('Tanggal cetak', 'Printed on'), fmtDate(todayStr())]
+        ]
+      });
+      const cols = `<colgroup>
+        <col style="width:6%"><col style="width:12%"><col style="width:24%"><col style="width:20%"><col style="width:19%"><col style="width:19%">
+      </colgroup>`;
+      const th = `<tr><th>No</th><th>${tr('Jenis', 'Type')}</th><th>${tr('Berlaku', 'Applies on')}</th><th>${tr('Jam', 'Time')}</th><th>${tr('Kelas', 'Class')}</th><th>${tr('Mapel', 'Subject')}</th></tr>`;
+      const body = [...rutin, ...sekali].map((s, i) => `<tr>
+        <td class="center">${i + 1}</td>
+        <td>${this._isSekali(s) ? tr('Sekali', 'One-off') : tr('Rutin', 'Weekly')}</td>
+        <td>${this._isSekali(s) ? fmtDate(s.tanggal, { weekday: true }) : HARI[+s.hari]}</td>
+        <td class="center nowrap">${this._jamRange(s.jamMulai, s.jamSelesai)}</td>
+        <td>${esc(s.kelas || '')}</td>
+        <td>${esc(s.mapel || DB.user.mapel || '')}</td>
+      </tr>`).join('');
+      printHTML(tr('Jadwal Mengajar', 'Teaching Schedule'),
+        `${kop}<table>${cols}<thead>${th}</thead><tbody>${body}</tbody></table>`);
     };
   },
 
@@ -1375,8 +1600,11 @@ const Teacher = {
       this._bindClassGate(el); return;
     }
     const activeCls = classes.find(c => c.id === this.classId);
+    // Prioritas dulu (P1 → P3), baru tenggat — sama seperti urutan di app siswa,
+    // supaya guru melihat daftar persis seperti yang dilihat siswanya.
     const tasks = (await DB.gListWhere('class_tasks', 'classId', this.classId))
-      .sort((a, b) => (a.tenggat || '9999-99-99') < (b.tenggat || '9999-99-99') ? -1 : 1);
+      .sort((a, b) => prioUrut(a.prioritas) - prioUrut(b.prioritas)
+                   || (a.tenggat || '9999-99-99').localeCompare(b.tenggat || '9999-99-99'));
 
     el.innerHTML = `
       ${this._classBar(activeCls)}
@@ -1395,7 +1623,7 @@ const Teacher = {
                 <div style="display:flex;gap:8px;align-items:center;margin-top:4px;flex-wrap:wrap;">
                   ${t.mapel ? `<span class="badge badge-purple">${esc(t.mapel)}</span>` : ''}
                   ${t.tenggat ? `<span class="badge badge-gray"><ion-icon name="calendar-outline"></ion-icon> ${fmtDate(t.tenggat, { short: true })}</span>` : ''}
-                  ${t.prioritas === 'tinggi' ? `<span class="badge badge-red">${tr('Prioritas tinggi', 'High priority')}</span>` : ''}
+                  ${prioBadge(t.prioritas)}
                   ${t.guruNama ? `<span style="font-size:.72rem;color:var(--text-3);">${esc(t.guruNama)}</span>` : ''}
                 </div>
               </div>
@@ -1431,9 +1659,12 @@ const Teacher = {
         </div>
         <div class="field"><label>${tr('Prioritas', 'Priority')}</label>
           <select class="select" id="mPrioritas">
-            <option value="sedang" ${task?.prioritas !== 'tinggi' ? 'selected' : ''}>${tr('Normal', 'Normal')}</option>
-            <option value="tinggi" ${task?.prioritas === 'tinggi' ? 'selected' : ''}>${tr('Tinggi', 'High')}</option>
+            ${['tinggi', 'sedang', 'rendah'].map(p => `
+              <option value="${p}" ${prioKey(task?.prioritas) === p ? 'selected' : ''}>
+                ${PRIORITAS[p].kode} · ${PRIORITAS[p].nama()}
+              </option>`).join('')}
           </select>
+          <div style="font-size:.75rem;color:var(--text-3);margin-top:5px;">${tr('P1 tampil paling atas di app siswa, supaya yang krusial tidak terlewat.', 'P1 appears at the top in the student app, so critical work is not missed.')}</div>
         </div>
         <button class="btn btn-primary btn-block" id="mSave"><ion-icon name="paper-plane-outline"></ion-icon> ${task ? tr('Simpan', 'Save') : tr('Kirim', 'Send')}</button>`,
       onMount: m => {

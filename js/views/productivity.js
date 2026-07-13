@@ -193,8 +193,10 @@ const Prod = {
     const kelasId = DB.user?.kelasId;
     if (!kelasId) { el.innerHTML = this._needKelas(); this._bindNeedKelas(el); return; }
 
+    // Yang krusial di atas: prioritas dulu (P1 → P3), lalu tenggat terdekat.
     const tasks = (await DB.gListWhere('class_tasks', 'classId', kelasId))
-      .sort((a, b) => (a.tenggat || '9999-99-99') < (b.tenggat || '9999-99-99') ? -1 : 1);
+      .sort((a, b) => prioUrut(a.prioritas) - prioUrut(b.prioritas)
+                   || (a.tenggat || '9999-99-99').localeCompare(b.tenggat || '9999-99-99'));
     const done = new Set(DB.user?.tugasSelesai || []);
     const isDone = t => done.has(t.id);
 
@@ -224,7 +226,7 @@ const Prod = {
                 <div style="display:flex;gap:8px;align-items:center;margin-top:4px;flex-wrap:wrap;">
                   ${t.mapel ? `<span class="badge badge-purple">${esc(t.mapel)}</span>` : ''}
                   ${t.tenggat && !isDone(t) ? deadlineBadge(t.tenggat) : t.tenggat ? `<span class="badge badge-gray">${fmtDate(t.tenggat, { short: true })}</span>` : ''}
-                  ${t.prioritas === 'tinggi' ? `<span class="badge badge-red">${tr('Prioritas tinggi', 'High priority')}</span>` : ''}
+                  ${prioBadge(t.prioritas)}
                   ${t.guruNama ? `<span class="badge badge-gray"><ion-icon name="person-outline"></ion-icon> ${esc(t.guruNama)}</span>` : ''}
                 </div>
               </div>
@@ -248,7 +250,6 @@ const Prod = {
   },
 
   openTaskModal(task = null) {
-    const prioLabel = { rendah: tr('Rendah', 'Low'), sedang: tr('Sedang', 'Medium'), tinggi: tr('Tinggi', 'High') };
     openModal({
       title: task ? tr('Ubah Tugas', 'Edit Task') : tr('Tugas Baru', 'New Task'),
       body: `
@@ -274,7 +275,7 @@ const Prod = {
           <div class="field">
             <label>${tr('Prioritas', 'Priority')}</label>
             <select class="select" id="mPrioritas">
-              ${['rendah', 'sedang', 'tinggi'].map(p => `<option value="${p}" ${(task?.prioritas || 'sedang') === p ? 'selected' : ''}>${prioLabel[p]}</option>`).join('')}
+              ${['tinggi', 'sedang', 'rendah'].map(p => `<option value="${p}" ${prioKey(task?.prioritas) === p ? 'selected' : ''}>${PRIORITAS[p].kode} · ${PRIORITAS[p].nama()}</option>`).join('')}
             </select>
           </div>
         </div>

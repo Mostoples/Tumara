@@ -8,7 +8,8 @@
    ============================================================ */
 
 const Ibadah = {
-  tab: 'hari',   // 'hari' | 'quran' | 'dzikir' | 'zakat' | 'catatan'
+  tab: 'hari',   // 'hari' | 'sholat' | 'kalender' | 'quran' | 'dzikir' | 'panduan' | 'zakat' | 'catatan'
+  kalGeser: 0,   // pergeseran bulan kalender dari bulan ini (0 = bulan berjalan)
   _lastDate: null,          // tanggal (lokal) saat render terakhir — untuk deteksi pergantian hari
   _dayInterval: null,       // interval pengecek pergantian hari
   _dayWatchInstalled: false,// penanda agar watcher hanya dipasang sekali
@@ -46,6 +47,7 @@ const Ibadah = {
       <div class="tabs">
         <button class="tab ${this.tab === 'hari' ? 'active' : ''}" data-tab="hari"><ion-icon name="checkbox-outline"></ion-icon>${tr('Hari Ini', 'Today')}</button>
         <button class="tab ${this.tab === 'sholat' ? 'active' : ''}" data-tab="sholat"><ion-icon name="compass-outline"></ion-icon>${tr('Sholat & Kiblat', 'Prayer & Qibla')}</button>
+        <button class="tab ${this.tab === 'kalender' ? 'active' : ''}" data-tab="kalender"><ion-icon name="calendar-number-outline"></ion-icon>${tr('Kalender', 'Calendar')}</button>
         <button class="tab ${this.tab === 'quran' ? 'active' : ''}" data-tab="quran"><ion-icon name="book-outline"></ion-icon>${tr('Al-Qur\'an', 'Qur\'an')}</button>
         <button class="tab ${this.tab === 'dzikir' ? 'active' : ''}" data-tab="dzikir"><ion-icon name="sparkles-outline"></ion-icon>${tr('Dzikir & Doa', 'Dhikr & Du\'a')}</button>
         <button class="tab ${this.tab === 'panduan' ? 'active' : ''}" data-tab="panduan"><ion-icon name="reader-outline"></ion-icon>${tr('Panduan', 'Guide')}</button>
@@ -59,6 +61,7 @@ const Ibadah = {
     const body = $('#ibBody', el);
     if (this.tab === 'hari') await this.renderToday(body);
     else if (this.tab === 'sholat') await this.renderSholat(body);
+    else if (this.tab === 'kalender') this.renderKalender(body);
     else if (this.tab === 'quran') await this.renderQuran(body);
     else if (this.tab === 'dzikir') this.renderDzikir(body);
     else if (this.tab === 'panduan') this.renderPanduan(body);
@@ -542,6 +545,207 @@ const Ibadah = {
       }
     }, () => { /* izin ditolak / GPS mati → angka dari lokasi tersimpan tetap tampil */ },
        { enableHighAccuracy: true, timeout: 20000, maximumAge: 0 });
+  },
+
+  /* ============ TAB: KALENDER HIJRIYAH ============
+     Kalender Masehi sebulan penuh yang setiap harinya diberi tanggal Hijriyah
+     dan ditandai bila jatuh pada hari besar Islam.
+
+     Konversi Masehi→Hijriyah memakai Intl ('islamic-umalqura', kalender resmi
+     Arab Saudi) — jadi tidak perlu tabel konversi sendiri. Hasilnya HISAB:
+     awal Ramadhan/Syawal versi rukyat pemerintah bisa bergeser 1 hari, karena
+     itu ditulis terus terang di catatan bawah agar tidak dianggap keputusan
+     resmi. */
+
+  BULAN_HIJRI: ['Muharram', 'Safar', 'Rabiul Awal', 'Rabiul Akhir', 'Jumadil Awal', 'Jumadil Akhir',
+                'Rajab', "Sya'ban", 'Ramadhan', 'Syawal', 'Dzulqaidah', 'Dzulhijjah'],
+
+  // Hari besar: [bulan Hijriyah, tanggal] → nama. Dipakai untuk penanda & hitung mundur.
+  HARI_BESAR: [
+    { b: 1,  t: 1,  emoji: '🌙', id: 'Tahun Baru Hijriyah',  en: 'Islamic New Year' },
+    { b: 1,  t: 10, emoji: '🤲', id: 'Hari Asyura',          en: 'Day of Ashura' },
+    { b: 3,  t: 12, emoji: '🕌', id: 'Maulid Nabi ﷺ',        en: 'Mawlid an-Nabi' },
+    { b: 7,  t: 27, emoji: '✨', id: "Isra Mi'raj",          en: "Isra' and Mi'raj" },
+    { b: 8,  t: 15, emoji: '🌟', id: "Nisfu Sya'ban",        en: "Mid-Sha'ban" },
+    { b: 9,  t: 1,  emoji: '🌙', id: 'Awal Ramadhan',        en: 'First of Ramadan' },
+    { b: 9,  t: 17, emoji: '📖', id: 'Nuzulul Qur\'an',      en: 'Nuzul al-Qur\'an' },
+    { b: 10, t: 1,  emoji: '🎉', id: 'Idul Fitri',           en: 'Eid al-Fitr' },
+    { b: 12, t: 9,  emoji: '🏔️', id: 'Hari Arafah',          en: 'Day of Arafah' },
+    { b: 12, t: 10, emoji: '🐐', id: 'Idul Adha',            en: 'Eid al-Adha' },
+    { b: 12, t: 11, emoji: '🍖', id: 'Hari Tasyrik',         en: 'Days of Tashriq' },
+    { b: 12, t: 12, emoji: '🍖', id: 'Hari Tasyrik',         en: 'Days of Tashriq' },
+    { b: 12, t: 13, emoji: '🍖', id: 'Hari Tasyrik',         en: 'Days of Tashriq' }
+  ],
+
+  // Tanggal Masehi → { t, b, y } Hijriyah. null bila peramban tak mendukung.
+  _keHijri(d) {
+    try {
+      const p = new Intl.DateTimeFormat('en-u-ca-islamic-umalqura', {
+        day: 'numeric', month: 'numeric', year: 'numeric', timeZone: 'UTC'
+      }).formatToParts(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
+      const ambil = tipe => +p.find(x => x.type === tipe)?.value;
+      const t = ambil('day'), b = ambil('month'), y = ambil('year');
+      return (t && b && y) ? { t, b, y } : null;
+    } catch (_) { return null; }
+  },
+
+  _namaBulanHijri(b) { return this.BULAN_HIJRI[b - 1] || ''; },
+
+  // Hari besar pada tanggal Hijriyah tsb (atau null).
+  _hariBesar(h) {
+    if (!h) return null;
+    return this.HARI_BESAR.find(x => x.b === h.b && x.t === h.t) || null;
+  },
+
+  // Amalan sunnah berulang: Ayyamul Bidh (13–15 tiap bulan) & puasa Senin–Kamis.
+  _sunnah(h, tglMasehi) {
+    const out = [];
+    if (h && [13, 14, 15].includes(h.t)) out.push(tr('Ayyamul Bidh', 'Ayyam al-Bidh'));
+    const hari = tglMasehi.getDay();
+    if (hari === 1 || hari === 4) out.push(tr('Puasa sunnah', 'Sunnah fast'));
+    return out;
+  },
+
+  renderKalender(el) {
+    const kini = new Date();
+    const hariIni = todayStr();
+
+    // Bulan Masehi yang sedang ditampilkan (digeser lewat tombol ‹ ›).
+    const tampil = new Date(kini.getFullYear(), kini.getMonth() + this.kalGeser, 1);
+    const thn = tampil.getFullYear(), bln = tampil.getMonth();
+
+    const hijriHariIni = this._keHijri(kini);
+    if (!hijriHariIni) {
+      el.innerHTML = `<div class="card empty-state"><ion-icon name="calendar-outline"></ion-icon>
+        <div class="es-title">${tr('Kalender Hijriyah tidak didukung peramban ini', 'Hijri calendar is not supported by this browser')}</div>
+        <div class="es-sub">${tr('Coba buka lewat Chrome/Safari versi terbaru.', 'Try opening it in an up-to-date Chrome/Safari.')}</div>
+      </div>`;
+      return;
+    }
+
+    const jmlHari = new Date(thn, bln + 1, 0).getDate();
+    const kosongAwal = new Date(thn, bln, 1).getDay();   // 0 = Minggu
+
+    // Rentang Hijriyah bulan ini (mis. "Rajab – Sya'ban 1447 H") untuk judul.
+    const hAwal = this._keHijri(new Date(thn, bln, 1));
+    const hAkhir = this._keHijri(new Date(thn, bln, jmlHari));
+    const labelHijri = hAwal && hAkhir
+      ? (hAwal.b === hAkhir.b
+          ? `${this._namaBulanHijri(hAwal.b)} ${hAwal.y} H`
+          : `${this._namaBulanHijri(hAwal.b)} – ${this._namaBulanHijri(hAkhir.b)} ${hAkhir.y} H`)
+      : '';
+
+    // HARI & BULAN global sudah mengikuti bahasa aktif (lihat js/i18n.js).
+    const NAMA_HARI = HARI.map(h => h.slice(0, 3));
+
+    // Sel kalender: tanggal Masehi besar + tanggal Hijriyah kecil + titik penanda.
+    const sel = [];
+    for (let i = 0; i < kosongAwal; i++) sel.push('<div class="kal-sel kal-kosong"></div>');
+    const penting = [];   // hari besar di bulan ini (untuk daftar di bawah)
+
+    for (let t = 1; t <= jmlHari; t++) {
+      const d = new Date(thn, bln, t);
+      const iso = todayStr(d);
+      const h = this._keHijri(d);
+      const besar = this._hariBesar(h);
+      const sunnah = this._sunnah(h, d);
+      if (besar) penting.push({ iso, d, h, besar });
+
+      const kelas = [
+        'kal-sel',
+        iso === hariIni ? 'kal-kini' : '',
+        besar ? 'kal-besar' : '',
+        !besar && sunnah.length ? 'kal-sunnah' : '',
+        d.getDay() === 5 ? 'kal-jumat' : ''
+      ].filter(Boolean).join(' ');
+
+      const judul = [
+        h ? `${h.t} ${this._namaBulanHijri(h.b)} ${h.y} H` : '',
+        besar ? tr(besar.id, besar.en) : '',
+        ...sunnah
+      ].filter(Boolean).join(' · ');
+
+      sel.push(`
+        <div class="${kelas}" title="${esc(judul)}">
+          <div class="kal-m">${t}</div>
+          <div class="kal-h">${h ? h.t : ''}</div>
+          ${besar ? `<div class="kal-dot">${besar.emoji}</div>` : ''}
+        </div>`);
+    }
+
+    // Hari besar BERIKUTNYA dalam 12 bulan ke depan — supaya selalu ada hitung
+    // mundur walau bulan yang sedang dilihat sedang kosong dari hari besar.
+    const mendatang = [];
+    for (let i = 0; i < 400 && mendatang.length < 5; i++) {
+      const d = new Date(kini.getFullYear(), kini.getMonth(), kini.getDate() + i);
+      const besar = this._hariBesar(this._keHijri(d));
+      if (besar) mendatang.push({ d, besar, sisa: i });
+    }
+    const sisaTeks = n => n === 0 ? tr('Hari ini', 'Today')
+                        : n === 1 ? tr('Besok', 'Tomorrow')
+                        : tr(`${n} hari lagi`, `in ${n} days`);
+
+    el.innerHTML = `
+      <div class="card" style="background:linear-gradient(135deg,var(--brand),var(--brand-dark));color:#fff;">
+        <div style="font-size:.78rem;opacity:.9;">${tr('Hari ini', 'Today')}</div>
+        <div style="font-size:1.25rem;font-weight:800;margin-top:2px;">
+          ${hijriHariIni.t} ${this._namaBulanHijri(hijriHariIni.b)} ${hijriHariIni.y} H
+        </div>
+        <div style="font-size:.84rem;opacity:.92;margin-top:2px;">${fmtDate(hariIni, { weekday: true })}</div>
+      </div>
+
+      <div class="section-head" style="margin-top:20px;">
+        <h2 style="font-size:1rem;">${BULAN[bln]} ${thn}${labelHijri ? ` <span style="font-weight:600;color:var(--text-3);font-size:.85rem;">· ${labelHijri}</span>` : ''}</h2>
+        <div style="display:flex;gap:6px;">
+          <button class="mini-icon-btn" id="kalPrev"><ion-icon name="chevron-back-outline"></ion-icon></button>
+          ${this.kalGeser !== 0 ? `<button class="btn btn-sm" id="kalNow">${tr('Bulan ini', 'This month')}</button>` : ''}
+          <button class="mini-icon-btn" id="kalNext"><ion-icon name="chevron-forward-outline"></ion-icon></button>
+        </div>
+      </div>
+
+      <div class="card" style="padding:12px;">
+        <div class="kal-grid kal-head">${NAMA_HARI.map(h => `<div>${h}</div>`).join('')}</div>
+        <div class="kal-grid">${sel.join('')}</div>
+        <div style="display:flex;gap:12px;flex-wrap:wrap;margin-top:12px;font-size:.72rem;color:var(--text-3);">
+          <span><span class="kal-cip kal-besar"></span> ${tr('Hari besar Islam', 'Islamic holiday')}</span>
+          <span><span class="kal-cip kal-sunnah"></span> ${tr('Amalan sunnah (Ayyamul Bidh / puasa Senin–Kamis)', 'Sunnah (Ayyam al-Bidh / Mon–Thu fast)')}</span>
+        </div>
+      </div>
+
+      ${penting.length ? `
+        <div class="section-head" style="margin-top:22px;"><h2 style="font-size:1rem;">${tr('Hari besar bulan ini', 'Holidays this month')}</h2></div>
+        <div style="display:flex;flex-direction:column;gap:8px;">
+          ${penting.map(p => `
+            <div class="list-item">
+              <div class="item-icon" style="background:var(--brand-soft);">${p.besar.emoji}</div>
+              <div style="flex:1;min-width:0;">
+                <div style="font-weight:700;font-size:.9rem;">${tr(p.besar.id, p.besar.en)}</div>
+                <div style="font-size:.78rem;color:var(--text-3);">${fmtDate(p.iso, { weekday: true })} · ${p.h.t} ${this._namaBulanHijri(p.h.b)} ${p.h.y} H</div>
+              </div>
+            </div>`).join('')}
+        </div>` : ''}
+
+      <div class="section-head" style="margin-top:22px;"><h2 style="font-size:1rem;">${tr('Hari besar berikutnya', 'Upcoming holidays')}</h2></div>
+      <div style="display:flex;flex-direction:column;gap:8px;">
+        ${mendatang.map(m => `
+          <div class="list-item">
+            <div class="item-icon" style="background:var(--fin-soft);">${m.besar.emoji}</div>
+            <div style="flex:1;min-width:0;">
+              <div style="font-weight:700;font-size:.9rem;">${tr(m.besar.id, m.besar.en)}</div>
+              <div style="font-size:.78rem;color:var(--text-3);">${fmtDate(todayStr(m.d), { weekday: true })}</div>
+            </div>
+            <span class="badge ${m.sisa <= 1 ? 'badge-red' : 'badge-gray'}">${sisaTeks(m.sisa)}</span>
+          </div>`).join('')}
+      </div>
+
+      <div class="ts-note" style="margin-top:16px;">
+        ${tr('Tanggal Hijriyah dihitung dengan metode hisab (Umm al-Qura). Penetapan awal Ramadhan, Idul Fitri, dan Idul Adha oleh pemerintah bisa berbeda 1 hari.',
+             'Hijri dates use the Umm al-Qura calculation. Official government dates for Ramadan, Eid al-Fitr, and Eid al-Adha may differ by a day.')}
+      </div>`;
+
+    $('#kalPrev', el).onclick = () => { this.kalGeser--; this.renderKalender(el); };
+    $('#kalNext', el).onclick = () => { this.kalGeser++; this.renderKalender(el); };
+    $('#kalNow', el) && ($('#kalNow', el).onclick = () => { this.kalGeser = 0; this.renderKalender(el); });
   },
 
   /* ============ TAB: PANDUAN IBADAH ============ */

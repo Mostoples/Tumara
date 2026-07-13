@@ -288,14 +288,290 @@ function printHTML(title, innerHTML) {
   if (!w) { toast(tr('Izinkan pop-up untuk mencetak/unduh PDF.', 'Allow pop-ups to print/download PDF.'), 'warning'); return; }
   w.document.write(`<!DOCTYPE html><html><head><meta charset="utf-8"><title>${title}</title>
     <style>
-      *{box-sizing:border-box;} body{font-family:Arial,Helvetica,sans-serif;color:#111;padding:28px;font-size:12px;}
-      h1,h2,h3{margin:0 0 6px;} table{width:100%;border-collapse:collapse;margin-top:10px;}
-      th,td{border:1px solid #999;padding:6px 8px;text-align:left;} th{background:#eee;}
-      .red{color:#c00;font-weight:bold;} .center{text-align:center;} .muted{color:#555;}
+      /* Margin kertas diatur di @page (bukan padding body), supaya isi memenuhi
+         lebar kertas dari tepi margin ke tepi margin — tanpa itu padding body
+         menumpuk di atas margin printer dan hasilnya menyempit ke tengah. */
+      @page{size:A4;margin:12mm;}
+      *{box-sizing:border-box;}
+      body{font-family:Arial,Helvetica,sans-serif;color:#000;margin:0;padding:20px;font-size:12px;}
+      @media print{body{padding:0;}}
+      h1,h2,h3{margin:0 0 6px;}
+
+      /* Semua tabel: satu garis tegas, tanpa garis dobel (border-collapse),
+         bingkai luar sedikit lebih tebal — seragam dengan kop. */
+      table{width:100%;border-collapse:collapse;border:1.5px solid #000;margin-top:10px;}
+      /* Hanya tabel yang menyertakan <colgroup> yang lebar kolomnya dikunci.
+         Kop TIDAK boleh kena table-layout:fixed — sel logo & kotak kode form
+         mengandalkan lebar mengikuti isi. Peramban tanpa :has() jatuh ke
+         layout otomatis, dan lebar di colgroup tetap jadi acuan. */
+      table:has(> colgroup){table-layout:fixed;}
+      th,td{border:1px solid #000;padding:6px 8px;text-align:left;vertical-align:middle;}
+      /* Isi sel boleh dipenggal bila terlalu panjang; JUDUL KOLOM tidak —
+         tanpa ini judul sempit pecah di tengah kata ("Jumla/h Siswa"). */
+      td{overflow-wrap:break-word;}
+      th{
+        background:#eee;text-align:center;font-size:11px;overflow-wrap:normal;
+        -webkit-print-color-adjust:exact;print-color-adjust:exact;
+      }
+      .nowrap{white-space:nowrap;}
+      /* Kepala tabel diulang di tiap halaman & baris tidak terpotong antar halaman. */
+      thead{display:table-header-group;}
+      tr{page-break-inside:avoid;break-inside:avoid;}
+      .red{color:#c00;font-weight:bold;} .center{text-align:center;} .muted{color:#333;}
+
+      /* Kop surat (lihat js/kop.js) — meniru kop cetak sekolah: seluruh bagian
+         (logo | identitas | kotak kode form) berada dalam satu bingkai bertepi,
+         dengan huruf serif seperti dokumen resmi. */
+      table.kop{
+        width:100%;margin:0 0 12px;border:2px solid #000;border-collapse:collapse;
+        font-family:"Times New Roman",Times,serif;
+      }
+      table.kop td{border:1px solid #000;padding:5px 8px;vertical-align:middle;}
+      table.kop td.kop-logo{width:1%;padding:5px 8px;text-align:center;}
+      table.kop td.kop-logo img{max-height:70px;max-width:96px;display:block;margin:0 auto;}
+      /* Tinggi minimum → kop tidak "kempis" saat identitasnya pendek. */
+      table.kop td.kop-id{text-align:center;padding:6px 12px;height:74px;}
+      .kop-lembaga{letter-spacing:.02em;line-height:1.3;}
+      .kop-sekolah{font-weight:bold;letter-spacing:.03em;line-height:1.2;margin:2px 0 3px;}
+      .kop-alamat{font-size:11px;line-height:1.4;}
+      .kop-kontak{font-size:10.5px;line-height:1.4;}
+      /* Ukuran menyesuaikan panjang teks — kelasnya dipilih di js/kop.js. */
+      .kop-sekolah.sk-l{font-size:25px;}
+      .kop-sekolah.sk-m{font-size:21px;}
+      .kop-sekolah.sk-s{font-size:18px;}
+      .kop-lembaga.lb-l{font-size:14px;}
+      .kop-lembaga.lb-m{font-size:12.5px;}
+      .kop-lembaga.lb-s{font-size:11px;}
+      /* Sel kotak kode form (kanan). width:1% + nowrap → selebar isinya saja,
+         sisa lebar diberikan ke kolom identitas sekolah. */
+      table.kop td.kop-kb{
+        width:1%;padding:4px 10px;font-size:11px;
+        text-align:center;vertical-align:middle;white-space:nowrap;
+      }
+      table.kop td.kop-box-judul{font-size:15px;font-weight:bold;letter-spacing:.04em;padding:5px 14px;}
+      table.kop td.kop-hal{min-width:58px;}
+      .kop-plain{margin:0 0 8px;}
+      /* Baris keterangan di bawah kop (Mata Pelajaran, Kelas, …) */
+      table.kop-meta{width:auto;margin:0 0 10px;border:none;font-family:"Times New Roman",Times,serif;}
+      table.kop-meta td{border:none;padding:1px 4px 1px 0;font-size:12px;}
+      .km-l{min-width:110px;} .km-s{width:8px;} .km-v{font-weight:bold;}
+
       @media print{.no-print{display:none;}}
     </style></head><body>${innerHTML}
     <div class="no-print" style="margin-top:20px;text-align:center;">
       <button onclick="window.print()" style="padding:8px 18px;font-size:14px;cursor:pointer;">🖨️ Cetak / Simpan PDF</button>
     </div></body></html>`);
   w.document.close();
+}
+
+/* ============================================================
+   Prioritas tugas — P1/P2/P3
+   Dipakai guru (saat mengirim tugas) dan siswa (saat melihatnya),
+   jadi definisinya satu tempat agar label & warnanya tak berbeda.
+   Data lama tanpa `prioritas` dianggap P2/Sedang.
+   ============================================================ */
+const PRIORITAS = {
+  tinggi: { kode: 'P1', urut: 0, badge: 'badge-red',   nama: () => tr('Tinggi', 'High') },
+  sedang: { kode: 'P2', urut: 1, badge: 'badge-amber', nama: () => tr('Sedang', 'Medium') },
+  rendah: { kode: 'P3', urut: 2, badge: 'badge-gray',  nama: () => tr('Rendah', 'Low') }
+};
+
+function prioKey(p) { return PRIORITAS[p] ? p : 'sedang'; }
+function prioUrut(p) { return PRIORITAS[prioKey(p)].urut; }
+
+// Badge "P1 · Tinggi" — satu bentuk untuk halaman guru & siswa.
+function prioBadge(p) {
+  const d = PRIORITAS[prioKey(p)];
+  return `<span class="badge ${d.badge}"><b>${d.kode}</b> · ${d.nama()}</span>`;
+}
+
+// Versi ringkas ("P1") untuk baris sempit seperti kartu beranda.
+function prioTag(p) {
+  const d = PRIORITAS[prioKey(p)];
+  return `<span class="badge ${d.badge}" title="${tr('Prioritas', 'Priority')} ${d.nama()}"><b>${d.kode}</b></span>`;
+}
+
+/* ============================================================
+   makeSortable — susun ulang elemen dengan geser (drag & drop)
+   ------------------------------------------------------------
+   Memakai Pointer Events, jadi jalan dengan sentuhan (HP) maupun
+   tetikus — HTML5 drag-and-drop tidak bekerja di layar sentuh.
+   Elemen yang digeser dipindah langsung di DOM; onEnd menerima
+   urutan `data-<key>` yang baru untuk disimpan.
+   ============================================================ */
+function makeSortable(container, { itemSelector, key, ignore, onEnd }) {
+  if (!container) return;
+
+  const TEPI = 90;   // jarak dari tepi layar tempat halaman mulai ikut menggulir
+  const LAJU = 18;   // kecepatan maksimum gulir otomatis (px per frame)
+
+  const items = () => [...container.querySelectorAll(itemSelector)];
+
+  // Elemen yang benar-benar menggulir; null berarti jendela (kasus Tumara).
+  const cariScroller = () => {
+    let p = container.parentElement;
+    while (p && p !== document.body && p !== document.documentElement) {
+      const o = getComputedStyle(p).overflowY;
+      if ((o === 'auto' || o === 'scroll') && p.scrollHeight > p.clientHeight) return p;
+      p = p.parentElement;
+    }
+    return null;
+  };
+
+  let d = null;   // status seret yang sedang berjalan
+
+  const gulirX = () => (d.sc ? d.sc.scrollLeft : window.scrollX);
+  const gulirY = () => (d.sc ? d.sc.scrollTop  : window.scrollY);
+
+  // Posisi kursor dalam koordinat ISI container. Selisih gulir ikut dihitung,
+  // jadi tetap sahih walau halaman bergulir di tengah seretan.
+  const posisi = () => ({
+    x: d.cx - d.rect0.left + (gulirX() - d.s0x),
+    y: d.cy - d.rect0.top  + (gulirY() - d.s0y)
+  });
+
+  /* Pindahkan placeholder ke slot terdekat.
+
+     Geometri slot DIBEKUKAN saat seretan dimulai. Ini kuncinya: placeholder
+     berukuran sama persis dengan tile yang diangkat, jadi tata letak grid tidak
+     berubah selama seretan — titik tengah tiap slot tetap. Versi sebelumnya
+     mengukur ulang getBoundingClientRect() tiap gerakan; karena tile lain
+     bergeser setiap placeholder pindah, titik tengahnya ikut bergeser dan
+     placeholder melompat bolak-balik antara dua slot (inilah kedipan cepat itu). */
+  const pindahPlaceholder = () => {
+    const p = posisi();
+    let idx = 0, terdekat = Infinity;
+    d.slots.forEach((s, i) => {
+      const jarak = Math.hypot(p.x - s.cx, p.y - s.cy);
+      if (jarak < terdekat) { terdekat = jarak; idx = i; }
+    });
+    if (idx === d.idx) return;            // slot tak berubah → jangan sentuh DOM
+    d.idx = idx;
+    const ref = d.lain[idx] || null;
+    (ref ? ref.parentNode : container).insertBefore(d.ph, ref);
+  };
+
+  const frame = () => {
+    if (!d) return;
+
+    // Gulir otomatis saat kursor mendekati tepi layar, supaya tile bisa dibawa
+    // ke bagian halaman yang belum terlihat (di laptop/PC halaman tidak ikut
+    // bergerak sendiri mengikuti kursor).
+    const kotak = d.sc ? d.sc.getBoundingClientRect() : { top: 0, bottom: window.innerHeight };
+    let v = 0;
+    if (d.cy < kotak.top + TEPI)         v = -LAJU * Math.min(1, (kotak.top + TEPI - d.cy) / TEPI);
+    else if (d.cy > kotak.bottom - TEPI) v =  LAJU * Math.min(1, (d.cy - (kotak.bottom - TEPI)) / TEPI);
+    // behavior:'instant' WAJIB: style.css memasang `html { scroll-behavior: smooth }`,
+    // dan tanpa ini setiap frame memicu animasi gulir halus yang saling menimpa —
+    // hasilnya halaman malah tersendat atau tidak bergerak sama sekali.
+    if (v) {
+      const t = d.sc ? d.sc : window;
+      const kini = d.sc ? d.sc.scrollTop : window.scrollY;
+      t.scrollTo({ top: kini + v, behavior: 'instant' });
+    }
+
+    // Tile mengikuti kursor. translate3d (bukan left/top) → digarap compositor,
+    // tanpa reflow tiap frame, jadi gerakannya mulus.
+    d.el.style.transform =
+      `translate3d(${d.cx - d.dx - d.ox}px, ${d.cy - d.dy - d.oy}px, 0) scale(1.04)`;
+    pindahPlaceholder();
+    d.raf = requestAnimationFrame(frame);
+  };
+
+  const selesai = e => {
+    if (!d) return;
+    const { el, ph, raf, pid } = d;
+    cancelAnimationFrame(raf);
+    d = null;
+
+    el.classList.remove('sort-dragging');
+    ph.replaceWith(el);   // kembali ke grid, di posisi placeholder
+
+    // Kembalikan style asli tile (tile menu tak punya style inline → dibuang,
+    // termasuk atribut kosong sisa Object.assign saat seret dimulai).
+    el.style.cssText = el._sortCss || '';
+    if (!el.getAttribute('style')) el.removeAttribute('style');
+    container.classList.remove('sort-active');
+    try { container.releasePointerCapture(pid); } catch (_) {}
+
+    onEnd && onEnd(items().map(i => i.dataset[key]));
+  };
+
+  container.addEventListener('pointerdown', e => {
+    if (!container.classList.contains('sort-on')) return;   // hanya saat mode atur
+    if (ignore && e.target.closest(ignore)) return;         // mis. tombol sembunyikan
+    const el = e.target.closest(itemSelector);
+    if (!el || !container.contains(el)) return;
+    e.preventDefault();
+
+    const sc = cariScroller();
+    const rect0 = container.getBoundingClientRect();
+    const semua = items();
+    const r = el.getBoundingClientRect();
+
+    const ph = document.createElement('div');
+    ph.className = 'sort-ph';
+    ph.style.width = `${r.width}px`;
+    ph.style.height = `${r.height}px`;
+
+    d = {
+      el, ph, sc, rect0, pid: e.pointerId,
+      s0x: sc ? sc.scrollLeft : window.scrollX,
+      s0y: sc ? sc.scrollTop  : window.scrollY,
+      dx: e.clientX - r.left,          // titik pegang, agar tile tidak "meloncat"
+      dy: e.clientY - r.top,
+      cx: e.clientX, cy: e.clientY,
+      idx: semua.indexOf(el),
+      lain: semua.filter(i => i !== el),
+      // Titik tengah tiap slot, relatif ke container, dibekukan di sini.
+      slots: semua.map(i => {
+        const b = i.getBoundingClientRect();
+        return { cx: b.left - rect0.left + b.width / 2, cy: b.top - rect0.top + b.height / 2 };
+      }),
+      raf: 0
+    };
+
+    el._sortCss = el.getAttribute('style') || '';
+    el.parentNode.insertBefore(ph, el);
+
+    /* Tile yang diseret DIPINDAH ke <body>.
+
+       Sebabnya: `#view` memakai `animation: fadeUp … both`, dan fill-mode `both`
+       menahan keyframe terakhir selamanya — jadi #view punya transform identitas
+       yang permanen. Elemen ber-transform menjadi containing block untuk anak
+       `position: fixed`, sehingga tile "fixed" tadi ikut tergulir bersama halaman
+       dan meleset makin jauh dari kursor. Diangkat ke <body>, acuannya kembali
+       ke layar. */
+    document.body.appendChild(el);
+    Object.assign(el.style, {
+      position: 'fixed', left: '0', top: '0', margin: '0', transform: 'none',
+      width: `${r.width}px`, height: `${r.height}px`,
+      zIndex: '900', pointerEvents: 'none', touchAction: 'none',
+      transition: 'none',        // .guru-tile punya transition transform → tanpa ini gerakannya tertinggal
+      willChange: 'transform'
+    });
+
+    // Kalibrasi titik nol: kalau suatu saat <body> pun berada di dalam elemen
+    // ber-transform, offset ini yang membuat tile tetap pas di bawah kursor.
+    const o = el.getBoundingClientRect();
+    d.ox = o.left;
+    d.oy = o.top;
+
+    el.classList.add('sort-dragging');
+    container.classList.add('sort-active');
+    container.setPointerCapture(e.pointerId);
+    d.raf = requestAnimationFrame(frame);
+  });
+
+  // pointermove hanya mencatat posisi; pemindahan digarap di rAF agar satu
+  // frame = satu pembaruan (beberapa event per frame tidak menumpuk reflow).
+  container.addEventListener('pointermove', e => {
+    if (!d) return;
+    e.preventDefault();
+    d.cx = e.clientX;
+    d.cy = e.clientY;
+  });
+
+  container.addEventListener('pointerup', selesai);
+  container.addEventListener('pointercancel', selesai);
 }

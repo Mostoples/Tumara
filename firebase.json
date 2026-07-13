@@ -15,6 +15,7 @@
       "scripts/**",
       "*.md",
       "*.pdf",
+      "*.docx",
       "*.log",
       "deploy-rules.sh"
     ],

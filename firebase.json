@@ -6,13 +6,17 @@
   "hosting": {
     "public": ".",
     "predeploy": [
-      "node -e \"const fs=require('fs');const v=new Date().toISOString().replace(/[-:T]/g,'').slice(0,14);fs.writeFileSync('version.json',JSON.stringify({version:v}));console.log('version.json ->',v)\""
+      "node scripts/stamp-version.js"
     ],
     "ignore": [
       "firebase.json",
       "**/.*",
       "**/node_modules/**",
-      "*.md"
+      "scripts/**",
+      "*.md",
+      "*.pdf",
+      "*.log",
+      "deploy-rules.sh"
     ],
     "headers": [
       {

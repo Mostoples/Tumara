@@ -196,12 +196,19 @@ const Teacher = {
   // Nama kelas aktif dicatat di sini karena dipakai juga untuk nama file ekspor CSV.
   _classBar(cls) {
     this._activeClsNama = cls?.nama || '';
+    const back = this._backKelasBtn();
+    // Tab yang dibuka dari menu di detail Kelas & Siswa sudah membawa kelasnya
+    // dari sana, jadi jalan keluarnya cukup "Kembali ke Kelas". "Ganti Kelas"
+    // hanya untuk tab yang dimasuki lewat nav — di situ kelas dipilih di
+    // gerbang tab ini sendiri, jadi mengulanginya masuk akal.
+    const ganti = back ? '' : `
+      <button class="btn btn-sm" id="tBackCls">
+        <ion-icon name="arrow-back-outline"></ion-icon> ${tr('Ganti Kelas', 'Change Class')}
+      </button>`;
     return `
       <div class="class-bar">
-        ${this._backKelasBtn()}
-        <button class="btn btn-sm" id="tBackCls">
-          <ion-icon name="arrow-back-outline"></ion-icon> ${tr('Ganti Kelas', 'Change Class')}
-        </button>
+        ${back}
+        ${ganti}
         <span class="class-bar-name"><ion-icon name="school"></ion-icon> ${esc(cls?.nama || '')}</span>
       </div>`;
   },
@@ -313,7 +320,7 @@ const Teacher = {
   // Pindah ke tab lain lewat elemen nav yang sudah ada (agar judul topbar &
   // status aktif nav ikut terperbarui — logikanya di guru.html).
   _goto(route) {
-    const nav = document.querySelector(`#guruSidebarNav .nav-link[data-route="${route}"], .bnav-item[data-route="${route}"], .bnav-sheet-item[data-route="${route}"]`);
+    const nav = document.querySelector(`#guruSidebarNav .nav-link[data-route="${route}"]`);
     if (nav) nav.click();
     else { this.tab = route; this.render(this._el); }
   },
@@ -646,11 +653,10 @@ const Teacher = {
     if (this.classId && !taught.find(c => c.id === this.classId)) this.classId = null;
 
     const desktop = this._isKelasDesktop();
-    // Desktop: tak perlu menekan tombol kelas dulu — kelas pertama langsung
-    // terbuka; daftar kelas di kolom kiri untuk berpindah.
-    if (desktop && !this.classId) this.classId = taught[0].id;
 
-    // HP/tablet kecil: gerbang "pilih kelas" (dikelompokkan per tingkat X/XI/XII).
+    // Gerbang "pilih kelas" (dikelompokkan per tingkat X/XI/XII) — berlaku di
+    // SEMUA lebar layar. Detail kelas baru dibuka setelah guru memilih; tidak
+    // ada kelas yang terpilih otomatis, agar tak salah kelas tanpa sadar.
     if (!this.classId) {
       el.innerHTML = head + this._classGrid(taught);
       $('#pickKelas', el).onclick = () => this._pickKelasModal(allClasses);
@@ -662,8 +668,10 @@ const Teacher = {
     const active = taught.find(c => c.id === this.classId);
     const students = await this._students(active.id);
 
+    // Desktop: master–detail. Kolom kiri untuk lompat antar kelas yang diampu,
+    // baris atas untuk kembali ke gerbang pilih kelas.
     if (desktop) {
-      el.innerHTML = head + `
+      el.innerHTML = this._classBar(active) + `
         <div class="kelas-split">
           <aside class="kelas-aside">
             <div class="kelas-sec" style="margin-top:0;">${tr('Kelas', 'Classes')}</div>
@@ -677,7 +685,7 @@ const Teacher = {
           </aside>
           <div class="kelas-detail">${this._kelasDetail(active, students)}</div>
         </div>`;
-      $('#pickKelas', el).onclick = () => this._pickKelasModal(allClasses);
+      this._bindClassBar(el);       // "Ganti Kelas" → balik ke gerbang
       this._bindClassGate(el);      // klik kelas di kolom kiri → ganti kelas aktif
       this._bindKelasDetail(el);
       return;
@@ -2311,15 +2319,5 @@ const Teacher = {
         };
       }
     });
-  },
-
-  toggleMoreSheet(open) {
-    const sheet = $('#bnavSheet'), btn = $('#bnavMore');
-    if (!sheet || !btn) return;
-    const show = open === undefined ? !sheet.classList.contains('open') : open;
-    sheet.classList.toggle('open', show);
-    btn.classList.toggle('open', show);
-    const icon = $('#bnavMoreIcon');
-    if (icon) icon.setAttribute('name', show ? 'close' : 'apps');
   }
 };

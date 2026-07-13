@@ -948,7 +948,8 @@ ion-icon { pointer-events: none; flex-shrink: 0; }
   .topbar-title { font-size: 1.3rem; }
 
   /* Topbar ramping di mobile: judul boleh dipotong (…), tombol tak terdorong keluar layar */
-  .topbar > div:first-child { min-width: 0; flex: 1; }
+  .topbar > div:first-child,
+  .topbar .topbar-titles { min-width: 0; flex: 1; }
   .topbar-title { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .topbar-sub { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
@@ -1682,4 +1683,18 @@ ion-icon { pointer-events: none; flex-shrink: 0; }
 
 @media (max-width: 899px) {
   .kelas-split { grid-template-columns: 1fr; }
+}
+
+/* ============================================================
+   SHELL TANPA BOTTOM NAV (portal guru)
+   Sidebar tetap jadi navigasi di desktop; di mobile sidebar
+   disembunyikan dan Beranda-lah hub menunya, jadi topbar dapat
+   tombol pulang (.nav-home-btn) sebagai satu-satunya jalan balik.
+   ============================================================ */
+.nav-home-btn { display: none; flex-shrink: 0; }
+
+@media (max-width: 860px) {
+  /* Tanpa navbar bawah, ruang 110px untuk menghindarinya tak lagi perlu */
+  .app-shell.no-bnav .view-wrap { padding-bottom: calc(32px + env(safe-area-inset-bottom)); }
+  .app-shell.no-bnav .nav-home-btn { display: grid; }
 }

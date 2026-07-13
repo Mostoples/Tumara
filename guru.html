@@ -27,7 +27,7 @@
 <body>
 
   <!-- ============ SHELL APLIKASI GURU ============ -->
-  <div id="guruShell" class="app-shell hidden">
+  <div id="guruShell" class="app-shell no-bnav hidden">
 
     <aside class="sidebar">
       <div class="sidebar-logo">
@@ -68,7 +68,12 @@
 
     <main class="main-area">
       <header class="topbar">
-        <div>
+        <!-- Di mobile sidebar disembunyikan & tidak ada bottom nav: tombol ini
+             satu-satunya jalan pulang ke Beranda (hub menu). -->
+        <button class="icon-btn nav-home-btn hidden" id="topHomeBtn" title="Beranda" data-en-title="Home">
+          <ion-icon name="home-outline"></ion-icon>
+        </button>
+        <div class="topbar-titles">
           <h1 class="topbar-title" id="pageTitle">Kelas & Siswa</h1>
           <div class="topbar-sub" id="pageSub"></div>
         </div>
@@ -90,28 +95,6 @@
       </header>
       <div class="view-wrap"><div id="view"></div></div>
     </main>
-
-    <!-- Bottom nav untuk mobile (≤860px) -->
-    <nav class="bottom-nav" id="bottomNav">
-      <a class="bnav-item" data-route="beranda"><ion-icon name="home-outline"></ion-icon><span data-en="Home">Beranda</span></a>
-      <a class="bnav-item" data-route="absensi"><ion-icon name="checkbox-outline"></ion-icon><span data-en="Attendance">Absen</span></a>
-
-      <button class="bnav-more" id="bnavMore" aria-label="Menu lainnya" title="Menu lainnya" data-en-title="More menu">
-        <span class="bnav-more-fab"><ion-icon name="apps" id="bnavMoreIcon"></ion-icon></span>
-      </button>
-
-      <a class="bnav-item" data-route="nilai"><ion-icon name="clipboard-outline"></ion-icon><span data-en="Grades">Nilai</span></a>
-      <a class="bnav-item" data-route="jurnal"><ion-icon name="document-text-outline"></ion-icon><span data-en="Journal">Jurnal</span></a>
-
-      <div class="bnav-sheet" id="bnavSheet">
-        <a class="bnav-sheet-item" data-route="kelas"><ion-icon name="people-outline"></ion-icon><span data-en="Classes & Students">Kelas & Siswa</span></a>
-        <a class="bnav-sheet-item" data-route="jadwal"><ion-icon name="calendar-outline"></ion-icon><span data-en="Schedule">Jadwal Mengajar</span></a>
-        <a class="bnav-sheet-item" data-route="tugaskelas"><ion-icon name="paper-plane-outline"></ion-icon><span data-en="Class Tasks">Tugas Kelas</span></a>
-        <a class="bnav-sheet-item" data-route="jadwalkelas"><ion-icon name="school-outline"></ion-icon><span data-en="Class Schedule">Jadwal Kelas</span></a>
-        <a class="bnav-sheet-item" data-route="ibadah"><ion-icon name="moon-outline"></ion-icon><span data-en="Worship">Ibadah Siswa</span></a>
-        <a class="bnav-sheet-item" data-route="kesehatan"><ion-icon name="heart-outline"></ion-icon><span data-en="Student Health">Kesehatan Siswa</span></a>
-      </div>
-    </nav>
   </div>
 
   <!-- Modal & Toast root -->
@@ -167,15 +150,11 @@
         refreshGuruNav();
         Teacher.render(document.getElementById('view'));
         // update active state in all nav elements
-        document.querySelectorAll('#guruSidebarNav .nav-link, .bnav-item, .bnav-sheet-item').forEach(x =>
+        document.querySelectorAll('#guruSidebarNav .nav-link').forEach(x =>
           x.classList.toggle('active', x.dataset.route === Teacher.tab)
         );
-        // update More button highlight if active route is in sheet
-        const moreBtn = document.getElementById('bnavMore');
-        if (moreBtn) {
-          const inSheet = !!document.getElementById('bnavSheet')?.querySelector(`.bnav-sheet-item[data-route="${Teacher.tab}"]`);
-          moreBtn.classList.toggle('has-active', inSheet);
-        }
+        // Tombol pulang (mobile) tak perlu saat sudah di Beranda
+        document.getElementById('topHomeBtn').classList.toggle('hidden', Teacher.tab === 'beranda');
         // update page title & subtitle
         const titles = {
           beranda:  [tr('Beranda', 'Home'),                        tr('Ringkasan & menu portal guru', 'Overview & teacher menu')],
@@ -241,26 +220,12 @@
       setupDropdownActions('ddPass', 'ddLogout');
       setupDropdownActions('ddPass2', 'ddLogout2');
 
-      document.querySelectorAll('#guruSidebarNav .nav-link, .bnav-item, .bnav-sheet-item').forEach(a => {
-        a.onclick = (e) => {
-          Teacher.tab = a.dataset.route;
-          Teacher.toggleMoreSheet(false);
-          updateView();
-        };
+      document.querySelectorAll('#guruSidebarNav .nav-link').forEach(a => {
+        a.onclick = () => { Teacher.tab = a.dataset.route; updateView(); };
       });
 
-      // Bottom nav "More" sheet toggle
-      const moreBtn = document.getElementById('bnavMore');
-      if (moreBtn) {
-        moreBtn.onclick = (e) => { e.stopPropagation(); Teacher.toggleMoreSheet(); };
-        document.addEventListener('click', (e) => {
-          const sheet = document.getElementById('bnavSheet'), btn = document.getElementById('bnavMore');
-          if (sheet && sheet.classList.contains('open') &&
-              !sheet.contains(e.target) && !btn.contains(e.target)) {
-            Teacher.toggleMoreSheet(false);
-          }
-        });
-      }
+      // Kembali ke Beranda (hub menu) — tampil di mobile saat bukan di Beranda
+      document.getElementById('topHomeBtn').onclick = () => { Teacher.tab = 'beranda'; updateView(); };
 
       // Initial render
       updateView();

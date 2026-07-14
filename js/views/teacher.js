@@ -39,14 +39,6 @@ const Teacher = {
     { k: 'D', id: 'Dispen', en: 'Dispensation' }
   ],
 
-  FARDHU: [
-    { key: 'subuh',   id: 'Subuh',   en: 'Fajr',    emoji: '🌅' },
-    { key: 'dzuhur',  id: 'Dzuhur',  en: 'Dhuhr',   emoji: '☀️' },
-    { key: 'ashar',   id: 'Ashar',   en: 'Asr',     emoji: '🌤️' },
-    { key: 'maghrib', id: 'Maghrib', en: 'Maghrib', emoji: '🌇' },
-    { key: 'isya',    id: 'Isya',    en: 'Isha',    emoji: '🌙' }
-  ],
-
   async render(el) {
     this._el = el || this._el;
     el = this._el;
@@ -233,6 +225,7 @@ const Teacher = {
         ${back}
         ${ganti}
         <span class="class-bar-name"><ion-icon name="school"></ion-icon> ${esc(cls?.nama || '')}</span>
+        ${this._mapelPilih()}
       </div>`;
   },
 
@@ -249,6 +242,90 @@ const Teacher = {
     // Kelas" ikut hilang agar tak menuntun balik ke kelas yang salah.
     if (b) b.onclick = () => { this.classId = null; this._fromKelas = null; this.render(this._el); };
     this._bindBackKelas(el);
+    this._bindMapelPilih(el);
+  },
+
+  /* ============ MAPEL YANG DIAMPU ============
+     Satu guru bisa mengampu beberapa mapel (mis. Informatika + KIK + BP), dan
+     mapel yang sama bisa diajar di kelas yang sama oleh guru berbeda. Karena itu
+     absensi, nilai, dan jurnal disimpan TERPISAH per (kelas × mapel) — kalau
+     tidak, nilai Matematika dan Fisika bercampur di satu tabel.
+
+     Daftarnya di users/{uid}.mapelAmpu (array). Field lama `mapel` (satu teks)
+     tetap diisi dengan mapel pertama, supaya halaman admin & app siswa yang
+     membacanya tidak ikut rusak.
+
+     Rekaman LAMA (dibuat sebelum ada pilihan mapel) tidak punya penanda mapel.
+     Rekaman seperti itu diperlakukan sebagai milik MAPEL PERTAMA — jadi data
+     lama tetap terlihat, bukan hilang diam-diam. */
+
+  _MAPEL_KEY: 'tumara_guru_mapel',
+
+  _mapelList() {
+    const u = DB.user || {};
+    if (Array.isArray(u.mapelAmpu) && u.mapelAmpu.length) return u.mapelAmpu.filter(Boolean);
+    return u.mapel ? [u.mapel] : [];
+  },
+
+  // Mapel aktif — dipulihkan dari localStorage agar refresh tidak melompat balik.
+  get mapel() {
+    const list = this._mapelList();
+    if (!list.length) return '';
+    const simpan = localStorage.getItem(this._MAPEL_KEY);
+    return list.includes(simpan) ? simpan : list[0];
+  },
+  set mapel(v) {
+    if (this._mapelList().includes(v)) localStorage.setItem(this._MAPEL_KEY, v);
+  },
+
+  // Mapel pertama = pemilik rekaman lama yang belum bertanda mapel.
+  _mapelWarisan(m = this.mapel) {
+    return !m || m === (this._mapelList()[0] || '');
+  },
+
+  // Kunci aman untuk id dokumen: tanpa spasi, slash, atau huruf besar.
+  _mapelKey(m = this.mapel) {
+    return String(m || '').trim().toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+  },
+
+  // Apakah rekaman ini milik mapel tsb (default: mapel yang sedang aktif)?
+  _milikMapel(rec, m = this.mapel) {
+    if (!m) return true;                           // guru belum mengisi mapel → tampilkan semua
+    if (!rec?.mapel) return this._mapelWarisan(m); // rekaman lama → milik mapel pertama
+    return rec.mapel === m;
+  },
+
+  // Id dokumen per (kelas × mapel). Tanpa mapel → id lama, persis seperti dulu.
+  _nilaiId(classId = this.classId) {
+    const k = this._mapelKey();
+    return k ? `${classId}__${k}` : classId;
+  },
+  _absenId(classId, tanggal, pertemuan) {
+    const k = this._mapelKey();
+    return k ? `${classId}__${k}_${tanggal}_${pertemuan}` : `${classId}_${tanggal}_${pertemuan}`;
+  },
+
+  // Pemilih mapel di bilah kelas. Muncul hanya bila guru memang mengampu >1 mapel;
+  // guru dengan satu mapel tidak diganggu pilihan yang tak ada gunanya.
+  _mapelPilih() {
+    const list = this._mapelList();
+    if (!list.length) return '';
+    if (list.length === 1) {
+      return `<span class="class-bar-mapel"><ion-icon name="book"></ion-icon> ${esc(list[0])}</span>`;
+    }
+    return `
+      <label class="class-bar-mapel">
+        <ion-icon name="book"></ion-icon>
+        <select id="tMapel" aria-label="${tr('Mata pelajaran', 'Subject')}">
+          ${list.map(m => `<option value="${esc(m)}" ${m === this.mapel ? 'selected' : ''}>${esc(m)}</option>`).join('')}
+        </select>
+      </label>`;
+  },
+
+  _bindMapelPilih(el) {
+    const s = $('#tMapel', el);
+    if (s) s.onchange = () => { this.mapel = s.value; this.render(this._el); };
   },
 
   /* ============ JAM (format Indonesia, 24 jam) ============
@@ -320,6 +397,7 @@ const Teacher = {
     let totalSiswa = 0;
     for (const c of classes) totalSiswa += (await this._students(c.id)).length;
     const isWali = !!u.waliKelasId;
+    const mapelAmpu = this._mapelList();
 
     const tiles = [
       { route: 'kelas',       icon: 'people-outline',        label: tr('Kelas & Siswa', 'Classes'),        color: 'brand' },
@@ -350,7 +428,7 @@ const Teacher = {
           <div class="guru-hero-avatar">${this._avatarHTML(u)}</div>
           <div style="min-width:0;flex:1;">
             <div class="guru-hero-name">${esc(u.nama)}</div>
-            <div class="guru-hero-sub">${esc(u.mapel || u.sekolah || (isInternalEmail(u.email) ? '' : (u.email || '')))}</div>
+            <div class="guru-hero-sub">${esc(this._mapelList().join(' · ') || u.sekolah || (isInternalEmail(u.email) ? '' : (u.email || '')))}</div>
           </div>
           <span class="guru-hero-badge">${isWali ? `<ion-icon name="ribbon"></ion-icon> ${tr('Wali Kelas', 'Homeroom')}` : `<ion-icon name="school"></ion-icon> ${tr('Guru', 'Teacher')}`}</span>
         </div>
@@ -358,7 +436,7 @@ const Teacher = {
 
       <div class="guru-stat-card">
         <div class="guru-stat"><div class="guru-stat-ic" style="color:var(--info);background:var(--info-soft);"><ion-icon name="people"></ion-icon></div><div class="guru-stat-num">${totalSiswa}</div><div class="guru-stat-lb">${tr('Siswa', 'Students')}</div></div>
-        <div class="guru-stat"><div class="guru-stat-ic" style="color:var(--prod);background:var(--prod-soft);"><ion-icon name="book"></ion-icon></div><div class="guru-stat-num" title="${esc(u.mapel || '')}">${esc(u.mapel || '—')}</div><div class="guru-stat-lb">${tr('Mapel', 'Subject')}</div></div>
+        <div class="guru-stat"><div class="guru-stat-ic" style="color:var(--prod);background:var(--prod-soft);"><ion-icon name="book"></ion-icon></div><div class="guru-stat-num" title="${esc(mapelAmpu.join(' · '))}">${mapelAmpu.length > 1 ? mapelAmpu.length : esc(mapelAmpu[0] || '—')}</div><div class="guru-stat-lb">${mapelAmpu.length > 1 ? tr('Mapel diampu', 'Subjects') : tr('Mapel', 'Subject')}</div></div>
         <div class="guru-stat"><div class="guru-stat-ic" style="color:var(--brand);background:var(--brand-soft);"><ion-icon name="albums"></ion-icon></div><div class="guru-stat-num">${classes.length}</div><div class="guru-stat-lb">${tr('Kelas', 'Classes')}</div></div>
       </div>
 
@@ -689,10 +767,15 @@ const Teacher = {
     const cls = classes.find(c => c.id === this.classId);
     const students = await this._students(this.classId);
 
-    // record absensi untuk (kelas, tanggal, pertemuan)
-    const attId = `${this.classId}_${this.attDate}_${this.attPertemuan}`;
+    // record absensi untuk (kelas, MAPEL, tanggal, pertemuan)
+    const attId = this._absenId(this.classId, this.attDate, this.attPertemuan);
     const all = await DB.list('attendance');
-    const rec = all.find(a => a.id === attId) || { entries: {} };
+    // Absensi lama (belum bertanda mapel) memakai id tanpa mapel — tetap dibaca
+    // untuk mapel pertama supaya catatan lama tidak tampak hilang.
+    const attIdLama = `${this.classId}_${this.attDate}_${this.attPertemuan}`;
+    const rec = all.find(a => a.id === attId)
+      || (this._mapelWarisan() ? all.find(a => a.id === attIdLama) : null)
+      || { entries: {} };
     const entries = rec.entries || {};
 
     const legend = this.ABSEN.map(a => `<span class="badge" style="gap:5px;"><span class="att-cell att-${a.k}" style="width:16px;height:16px;pointer-events:none;"></span> ${a.k} = ${tr(a.id, a.en)}</span>`).join(' ');
@@ -777,7 +860,8 @@ const Teacher = {
     if (save) save.onclick = async () => {
       save.disabled = true;
       await DB.set('attendance', attId, {
-        classId: this.classId, tanggal: this.attDate, pertemuan: this.attPertemuan, entries: draft
+        classId: this.classId, mapel: this.mapel, tanggal: this.attDate,
+        pertemuan: this.attPertemuan, entries: draft
       });
       toast(tr('Absensi tersimpan ✅', 'Attendance saved ✅'));
       save.disabled = false;
@@ -801,7 +885,7 @@ const Teacher = {
       const kop = Kop.html({
         judul: tr('DAFTAR HADIR SISWA', 'ATTENDANCE LIST'),
         meta: [
-          [tr('Mata Pelajaran', 'Subject'), DB.user.mapel || ''],
+          [tr('Mata Pelajaran', 'Subject'), this.mapel || ''],
           [tr('Kelas', 'Class'), cls?.nama || ''],
           [tr('Tanggal', 'Date'), fmtDate(this.attDate, { weekday: true })],
           [tr('Pertemuan ke-', 'Meeting #'), this.attPertemuan],
@@ -838,10 +922,19 @@ const Teacher = {
     const activeCls = classes.find(c => c.id === this.classId);
     const students = await this._students(this.classId);
 
+    // Nilai disimpan per (kelas × mapel). Buku nilai lama (id = kelas saja, tanpa
+    // mapel) tetap dipakai untuk mapel pertama; begitu guru mengubah nilainya, isinya
+    // otomatis tersimpan di dokumen bermapel — jadi tidak ada nilai yang hilang.
+    const nilaiId = this._nilaiId();
     const allGrades = await DB.list('grades');
-    const gb = allGrades.find(g => g.id === this.classId) || { id: this.classId, classId: this.classId, columns: [], scores: {} };
+    const gb = allGrades.find(g => g.id === nilaiId)
+      || (this._mapelWarisan() ? allGrades.find(g => g.id === this.classId) : null)
+      || { id: nilaiId, classId: this.classId, columns: [], scores: {} };
     const columns = gb.columns || [];
     const scores = gb.scores || {};
+    const simpanNilai = () => DB.set('grades', nilaiId, {
+      classId: this.classId, mapel: this.mapel, columns, scores
+    });
 
     const avgCols = columns.filter(c => c.avg !== false); // default semua dihitung
     const avgOf = sid => {
@@ -912,13 +1005,13 @@ const Teacher = {
     $$('[data-avgcol]', el).forEach(cb => cb.onchange = async () => {
       const col = columns.find(c => c.id === cb.dataset.avgcol);
       col.avg = cb.checked;
-      await DB.set('grades', this.classId, { classId: this.classId, columns, scores });
+      await simpanNilai();
       this.render(this._el);
     });
 
     // input nilai → simpan (debounce) + update warna & rata2 langsung
     let saveT;
-    const persist = () => { clearTimeout(saveT); saveT = setTimeout(() => DB.set('grades', this.classId, { classId: this.classId, columns, scores }), 400); };
+    const persist = () => { clearTimeout(saveT); saveT = setTimeout(simpanNilai, 400); };
     $$('.cell-input', el).forEach(inp => inp.oninput = () => {
       const sid = inp.dataset.sid, col = inp.dataset.col;
       let val = inp.value === '' ? '' : clamp(+inp.value, 0, 100);
@@ -947,7 +1040,7 @@ const Teacher = {
       const head = Kop.html({
         judul: tr('DAFTAR NILAI', 'GRADE LIST'),
         meta: [
-          [tr('Mata Pelajaran', 'Subject'), DB.user.mapel || ''],
+          [tr('Mata Pelajaran', 'Subject'), this.mapel || ''],
           [tr('Kelas', 'Class'), cls?.nama || ''],
           [tr('Guru', 'Teacher'), DB.user.nama || ''],
           [tr('Tanggal cetak', 'Printed on'), fmtDate(todayStr())]
@@ -983,7 +1076,7 @@ const Teacher = {
           const columns = gb.columns || [];
           if (col) { const c = columns.find(x => x.id === col.id); c.nama = nama; c.kkm = kkm; }
           else columns.push({ id: uid(), nama, kkm, avg: true });
-          await DB.set('grades', this.classId, { classId: this.classId, columns, scores: gb.scores || {} });
+          await DB.set('grades', this._nilaiId(), { classId: this.classId, mapel: this.mapel, columns, scores: gb.scores || {} });
           closeModal();
           toast(tr('Kolom tersimpan.', 'Column saved.'));
           this.render(this._el);
@@ -994,7 +1087,7 @@ const Teacher = {
           const columns = (gb.columns || []).filter(c => c.id !== col.id);
           const scores = gb.scores || {};
           Object.keys(scores).forEach(sid => { if (scores[sid]) delete scores[sid][col.id]; });
-          await DB.set('grades', this.classId, { classId: this.classId, columns, scores });
+          await DB.set('grades', this._nilaiId(), { classId: this.classId, mapel: this.mapel, columns, scores });
           closeModal();
           toast(tr('Kolom dihapus.', 'Column deleted.'));
           this.render(this._el);
@@ -1018,7 +1111,7 @@ const Teacher = {
     const jmlSiswa = students.length;
 
     const journals = (await DB.list('journals'))
-      .filter(j => j.classId === this.classId)
+      .filter(j => j.classId === this.classId && this._milikMapel(j))
       .sort((a, b) => (b.tanggal || '') < (a.tanggal || '') ? -1 : 1);
 
     el.innerHTML = `
@@ -1048,7 +1141,7 @@ const Teacher = {
       <div class="ts-note">
         <ion-icon name="school-outline" style="vertical-align:-2px;"></ion-icon>
         ${tr('Jurnal kelas', 'Journal for class')} <b>${esc(activeCls?.nama || '-')}</b>
-        ${DB.user.mapel ? ` · ${tr('mapel', 'subject')} <b>${esc(DB.user.mapel)}</b>` : ''}
+        ${this.mapel ? ` · ${tr('mapel', 'subject')} <b>${esc(this.mapel)}</b>` : ''}
         · ${jmlSiswa} ${tr('siswa', 'students')}. ${tr('Unduhan hanya berisi kelas ini (tidak tercampur kelas lain).', 'Downloads contain only this class (never mixed with others).')}
       </div>
 
@@ -1125,7 +1218,7 @@ const Teacher = {
       const kop = Kop.html({
         judul: tr('JURNAL GURU', 'TEACHING JOURNAL'),
         meta: [
-          [tr('Mata Pelajaran', 'Subject'), DB.user.mapel || ''],
+          [tr('Mata Pelajaran', 'Subject'), this.mapel || ''],
           [tr('Kelas', 'Class'), activeCls?.nama || ''],
           [tr('Guru', 'Teacher'), DB.user.nama || ''],
           [tr('Bulan', 'Month'), `${BULAN[bln - 1]} ${thn}`]
@@ -1222,7 +1315,8 @@ const Teacher = {
     const nyata = d => d <= jmlHari;
 
     const recs = (await DB.list('attendance'))
-      .filter(a => a.classId === this.classId && String(a.tanggal || '').startsWith(`${bulan}-`));
+      .filter(a => a.classId === this.classId && this._milikMapel(a)
+                && String(a.tanggal || '').startsWith(`${bulan}-`));
 
     /* Satu tanggal bisa punya lebih dari satu pertemuan. Status yang "paling
        berat" yang dipakai (A > I > S > D > H), supaya ketidakhadiran di satu jam
@@ -1340,6 +1434,9 @@ const Teacher = {
         <table class="hd-info">
           <tr><td class="hi-l">${tr('BULAN', 'MONTH')}</td><td>:</td><td class="hi-v">${BULAN[bln - 1]} ${thn}</td></tr>
           <tr><td class="hi-l">${tr('KELAS', 'CLASS')}</td><td>:</td><td class="hi-v">${esc(cls?.nama || '')}</td></tr>
+          ${/* Guru bisa mengampu beberapa mapel di kelas yang sama — tanpa baris ini,
+                daftar hadir tiap mapel terlihat sama persis dan mudah tertukar. */ ''}
+          ${this.mapel ? `<tr><td class="hi-l">${tr('MAPEL', 'SUBJECT')}</td><td>:</td><td class="hi-v">${esc(this.mapel)}</td></tr>` : ''}
           <tr><td class="hi-l">${tr('WALI KELAS', 'HOMEROOM')}</td><td>:</td><td class="hi-v">${esc(wali)}</td></tr>
         </table>
       </div>
@@ -1371,6 +1468,10 @@ const Teacher = {
     const tanggal = j?.tanggal || todayStr();
     let fotoData = j?.foto || '';
     const kelasTerpilih = j?.classId || this.classId;
+    // Mapel jurnal ini: saat mengubah, ikuti mapel jurnalnya (bila masih diampu);
+    // saat membuat baru, ikuti mapel yang sedang aktif.
+    const mapelAmpu = this._mapelList();
+    const mapelTerpilih = (j?.mapel && mapelAmpu.includes(j.mapel)) ? j.mapel : this.mapel;
 
     openModal({
       title: j ? tr('Ubah Jurnal', 'Edit Journal') : tr('Jurnal Mengajar Baru', 'New Teaching Journal'),
@@ -1381,7 +1482,15 @@ const Teacher = {
             ${classes.map(c => `<option value="${c.id}" ${c.id === kelasTerpilih ? 'selected' : ''}>${esc(c.nama)}</option>`).join('')}
           </select>
         </div>
-        ${DB.user.mapel ? `<div class="field"><label>${tr('Mata pelajaran', 'Subject')}</label><input type="text" class="input" value="${esc(DB.user.mapel)}" disabled></div>` : ''}
+        ${mapelAmpu.length ? `
+          <div class="field">
+            <label>${tr('Mata pelajaran', 'Subject')}</label>
+            ${mapelAmpu.length > 1 ? `
+              <select class="select" id="mMapelJ">
+                ${mapelAmpu.map(mp => `<option value="${esc(mp)}" ${mp === mapelTerpilih ? 'selected' : ''}>${esc(mp)}</option>`).join('')}
+              </select>` : `
+              <input type="text" class="input" value="${esc(mapelAmpu[0])}" disabled>`}
+          </div>` : ''}
         <div class="grid grid-2 keep-2" style="gap:12px;">
           <div class="field"><label>${tr('Tanggal', 'Date')}</label><input type="date" class="input" id="mTgl" value="${tanggal}"></div>
           <div class="field"><label>${tr('Pertemuan ke-', 'Meeting #')}</label><input type="number" class="input" id="mPert" min="1" value="${j?.pertemuan || ''}"></div>
@@ -1423,24 +1532,32 @@ const Teacher = {
           const tgl = $('#mTgl', m).value || todayStr();
           const pert = +$('#mPert', m).value || null;
           const kelasId = $('#mKelas', m)?.value || this.classId;
+          // Guru bisa mengampu beberapa mapel → jurnal disimpan untuk mapel yang
+          // DIPILIH di form ini, bukan selalu mapel yang sedang aktif di tab.
+          const mapelJ = $('#mMapelJ', m)?.value || mapelTerpilih || '';
           let hadir = $('#mHadir', m).value === '' ? null : +$('#mHadir', m).value;
-          // auto hadir dari absensi bila kosong
+          // auto hadir dari absensi bila kosong — hanya absensi mapel ini, supaya
+          // jumlah hadir tidak terambil dari absensi mapel lain di hari yang sama.
           if (hadir === null) {
-            const att = (await DB.list('attendance')).filter(a => a.classId === kelasId && a.tanggal === tgl);
+            const att = (await DB.list('attendance'))
+              .filter(a => a.classId === kelasId && a.tanggal === tgl && this._milikMapel(a, mapelJ));
             if (att.length) {
               const merged = {};
               att.forEach(a => Object.assign(merged, a.entries || {}));
               hadir = Object.values(merged).filter(v => v === 'H').length || null;
             }
           }
-          const data = { classId: kelasId, tanggal: tgl, pertemuan: pert, judul, materi: $('#mMateri', m).value.trim(), hadir, foto: fotoData || '' };
+          // `mapel` ikut disimpan supaya jurnal 3 mapel di kelas yang sama tidak
+          // tercampur. Jurnal lama tanpa field ini dianggap milik mapel pertama.
+          const data = { classId: kelasId, mapel: mapelJ, tanggal: tgl, pertemuan: pert, judul, materi: $('#mMateri', m).value.trim(), hadir, foto: fotoData || '' };
           const btn = $('#mSave', m); btn.disabled = true;
           try {
             if (j) await DB.update('journals', j.id, data);
             else await DB.add('journals', data);
-            // Ikut pindah ke kelas yang dipilih, supaya jurnal yang baru disimpan
-            // langsung terlihat (daftar jurnal difilter per kelas aktif).
+            // Ikut pindah ke kelas & mapel yang dipilih, supaya jurnal yang baru
+            // disimpan langsung terlihat (daftarnya difilter per kelas & mapel aktif).
             this.classId = kelasId;
+            if (mapelJ) this.mapel = mapelJ;
             closeModal();
             toast(tr('Jurnal tersimpan 📝', 'Journal saved 📝'));
             this.render(this._el);
@@ -1822,7 +1939,7 @@ const Teacher = {
         <div class="field"><label>${tr('Judul tugas', 'Task title')}</label><input type="text" class="input" id="mJudul" placeholder="${tr('mis. Kerjakan LKS hal. 20', 'e.g. Worksheet page 20')}" value="${esc(task?.judul || '')}"></div>
         <div class="field"><label>${tr('Deskripsi', 'Description')} <span style="font-weight:500;color:var(--text-3)">${tr('(opsional)', '(optional)')}</span></label><textarea class="textarea" id="mDeskripsi" placeholder="${tr('Instruksi atau keterangan tugas…', 'Task instructions or notes…')}">${esc(task?.deskripsi || '')}</textarea></div>
         <div class="grid grid-2 keep-2" style="gap:12px;">
-          <div class="field"><label>${tr('Mata pelajaran', 'Subject')}</label><input type="text" class="input" id="mMapel" value="${esc(task?.mapel || DB.user.mapel || '')}"></div>
+          <div class="field"><label>${tr('Mata pelajaran', 'Subject')}</label><input type="text" class="input" id="mMapel" value="${esc(task?.mapel || this.mapel || '')}"></div>
           <div class="field"><label>${tr('Tenggat', 'Due date')}</label><input type="date" class="input" id="mTenggat" value="${esc(task?.tenggat || '')}"></div>
         </div>
         <div class="field"><label>${tr('Prioritas', 'Priority')}</label>
@@ -2024,12 +2141,25 @@ const Teacher = {
     try { classes = (await DB.gList('school_classes')).sort(this._byOrder); } catch (_) { classes = []; }
     const u = DB.user;
     const isWali = !!u.waliKelasId;
+    // Salinan kerja daftar mapel — baru disimpan saat tombol Simpan ditekan.
+    let mapelAmpu = [...this._mapelList()];
     openModal({
       title: tr('Data Guru', 'Teacher Info'),
       body: `
         <p style="font-size:.84rem;color:var(--text-3);margin-bottom:14px;">${tr('Lengkapi datamu agar fitur kelas, tugas & jadwal berfungsi.', 'Complete your info so class, task & schedule features work.')}</p>
         <div class="field"><label>${tr('Nama guru', 'Teacher name')}</label><input type="text" class="input" id="sgNama" value="${esc(u.nama || '')}"></div>
-        <div class="field"><label>${tr('Mata pelajaran yang diampu', 'Subject you teach')}</label><input type="text" class="input" id="sgMapel" placeholder="${tr('mis. Matematika', 'e.g. Math')}" value="${esc(u.mapel || '')}"></div>
+
+        <div class="field">
+          <label>${tr('Mata pelajaran yang diampu', 'Subjects you teach')}</label>
+          <div class="mapel-add">
+            <input type="text" class="input" id="sgMapel" placeholder="${tr('mis. Matematika', 'e.g. Math')}">
+            <button type="button" class="btn btn-sm" id="sgMapelAdd"><ion-icon name="add"></ion-icon> ${tr('Tambah', 'Add')}</button>
+          </div>
+          <div class="mapel-chips" id="sgMapelList"></div>
+          <div class="hint">${tr('Boleh lebih dari satu. Absensi, nilai, dan jurnal dicatat terpisah untuk tiap mapel.',
+                                  'You may add more than one. Attendance, grades, and journals are kept separately per subject.')}</div>
+        </div>
+
         <div class="field" style="margin-bottom:8px;">
           <label class="setting-row" style="cursor:pointer;padding:10px 0;gap:12px;">
             <ion-icon name="ribbon-outline" style="font-size:1.2rem;color:var(--brand);"></ion-icon>
@@ -2050,10 +2180,49 @@ const Teacher = {
       onMount: m => {
         const wali = $('#sgWali', m), wrap = $('#sgKelasWrap', m);
         wali.onchange = () => { wrap.style.display = wali.checked ? '' : 'none'; };
+
+        // ---- daftar mapel (chip) ----
+        const input = $('#sgMapel', m), daftar = $('#sgMapelList', m);
+        const gambar = () => {
+          daftar.innerHTML = mapelAmpu.length
+            ? mapelAmpu.map((mp, i) => `
+                <span class="mapel-chip">
+                  ${esc(mp)}
+                  <button type="button" class="mapel-x" data-mapel="${i}" title="${tr('Hapus', 'Remove')}">
+                    <ion-icon name="close"></ion-icon>
+                  </button>
+                </span>`).join('')
+            : `<span class="hint">${tr('Belum ada mapel.', 'No subjects yet.')}</span>`;
+          $$('[data-mapel]', daftar).forEach(b => b.onclick = () => {
+            mapelAmpu.splice(+b.dataset.mapel, 1);
+            gambar();
+          });
+        };
+        const tambah = () => {
+          const v = input.value.trim();
+          if (!v) return;
+          // Cegah mapel kembar (beda huruf besar-kecil dianggap sama) — kalau lolos,
+          // dua tab mapel yang berbeda akan menunjuk ke data yang sama.
+          if (mapelAmpu.some(x => x.toLowerCase() === v.toLowerCase())) {
+            return toast(tr('Mapel itu sudah ada.', 'That subject is already listed.'), 'warning');
+          }
+          mapelAmpu.push(v);
+          input.value = '';
+          input.focus();
+          gambar();
+        };
+        $('#sgMapelAdd', m).onclick = tambah;
+        input.onkeydown = e => { if (e.key === 'Enter') { e.preventDefault(); tambah(); } };
+        gambar();
+
         $('#sgSave', m).onclick = async () => {
           const nama = $('#sgNama', m).value.trim();
           if (nama.length < 2) return toast(tr('Isi nama guru.', 'Enter teacher name.'), 'warning');
-          const mapel = $('#sgMapel', m).value.trim();
+          // Teks yang masih tertinggal di kotak isian ikut dipakai — guru sering
+          // lupa menekan "Tambah" sebelum menyimpan.
+          const sisa = input.value.trim();
+          if (sisa && !mapelAmpu.some(x => x.toLowerCase() === sisa.toLowerCase())) mapelAmpu.push(sisa);
+
           let waliKelasId = '';
           if (wali.checked) {
             waliKelasId = $('#sgKelas', m)?.value || '';
@@ -2061,7 +2230,9 @@ const Teacher = {
           }
           const btn = $('#sgSave', m); btn.disabled = true;
           try {
-            await DB.updateUser({ nama, mapel, waliKelasId, guruSetup: true });
+            // `mapel` (teks tunggal) tetap diisi mapel pertama: halaman admin & app
+            // siswa masih membaca field itu.
+            await DB.updateUser({ nama, mapelAmpu, mapel: mapelAmpu[0] || '', waliKelasId, guruSetup: true });
             // Bila jadi wali, catat namanya di dokumen jadwal (merge — entri lama tetap).
             if (waliKelasId) {
               try { await DB.gUpdate('class_schedule', waliKelasId, { classId: waliKelasId, waliNama: nama, updatedAt: new Date().toISOString() }); } catch (_) {}
@@ -2109,39 +2280,54 @@ const Teacher = {
 
     this.ibadahDate = this.ibadahDate || todayStr();
 
+    this.ibadahBulan = this.ibadahBulan || this.ibadahDate.slice(0, 7);
+
     el.innerHTML = `
       ${this._classBar(activeCls)}
       <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end;margin-bottom:16px;">
         <div class="field" style="margin:0;"><label>${tr('Tanggal Pantauan', 'Monitoring Date')}</label><input type="date" class="input" id="ibDate" value="${this.ibadahDate}" style="max-width:170px;"></div>
-        <button class="btn btn-sm" id="exportIbadah" style="margin-bottom:1px;"><ion-icon name="download-outline"></ion-icon> ${tr('Ekspor CSV', 'Export CSV')}</button>
+        <button class="btn btn-sm" id="exportIbadah" style="margin-bottom:1px;"><ion-icon name="download-outline"></ion-icon> ${tr('CSV Hari Ini', "Today's CSV")}</button>
         <span id="ibStatus" style="font-size:.78rem;color:var(--text-3);align-self:center;">
           <ion-icon name="sync-outline" style="vertical-align:-2px;"></ion-icon> ${tr('auto-refresh 10 detik', 'auto-refresh 10s')}
         </span>
       </div>
 
-
       ${!students.length ? `
         <div class="card empty-state"><ion-icon name="people-outline"></ion-icon>
           <div class="es-title">${tr('Kelas ini belum punya siswa', 'This class has no students')}</div>
         </div>` : `
-        <div style="font-size:.8rem;color:var(--text-3);margin-bottom:10px;">${tr('Menampilkan rekapitulasi amalan ibadah harian dan tilawah siswa.', 'Showing student daily prayers, sunnah deeds, and Qur\'an recitation.')}</div>
-        <div class="table-wrap">
+        <div class="ib-ringkas" id="ibRingkas"></div>
+
+        <div class="table-wrap" style="margin-top:14px;">
           <table class="data-table" id="ibadahTable">
             <thead>
               <tr>
                 <th style="width:40px;">No</th>
                 <th class="sticky-col" style="min-width:150px;">${tr('Nama', 'Name')}</th>
-                <th class="center" style="min-width:140px;">${tr('Sholat Fardhu', 'Fardh Prayers')}</th>
-                <th class="center" style="min-width:120px;">${tr('Amalan Sunnah', 'Sunnah Deeds')}</th>
-                <th class="center" style="min-width:100px;">${tr('Tilawah Qur\'an', 'Tilawah')}</th>
-                <th class="center" style="min-width:100px;">${tr('Hafalan', 'Memorized')}</th>
+                <th class="center" style="min-width:110px;">🕗 ${tr('Sholat Dhuha', 'Dhuha')}</th>
+                <th class="center" style="min-width:110px;">☀️ ${tr('Sholat Dzuhur', 'Dhuhr')}</th>
                 <th class="center" style="width:80px;">${tr('Detail', 'Detail')}</th>
               </tr>
             </thead>
             <tbody id="ibadahTableBody">
-              <tr><td colspan="7" class="center"><div class="portal-loading"><div class="spinner"></div></div></td></tr>
+              <tr><td colspan="5" class="center"><div class="portal-loading"><div class="spinner"></div></div></td></tr>
             </tbody>
           </table>
+        </div>
+
+        <div class="section-head" style="margin-top:26px;">
+          <h2><ion-icon name="calendar-outline" style="vertical-align:-2px;color:var(--brand);"></ion-icon> ${tr('Laporan Bulanan', 'Monthly Report')}</h2>
+        </div>
+        <div class="hd-bar">
+          <div class="field" style="margin:0;">
+            <label>${tr('Bulan', 'Month')}</label>
+            <input type="month" class="input" id="ibBulan" value="${this.ibadahBulan}" style="max-width:180px;">
+          </div>
+          <button class="btn btn-sm" id="printIbadah" style="margin-bottom:1px;"><ion-icon name="print-outline"></ion-icon> ${tr('PDF Rekap', 'Recap PDF')}</button>
+          <button class="btn btn-sm" id="csvIbadah" style="margin-bottom:1px;"><ion-icon name="download-outline"></ion-icon> ${tr('CSV Rekap', 'Recap CSV')}</button>
+          ${Kop.btnHTML('kopIbadah')}
+          <span class="hd-hint">${tr('Berapa siswa ikut & tidak ikut Dhuha/Dzuhur, per tanggal, lengkap dengan persentasenya.',
+                                      'How many students joined or missed Dhuha/Dhuhr, per date, with percentages.')}</span>
         </div>`}
     `;
 
@@ -2151,6 +2337,12 @@ const Teacher = {
     if (dateInput) {
       dateInput.onchange = e => { this.ibadahDate = e.target.value || todayStr(); this.render(this._el); };
     }
+    $('#ibBulan', el) && ($('#ibBulan', el).onchange = e => {
+      this.ibadahBulan = e.target.value || todayStr().slice(0, 7);
+    });
+    $('#printIbadah', el) && ($('#printIbadah', el).onclick = () => this._printRekapIbadah(activeCls, students));
+    $('#csvIbadah', el) && ($('#csvIbadah', el).onclick = () => this._csvRekapIbadah(activeCls, students));
+    $('#kopIbadah', el) && ($('#kopIbadah', el).onclick = () => Kop.modal());
 
     if (students.length) {
       // Muat data pertama kali
@@ -2184,68 +2376,47 @@ const Teacher = {
     }
   },
 
+  /* Ibadah yang dipantau sekolah: HANYA Sholat Dhuha & Dzuhur — dua ibadah yang
+     dikerjakan di sekolah. Kuncinya sama dengan yang dicentang siswa di app. */
+  IBADAH: [
+    { key: 'dhuha',  id: 'Dhuha',  en: 'Dhuha', emoji: '🕗' },
+    { key: 'dzuhur', id: 'Dzuhur', en: 'Dhuhr', emoji: '☀️' }
+  ],
+
+  // Ambil centang ibadah satu siswa pada satu tanggal.
+  async _ibadahSiswa(uid, tanggal) {
+    const daily = await DB.listStudentData(uid, 'ibadah_daily');
+    return daily.find(d => d.tanggal === tanggal)?.done || {};
+  },
+
   async _loadStudentsIbadahData(students, tanggal) {
     const listHtml = [];
-    const csvRows = [];
+    const csvRows = [[tr('No', 'No'), tr('Nama', 'Name'), 'NIS',
+                      tr('Dhuha', 'Dhuha'), tr('Dzuhur', 'Dhuhr')]];
     let anyError = false;
 
-    csvRows.push([
-      tr('No', 'No'),
-      tr('Nama', 'Name'),
-      'NIS',
-      tr('Subuh', 'Fajr'),
-      tr('Dzuhur', 'Dhuhr'),
-      tr('Ashar', 'Asr'),
-      tr('Maghrib', 'Maghrib'),
-      tr('Isya', 'Isha'),
-      tr('Amalan Sunnah', 'Sunnah Deeds'),
-      tr('Tilawah (Lembar)', 'Tilawah (Pages)'),
-      tr('Hafalan', 'Memorized')
-    ]);
+    // Ringkasan "berapa ikut, berapa tidak" untuk tanggal ini.
+    const ikut = { dhuha: 0, dzuhur: 0 };
 
     for (let i = 0; i < students.length; i++) {
       const s = students[i];
       let done = {};
-      let lembar = 0;
-      let hafalanCount = 0;
       let loadError = false;
 
       try {
         const studentUid = s.userId || s.id;
-        if (!studentUid) {
-          console.warn('Siswa tanpa userId:', s.nama);
-          loadError = true;
-          anyError = true;
-        } else {
-          const ibadahDaily = await DB.listStudentData(studentUid, 'ibadah_daily');
-          const dailyRec = ibadahDaily.find(d => d.tanggal === tanggal);
-          done = dailyRec?.done || {};
-
-          const quranLog = await DB.listStudentData(studentUid, 'quran_log');
-          lembar = quranLog.filter(l => l.tanggal === tanggal).reduce((sum, l) => sum + (l.lembar || 0), 0);
-
-          const hafalan = await DB.listStudentData(studentUid, 'hafalan');
-          hafalanCount = hafalan.filter(h => h.status === 'hafal').length;
-        }
+        if (!studentUid) { loadError = true; anyError = true; }
+        else done = await this._ibadahSiswa(studentUid, tanggal);
       } catch (err) {
         console.error('Gagal memuat data ibadah siswa:', s.nama, err.message);
-        loadError = true;
-        anyError = true;
+        loadError = true; anyError = true;
       }
 
-      const prayers = ['subuh', 'dzuhur', 'ashar', 'maghrib', 'isya'];
-      const prayersDone = prayers.filter(p => done[p]).length;
+      this.IBADAH.forEach(ib => { if (done[ib.key]) ikut[ib.key]++; });
 
-      const sunnah = ['dzikirPagi', 'dzikirPetang', 'tilawah', 'sedekah', 'dhuha', 'tahajud'];
-      const customSunnahDone = Object.keys(done).filter(k => k.startsWith('c_') && done[k]).length;
-      const sunnahDone = sunnah.filter(sn => done[sn]).length + customSunnahDone;
-
-      const prayerBullets = prayers.map(p => {
-        const check = done[p] ? '✓' : '✗';
-        const color = done[p] ? 'var(--brand-dark)' : 'var(--text-3)';
-        const title = p.charAt(0).toUpperCase() + p.slice(1);
-        return `<span style="color:${color};font-weight:bold;margin:0 4px;" title="${title}">${check}</span>`;
-      }).join('');
+      const sel = ib => done[ib.key]
+        ? `<span class="ib-ya"><ion-icon name="checkmark-circle"></ion-icon> ${tr('Ikut', 'Yes')}</span>`
+        : `<span class="ib-tidak"><ion-icon name="close-circle"></ion-icon> ${tr('Belum', 'No')}</span>`;
 
       listHtml.push(`
         <tr>
@@ -2256,37 +2427,42 @@ const Teacher = {
               <b>${esc(s.nama)}</b>
             </div>
           </td>
-          <td class="center" style="font-size: 1rem; letter-spacing: 2px;">${prayerBullets} <span style="font-size:.75rem;color:var(--text-3);">(${prayersDone}/5)</span></td>
-          <td class="center"><span class="badge badge-purple">${sunnahDone} ${tr('amalan', 'deeds')}</span></td>
-          <td class="center"><span class="badge badge-blue">${lembar} ${tr('lembar', 'pages')}</span></td>
-          <td class="center"><span class="badge badge-green">${hafalanCount} ${tr('surat', 'surahs')}</span></td>
+          <td class="center">${loadError ? '-' : sel(this.IBADAH[0])}</td>
+          <td class="center">${loadError ? '-' : sel(this.IBADAH[1])}</td>
           <td class="center">
             <button class="mini-icon-btn" data-detailib="${s.userId || s.id}" data-sname="${esc(s.nama)}"><ion-icon name="eye-outline"></ion-icon></button>
           </td>
-        </tr>
-      `);
+        </tr>`);
 
-      csvRows.push([
-        i + 1,
-        s.nama,
-        s.nis || '',
-        done.subuh ? 'Hadir' : '-',
-        done.dzuhur ? 'Hadir' : '-',
-        done.ashar ? 'Hadir' : '-',
-        done.maghrib ? 'Hadir' : '-',
-        done.isya ? 'Hadir' : '-',
-        sunnahDone,
-        lembar,
-        hafalanCount
-      ]);
+      csvRows.push([i + 1, s.nama, s.nis || '',
+                    done.dhuha ? 'Ikut' : 'Belum', done.dzuhur ? 'Ikut' : 'Belum']);
+    }
+
+    // Kartu ringkasan: berapa ikut, berapa tidak — per ibadah.
+    const ring = document.getElementById('ibRingkas');
+    if (ring) {
+      const n = students.length;
+      ring.innerHTML = this.IBADAH.map(ib => {
+        const ya = ikut[ib.key], tidak = n - ya;
+        const pct = n ? Math.round(ya / n * 100) : 0;
+        return `
+          <div class="ib-sum">
+            <div class="ib-sum-h">${ib.emoji} ${tr(ib.id, ib.en)}</div>
+            <div class="ib-sum-n">
+              <span class="ib-ya"><b>${ya}</b> ${tr('ikut', 'yes')}</span>
+              <span class="ib-tidak"><b>${tidak}</b> ${tr('tidak', 'no')}</span>
+            </div>
+            <div class="ib-sum-bar"><span style="width:${pct}%"></span></div>
+            <div class="ib-sum-pct">${pct}% ${tr('dari', 'of')} ${n} ${tr('siswa', 'students')}</div>
+          </div>`;
+      }).join('');
     }
 
     const tbody = document.getElementById('ibadahTableBody');
     if (tbody) {
       if (anyError) {
-        // Tambahkan baris peringatan di atas tabel
         const warnRow = document.createElement('tr');
-        warnRow.innerHTML = `<td colspan="7" style="padding:10px;text-align:center;">
+        warnRow.innerHTML = `<td colspan="5" style="padding:10px;text-align:center;">
           <div style="background:rgba(245,158,11,.12);border-radius:10px;padding:12px;font-size:.82rem;color:var(--fin);">
             <ion-icon name="warning-outline" style="vertical-align:-2px;"></ion-icon>
             ${tr('Beberapa data siswa gagal dimuat. Pastikan Firestore Rules sudah di-deploy.', 'Some student data failed to load. Make sure Firestore Rules are deployed.')}
@@ -2312,105 +2488,232 @@ const Teacher = {
     }
   },
 
+  /* ---- REKAP BULANAN: berapa ikut, berapa tidak, beserta tanggalnya ----
+     Dibaca dari centang siswa (ibadah_daily). Satu baris per siswa per ibadah,
+     satu kotak per tanggal, lalu kolom "Ikut" berisi jumlah & persentasenya. */
+  async _rekapIbadah(students, bulan) {
+    const [thn, bln] = bulan.split('-').map(Number);
+    const jmlHari = new Date(thn, bln, 0).getDate();
+    const hari = Array.from({ length: 31 }, (_, i) => i + 1);
+    const nyata = d => d <= jmlHari;
+
+    // data[uid][tanggal] = { dhuha: bool, dzuhur: bool }
+    const data = {};
+    for (const s of students) {
+      const uid = s.userId || s.id;
+      data[s.id] = {};
+      try {
+        const daily = await DB.listStudentData(uid, 'ibadah_daily');
+        daily.filter(d => String(d.tanggal || '').startsWith(`${bulan}-`))
+          .forEach(d => { data[s.id][+String(d.tanggal).slice(8, 10)] = d.done || {}; });
+      } catch (_) { /* siswa tanpa data → kotaknya kosong */ }
+    }
+    return { thn, bln, jmlHari, hari, nyata, data };
+  },
+
+  async _printRekapIbadah(cls, students) {
+    if (!students.length) {
+      return toast(tr('Kelas ini belum punya siswa.', 'This class has no students yet.'), 'warning');
+    }
+    const bulan = this.ibadahBulan || todayStr().slice(0, 7);
+    const { thn, bln, hari, nyata, data } = await this._rekapIbadah(students, bulan);
+
+    /* Hari yang dihitung = hari sekolah, yaitu tanggal yang PUNYA catatan dari
+       siapa pun di kelas ini. Kalau seluruh hari sebulan dijadikan penyebut,
+       hari libur ikut terhitung sebagai "tidak ikut" dan persentasenya keliru. */
+    const hariSekolah = hari.filter(d => nyata(d) && students.some(s => data[s.id][d]));
+
+    const isi = (sid, d, key) => {
+      if (!nyata(d)) return '';
+      const rec = data[sid][d];
+      if (!rec) return '';                       // tak ada catatan → kotak kosong
+      return rec[key] ? '✓' : '✗';
+    };
+    const rekap = (sid, key) => {
+      if (!hariSekolah.length) return null;
+      const ya = hariSekolah.filter(d => data[sid][d]?.[key]).length;
+      return { ya, n: hariSekolah.length, pct: Math.round(ya / hariSekolah.length * 100) };
+    };
+
+    const kop = Kop.html({ judul: tr('REKAP IBADAH', 'WORSHIP RECAP') });
+    const kopData = Kop.get();
+    const lebarHari = (52 / 31).toFixed(3);
+
+    const kelasHari = d => !nyata(d) ? ' hd-off'
+      : (new Date(thn, bln - 1, d).getDay() === 0 ? ' hd-mgg' : '');
+
+    // Tiap siswa = 2 baris (Dhuha & Dzuhur); No & Nama digabung dengan rowspan.
+    const body = students.map((s, i) => this.IBADAH.map((ib, k) => {
+      const r = rekap(s.id, ib.key);
+      return `<tr>
+        ${k === 0 ? `
+          <td class="center" rowspan="2">${i + 1}</td>
+          <td class="hd-nama" rowspan="2">${esc(s.nama)}</td>` : ''}
+        <td class="ib-lb">${tr(ib.id, ib.en)}</td>
+        ${hari.map(d => {
+          const v = isi(s.id, d, ib.key);
+          return `<td class="hd-d${kelasHari(d)}${v === '✗' ? ' red' : ''}">${v}</td>`;
+        }).join('')}
+        <td class="center hd-pct">${r ? `${r.pct}%<span class="hd-frac">${r.ya}/${r.n}</span>` : '–'}</td>
+      </tr>`;
+    }).join('')).join('');
+
+    printHTML(`${tr('Rekap Ibadah', 'Worship Recap')} ${cls?.nama || ''} ${bulan}`, `
+      <style>
+        @page{size:A4 landscape;margin:10mm;}
+        .hd-head{position:relative;margin:2px 0 8px;font-family:"Times New Roman",Times,serif;}
+        .hd-judul{text-align:center;font-size:14px;font-weight:bold;line-height:1.45;padding:0 235px;}
+        table.hd-info{position:absolute;right:0;top:0;width:auto;border:none;margin:0;font-family:"Times New Roman",Times,serif;}
+        table.hd-info td{border:none;padding:1px 4px 1px 0;font-size:12px;white-space:nowrap;}
+        table.hd-info td.hi-l{letter-spacing:.06em;}
+        table.hd-info td.hi-v{border-bottom:1px dotted #000;min-width:190px;font-weight:bold;padding-left:6px;}
+        table.hd th,table.hd td{padding:2px 1px;font-size:10px;text-align:center;}
+        table.hd td.hd-nama{text-align:left;padding:2px 5px;font-size:10.5px;white-space:nowrap;}
+        table.hd td.ib-lb{text-align:left;padding:2px 5px;font-size:9.5px;white-space:nowrap;}
+        table.hd td.hd-d{height:18px;font-weight:bold;}
+        .hd-mgg{background:#eaeaea;-webkit-print-color-adjust:exact;print-color-adjust:exact;}
+        .hd-off{background:#b8b8b8;-webkit-print-color-adjust:exact;print-color-adjust:exact;}
+        .hd-pct{font-weight:bold;font-size:10.5px;}
+        .hd-frac{display:block;font-size:8px;font-weight:normal;color:#444;}
+        .hd-ket{margin-top:8px;font-size:10.5px;line-height:1.6;}
+      </style>
+      ${kop}
+      <div class="hd-head">
+        <div class="hd-judul">
+          ${tr('REKAP SHOLAT DHUHA & DZUHUR', 'DHUHA & DHUHR PRAYER RECAP')}<br>
+          ${esc(kopData.sekolah || '')}<br>
+          ${tr('BULAN', 'MONTH')} ${BULAN[bln - 1].toUpperCase()} ${thn}
+        </div>
+        <table class="hd-info">
+          <tr><td class="hi-l">${tr('KELAS', 'CLASS')}</td><td>:</td><td class="hi-v">${esc(cls?.nama || '')}</td></tr>
+          <tr><td class="hi-l">${tr('GURU', 'TEACHER')}</td><td>:</td><td class="hi-v">${esc(DB.user.nama || '')}</td></tr>
+          <tr><td class="hi-l">${tr('HARI SEKOLAH', 'SCHOOL DAYS')}</td><td>:</td><td class="hi-v">${hariSekolah.length}</td></tr>
+        </table>
+      </div>
+      <table class="hd">
+        <colgroup>
+          <col style="width:3.5%"><col style="width:16%"><col style="width:9%">
+          ${hari.map(() => `<col style="width:${lebarHari}%">`).join('')}
+          <col style="width:6.5%">
+        </colgroup>
+        <thead>
+          <tr>
+            <th rowspan="2">No</th>
+            <th rowspan="2">${tr('NAMA', 'NAME')}</th>
+            <th rowspan="2">${tr('Ibadah', 'Worship')}</th>
+            <th colspan="31">${tr('Tanggal', 'Date')}</th>
+            <th rowspan="2">${tr('Ikut', 'Attended')}</th>
+          </tr>
+          <tr>${hari.map(d => `<th class="hd-d${kelasHari(d)}">${d}</th>`).join('')}</tr>
+        </thead>
+        <tbody>${body}</tbody>
+      </table>
+      <div class="hd-ket">
+        <b>✓</b> = ${tr('ikut', 'attended')} · <b>✗</b> = ${tr('tidak ikut', 'did not attend')}<br>
+        ${tr('Kotak kosong = tidak ada kegiatan pada tanggal itu (mis. libur). Kotak berarsir tebal = tanggal yang tidak ada di bulan ini.',
+             'An empty box = no activity on that date (e.g. holiday). Dark shaded boxes = dates that do not exist in this month.')}<br>
+        ${tr(`Persentase dihitung dari ${hariSekolah.length} hari sekolah bulan ini (hari yang ada catatannya).`,
+             `Percentages are based on the ${hariSekolah.length} school days this month (days with records).`)}
+      </div>`);
+  },
+
+  async _csvRekapIbadah(cls, students) {
+    if (!students.length) {
+      return toast(tr('Kelas ini belum punya siswa.', 'This class has no students yet.'), 'warning');
+    }
+    const bulan = this.ibadahBulan || todayStr().slice(0, 7);
+    const { hari, nyata, data } = await this._rekapIbadah(students, bulan);
+    const hariSekolah = hari.filter(d => nyata(d) && students.some(s => data[s.id][d]));
+
+    const rows = [[tr('No', 'No'), tr('Nama', 'Name'), 'NIS', tr('Ibadah', 'Worship'),
+                   ...hariSekolah.map(d => String(d)),
+                   tr('Ikut', 'Attended'), tr('Tidak', 'Missed'), '%']];
+    students.forEach((s, i) => this.IBADAH.forEach(ib => {
+      const ya = hariSekolah.filter(d => data[s.id][d]?.[ib.key]).length;
+      rows.push([
+        i + 1, s.nama, s.nis || '', tr(ib.id, ib.en),
+        ...hariSekolah.map(d => (data[s.id][d] ? (data[s.id][d][ib.key] ? 'Ikut' : 'Tidak') : '')),
+        ya, hariSekolah.length - ya,
+        hariSekolah.length ? Math.round(ya / hariSekolah.length * 100) + '%' : ''
+      ]);
+    }));
+    downloadCSV(rows, `rekap_ibadah_${(cls?.nama || 'kelas').replace(/\s+/g, '_')}_${bulan}.csv`);
+    toast(tr('Rekap ibadah diekspor 📊', 'Worship recap exported 📊'));
+  },
+
+  /* Detail satu siswa: status Dhuha & Dzuhur pada tanggal terpilih, plus riwayat
+     14 hari terakhir supaya guru bisa melihat polanya (sering bolong atau tidak). */
   async _detailIbadahModal(studentUid, studentName, tanggal) {
     openModal({
-      title: tr(`Detail Ibadah: ${studentName}`, `Worship Detail: ${studentName}`),
-      body: `<div class="portal-loading"><div class="spinner"></div> ${tr('Memuat data detail…', 'Loading details…')}</div>`,
-      onMount: async (m) => {
-        let done = {};
-        let quranLogs = [];
-        let hafalan = [];
-
+      title: tr(`Ibadah: ${studentName}`, `Worship: ${studentName}`),
+      body: `<div class="portal-loading"><div class="spinner"></div> ${tr('Memuat data…', 'Loading…')}</div>`,
+      onMount: async m => {
+        let daily = [];
         try {
-          const ibadahDaily = await DB.listStudentData(studentUid, 'ibadah_daily');
-          const dailyRec = ibadahDaily.find(d => d.tanggal === tanggal);
-          done = dailyRec?.done || {};
+          daily = await DB.listStudentData(studentUid, 'ibadah_daily');
+        } catch (_) { /* ditangani di bawah */ }
 
-          quranLogs = await DB.listStudentData(studentUid, 'quran_log');
-          hafalan = await DB.listStudentData(studentUid, 'hafalan');
-        } catch (e) {
-          console.error(e);
-        }
+        const done = daily.find(d => d.tanggal === tanggal)?.done || {};
 
-        const modalBody = m.querySelector('.modal-body');
-        if (!modalBody) return;
+        const kartu = ib => {
+          const ya = !!done[ib.key];
+          return `
+            <div class="ib-det ${ya ? 'ya' : 'tidak'}">
+              <span class="ib-det-em">${ib.emoji}</span>
+              <span class="ib-det-nm">${tr(ib.id, ib.en)}</span>
+              <span class="ib-det-st">
+                <ion-icon name="${ya ? 'checkmark-circle' : 'close-circle'}"></ion-icon>
+                ${ya ? tr('Ikut', 'Attended') : tr('Belum', 'Not yet')}
+              </span>
+            </div>`;
+        };
 
-        const customDone = Object.keys(done).filter(k => k.startsWith('c_') && done[k]);
+        // Riwayat 14 hari ke belakang dari tanggal yang sedang dipantau.
+        const mulai = parseDate(tanggal) || new Date();
+        const riwayat = Array.from({ length: 14 }, (_, i) => {
+          const d = new Date(mulai.getTime() - (13 - i) * 86400000);
+          const iso = todayStr(d);
+          const rec = daily.find(x => x.tanggal === iso)?.done;
+          return { iso, tgl: d.getDate(), rec };
+        });
 
-        const sholatHtml = this.FARDHU.map(f => {
-          const ok = done[f.key];
-          return `<div class="list-item" style="padding:10px 12px; margin-bottom: 6px;">
-            <span>${f.emoji} ${esc(tr(f.id, f.en))}</span>
-            <span class="badge ${ok ? 'badge-green' : 'badge-gray'}">${ok ? tr('Sudah', 'Done') : tr('Belum', 'Not yet')}</span>
-          </div>`;
-        }).join('');
+        const barisRiwayat = ib => `
+          <tr>
+            <td class="ib-rw-lb">${ib.emoji} ${tr(ib.id, ib.en)}</td>
+            ${riwayat.map(r => `
+              <td class="center ${!r.rec ? 'ib-rw-kosong' : (r.rec[ib.key] ? 'ib-rw-ya' : 'ib-rw-tidak')}">
+                ${!r.rec ? '·' : (r.rec[ib.key] ? '✓' : '✗')}
+              </td>`).join('')}
+          </tr>`;
 
-        const sunnahList = [
-          { key: 'dzikirPagi',  id: 'Dzikir pagi',   en: 'Morning dhikr',   emoji: '🌄' },
-          { key: 'dzikirPetang',id: 'Dzikir petang', en: 'Evening dhikr',   emoji: '🌆' },
-          { key: 'tilawah',     id: 'Tilawah Qur\'an', en: 'Qur\'an recitation', emoji: '📖' },
-          { key: 'sedekah',     id: 'Sedekah',       en: 'Charity',         emoji: '🤲' },
-          { key: 'dhuha',       id: 'Sholat Dhuha',  en: 'Dhuha prayer',    emoji: '🕗' },
-          { key: 'tahajud',     id: 'Sholat Tahajud',en: 'Tahajjud prayer', emoji: '🌌' }
-        ];
+        const ikut = ib => riwayat.filter(r => r.rec?.[ib.key]).length;
+        const adaCatatan = riwayat.filter(r => r.rec).length;
 
-        const sunnahHtml = sunnahList.map(a => {
-          const ok = done[a.key];
-          return `<div class="list-item" style="padding:10px 12px; margin-bottom: 6px;">
-            <span>${a.emoji} ${esc(tr(a.id, a.en))}</span>
-            <span class="badge ${ok ? 'badge-purple' : 'badge-gray'}">${ok ? tr('Sudah', 'Done') : tr('Belum', 'Not yet')}</span>
-          </div>`;
-        }).join('') + (customDone.length ? `<div style="font-weight:700; font-size:.8rem; margin:10px 0 6px;">${tr('Amalan Kustom:', 'Custom Deeds:')}</div>` + customDone.map(k => {
-          return `<div class="list-item" style="padding:10px 12px; margin-bottom: 6px;">
-            <span>⭐ ${esc(k.substring(2))}</span>
-            <span class="badge badge-purple">${tr('Sudah', 'Done')}</span>
-          </div>`;
-        }).join('') : '');
-
-        const tilawahToday = quranLogs.filter(l => l.tanggal === tanggal);
-        const tilawahHtml = tilawahToday.length ? tilawahToday.map(l => `
-          <div class="list-item" style="padding:10px 12px; margin-bottom: 6px;">
-            <div style="flex:1;">
-              <div style="font-weight:700;font-size:.85rem;">📖 ${l.lembar} ${tr('lembar', 'pages')}</div>
-              ${l.catatan ? `<div style="font-size:.72rem;color:var(--text-3);">${esc(l.catatan)}</div>` : ''}
-            </div>
+        m.querySelector('.modal-body').innerHTML = `
+          <div style="font-size:.8rem;color:var(--text-3);margin-bottom:12px;">
+            ${fmtDate(tanggal, { weekday: true })}
           </div>
-        `).join('') : `<div style="font-size:.82rem;color:var(--text-3);text-align:center;padding:12px;">${tr('Belum ada tilawah hari ini', 'No recitation today')}</div>`;
+          <div class="ib-det-grid">${this.IBADAH.map(kartu).join('')}</div>
 
-        const hafalList = hafalan.filter(h => h.status === 'hafal');
-        const hafalanHtml = hafalList.length ? hafalList.map(h => `
-          <div class="list-item" style="padding:10px 12px; margin-bottom: 6px;">
-            <div style="flex:1;">
-              <div style="font-weight:700;font-size:.85rem;">🧠 ${esc(h.nama)}</div>
-              ${h.catatan ? `<div style="font-size:.72rem;color:var(--text-3);">${esc(h.catatan)}</div>` : ''}
-            </div>
+          <h4 style="margin:20px 0 8px;font-size:.95rem;">${tr('Riwayat 14 hari terakhir', 'Last 14 days')}</h4>
+          <div class="table-wrap">
+            <table class="data-table ib-rw">
+              <thead>
+                <tr>
+                  <th style="min-width:110px;">${tr('Ibadah', 'Worship')}</th>
+                  ${riwayat.map(r => `<th class="center">${r.tgl}</th>`).join('')}
+                </tr>
+              </thead>
+              <tbody>${this.IBADAH.map(barisRiwayat).join('')}</tbody>
+            </table>
           </div>
-        `).join('') : `<div style="font-size:.82rem;color:var(--text-3);text-align:center;padding:12px;">${tr('Belum ada hafalan tuntas', 'No memorized surahs')}</div>`;
-
-        modalBody.innerHTML = `
-          <div style="font-size:.85rem;color:var(--text-3);margin-bottom:14px;">${tr('Rekapitulasi tanggal:', 'Recap date:')} <b>${fmtDate(tanggal, { weekday: true })}</b></div>
-          <div class="grid grid-2" style="gap:14px;align-items:start;">
-            <div>
-              <h4 style="margin: 0 0 10px 0; color: var(--brand-dark);">🕌 ${tr('Sholat Fardhu', 'Fardh Prayers')}</h4>
-              ${sholatHtml}
-
-              <h4 style="margin: 18px 0 10px 0; color: var(--brand-dark);">📖 ${tr('Tilawah Qur\'an', 'Qur\'an Recitation')}</h4>
-              ${tilawahHtml}
-            </div>
-            <div>
-              <h4 style="margin: 0 0 10px 0; color: var(--brand-dark);">✨ ${tr('Amalan Sunnah', 'Sunnah Deeds')}</h4>
-              ${sunnahHtml}
-
-              <h4 style="margin: 18px 0 10px 0; color: var(--brand-dark);">🧠 ${tr('Daftar Hafalan', 'Memorized')}</h4>
-              ${hafalanHtml}
-            </div>
-          </div>
-        `;
+          <div style="font-size:.78rem;color:var(--text-3);margin-top:10px;line-height:1.6;">
+            ${this.IBADAH.map(ib => `${tr(ib.id, ib.en)}: <b>${ikut(ib)}</b> ${tr('dari', 'of')} ${adaCatatan} ${tr('hari bercatatan', 'recorded days')}`).join(' · ')}<br>
+            <b>·</b> = ${tr('tidak ada catatan pada hari itu (mis. libur)', 'no record that day (e.g. holiday)')}
+          </div>`;
       }
     });
   },
-
-  /* ============ TAB: KESEHATAN SISWA ============ */
 
   async renderKesehatan(el) {
     // Hentikan polling sebelumnya jika ada

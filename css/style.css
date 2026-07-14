@@ -1844,3 +1844,78 @@ ion-icon { pointer-events: none; flex-shrink: 0; }
 /* Baris "PDF Daftar Hadir" di tab Jurnal (pemilih bulan + tombol cetak). */
 .hd-bar { display: flex; gap: 12px; flex-wrap: wrap; align-items: flex-end; margin-bottom: 16px; }
 .hd-hint { flex: 1; min-width: 220px; font-size: .78rem; line-height: 1.5; color: var(--text-3); margin-bottom: 3px; }
+
+/* ============================================================
+   MAPEL YANG DIAMPU (guru bisa mengampu lebih dari satu)
+   ============================================================ */
+
+/* Pemilih mapel di bilah kelas — sebelah nama kelas yang sedang dibuka. */
+.class-bar-mapel {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 6px 12px; border-radius: 99px;
+  background: var(--prod-soft); color: var(--prod);
+  font-size: .82rem; font-weight: 700;
+}
+.class-bar-mapel ion-icon { font-size: 1rem; flex-shrink: 0; }
+.class-bar-mapel select {
+  border: none; background: transparent; color: inherit;
+  font: inherit; font-weight: 700; cursor: pointer;
+  padding: 0 2px; max-width: 160px;
+}
+.class-bar-mapel select:focus { outline: none; }
+[data-theme="dark"] .class-bar-mapel { color: #a78bfa; }
+
+/* Daftar mapel pada form "Data Guru". */
+.mapel-add { display: flex; gap: 8px; align-items: center; }
+.mapel-add .input { flex: 1; }
+.mapel-chips { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+.mapel-chip {
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 6px 6px 6px 12px; border-radius: 99px;
+  background: var(--prod-soft); color: var(--prod);
+  font-size: .82rem; font-weight: 700;
+}
+[data-theme="dark"] .mapel-chip { color: #a78bfa; }
+.mapel-x {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 20px; height: 20px; border: none; border-radius: 50%;
+  background: transparent; color: inherit; cursor: pointer; font-size: .9rem;
+}
+.mapel-x:hover { background: var(--danger-soft); color: var(--danger); }
+
+/* ============================================================
+   IBADAH SISWA (guru) — pantauan Sholat Dhuha & Dzuhur
+   ============================================================ */
+
+/* Ringkasan harian: berapa ikut, berapa tidak. */
+.ib-ringkas { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; }
+.ib-sum { padding: 14px 16px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface); }
+.ib-sum-h { font-size: .85rem; font-weight: 800; color: var(--text); }
+.ib-sum-n { display: flex; gap: 14px; margin-top: 6px; font-size: .82rem; font-weight: 600; }
+.ib-sum-n b { font-size: 1.15rem; font-weight: 800; }
+.ib-sum-bar { height: 7px; border-radius: 99px; background: var(--surface-3); margin-top: 10px; overflow: hidden; }
+.ib-sum-bar span { display: block; height: 100%; border-radius: 99px; background: var(--brand); }
+.ib-sum-pct { margin-top: 6px; font-size: .74rem; font-weight: 600; color: var(--text-3); }
+
+.ib-ya    { display: inline-flex; align-items: center; gap: 4px; color: var(--brand-dark); font-weight: 700; }
+.ib-tidak { display: inline-flex; align-items: center; gap: 4px; color: var(--text-3); font-weight: 700; }
+[data-theme="dark"] .ib-ya { color: #34d399; }
+
+/* Detail satu siswa. */
+.ib-det-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.ib-det { display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 14px 10px; border-radius: var(--radius-sm); border: 1px solid var(--border); background: var(--surface-2); }
+.ib-det.ya { border-color: var(--brand); background: var(--brand-soft); }
+.ib-det-em { font-size: 1.6rem; line-height: 1; }
+.ib-det-nm { font-size: .82rem; font-weight: 800; color: var(--text); }
+.ib-det-st { display: inline-flex; align-items: center; gap: 4px; font-size: .76rem; font-weight: 700; color: var(--text-3); }
+.ib-det.ya .ib-det-st { color: var(--brand-dark); }
+[data-theme="dark"] .ib-det.ya .ib-det-st { color: #34d399; }
+
+/* Riwayat 14 hari. */
+.ib-rw { min-width: 520px; font-size: .8rem; }
+.ib-rw th, .ib-rw td { padding: 6px 4px; }
+.ib-rw-lb { white-space: nowrap; font-weight: 700; }
+.ib-rw-ya { color: var(--brand-dark); font-weight: 800; }
+.ib-rw-tidak { color: var(--danger); font-weight: 800; }
+.ib-rw-kosong { color: var(--text-3); }
+[data-theme="dark"] .ib-rw-ya { color: #34d399; }

@@ -70,11 +70,13 @@ const DB = (() => {
       return user;
     },
 
-    async login(email, password) {
-      email = email.trim().toLowerCase();
+    // `identitas` = nama lengkap (guru/siswa) ATAU email (admin).
+    async login(identitas, password) {
+      const email = toAuthEmail(identitas);
+      password = toAuthPassword(password);
       const u = this._users().find(x => x.email === email);
-      if (!u) throw new Error(tr('Email tidak ditemukan. Belum punya akun?', "Email not found. Don't have an account yet?"));
-      if (u.passHash !== await hashText(password)) throw new Error(tr('Kata sandi salah.', 'Incorrect password.'));
+      if (!u) throw new Error(tr('Nama tidak ditemukan. Pastikan ejaannya sama persis dengan data dari admin.', 'Name not found. Make sure it is spelled exactly as registered by the admin.'));
+      if (u.passHash !== await hashText(password)) throw new Error(tr('NIS / kata sandi salah.', 'Incorrect NIS / password.'));
       // Bootstrap admin lewat ADMIN_EMAILS (mode lokal)
       if (typeof ADMIN_EMAILS !== 'undefined' && ADMIN_EMAILS.includes(email) && u.role !== 'admin') {
         u.role = 'admin';
@@ -106,13 +108,15 @@ const DB = (() => {
         .map(u => { const { passHash, ...safe } = u; return safe; });
     },
 
-    async adminCreateUser({ nama, email, password, role = 'guru', extra = {} }) {
-      email = email.trim().toLowerCase();
+    async adminCreateUser({ nama, username, email, password, role = 'guru', extra = {} }) {
+      const uname = usernameOf(username || nama);
+      email = (email || '').trim().toLowerCase() || toAuthEmail(uname);
+      password = toAuthPassword(password);
       if (this._users().some(u => u.email === email)) {
-        throw new Error(tr('Email sudah terdaftar.', 'This email is already registered.'));
+        throw new Error(tr('Username ini sudah dipakai. Bedakan (mis. tambahkan nama kedua).', 'This username is taken. Make it distinct (e.g. add a second name).'));
       }
       const user = {
-        id: uid(), nama: nama.trim(), email, role, ...extra,
+        id: uid(), nama: nama.trim(), username: uname, email, role, ...extra,
         passHash: await hashText(password),
         profileComplete: role !== 'siswa',
         dibuatPada: new Date().toISOString(),
@@ -146,10 +150,6 @@ const DB = (() => {
       Object.keys(localStorage)
         .filter(k => k.startsWith(`tumara_data_${id}_`))
         .forEach(k => localStorage.removeItem(k));
-    },
-
-    async loginGoogle() {
-      throw new Error(tr('Login dengan Google membutuhkan mode Firebase (USE_FIREBASE = true di js/firebase-config.js).', 'Google sign-in requires Firebase mode (USE_FIREBASE = true in js/firebase-config.js).'));
     },
 
     async logout() {
@@ -312,10 +312,9 @@ const DB = (() => {
       return obj;
     },
 
-    // Muat profil dari Firestore; bila dokumen belum ada (mis. login Google
-    // via redirect, atau registrasi yang terputus), buatkan otomatis agar
-    // data pengguna selalu tersimpan di users/{uid}. Data akun dari provider
-    // (email, foto profil, metode login) selalu disinkronkan ke dokumen.
+    // Muat profil dari Firestore; bila dokumen belum ada (mis. registrasi
+    // yang terputus di tengah jalan), buatkan otomatis agar data pengguna
+    // selalu tersimpan di users/{uid}.
     async _loadProfile(fbUser) {
       const { F, db } = this.fb;
       const ref = F.doc(db, 'users', fbUser.uid);
@@ -347,6 +346,10 @@ const DB = (() => {
       } else {
         // Dokumen sudah ada → segarkan data akun tanpa menimpa isian profil.
         if (!existing.nama && fbUser.displayName) account.nama = fbUser.displayName;
+        // Akun lama (sebelum login-dengan-nama) belum punya username.
+        if (!existing.username && (existing.nama || fbUser.displayName)) {
+          account.username = usernameOf(existing.nama || fbUser.displayName);
+        }
         // Naikkan ke admin bila email terdaftar sebagai admin & belum admin
         if (isAdminEmail && existing.role !== 'admin') account.role = 'admin';
         // Pastikan selalu ada role (dokumen lama sebelum fitur peran)
@@ -359,8 +362,6 @@ const DB = (() => {
 
     async init() {
       const { auth, A } = await this._load();
-      // Tangkap hasil login Google via redirect (fallback saat popup diblokir).
-      try { await A.getRedirectResult(auth); } catch (_) { /* diabaikan; user tetap dicek di bawah */ }
       const fbUser = await new Promise(res => {
         const un = A.onAuthStateChanged(auth, u => { un(); res(u); });
       });
@@ -381,6 +382,7 @@ const DB = (() => {
       const finalRole = isAdminEmail ? 'admin' : role;
       const profile = {
         nama: nama.trim(),
+        username: usernameOf(nama),
         email: cred.user.email || email.trim(),
         role: finalRole,
         fotoUrl: '',
@@ -424,7 +426,13 @@ const DB = (() => {
     // Buat akun baru TANPA menendang admin dari sesinya, dengan memakai
     // instance Firebase app kedua (auth terpisah). User baru menulis
     // dokumen profilnya sendiri (diizinkan Rules), lalu app kedua ditutup.
-    async adminCreateUser({ nama, email, password, role = 'guru', extra = {} }) {
+    // `username` = yang diketik pengguna saat masuk (mis. 'muhammadthoriq').
+    // Bila kosong, dibentuk dari nama lengkap. `email` internal diturunkan
+    // dari username — lihat toAuthEmail() di js/utils.js.
+    async adminCreateUser({ nama, username, email, password, role = 'guru', extra = {} }) {
+      const uname = usernameOf(username || nama);
+      email = (email || '').trim() || toAuthEmail(uname);
+      password = toAuthPassword(password);
       const V = '10.12.2';
       const [appM, authM, fsM] = await Promise.all([
         import(`https://www.gstatic.com/firebasejs/${V}/firebase-app.js`),
@@ -443,6 +451,7 @@ const DB = (() => {
         } catch (e) { throw new Error(this._msg(e)); }
         const profile = {
           nama: nama.trim(),
+          username: uname, // yang diketik pengguna saat masuk
           email: cred.user.email || email.trim(),
           role, ...extra,
           fotoUrl: '',
@@ -456,7 +465,11 @@ const DB = (() => {
         await authM.signOut(secAuth);
         return { id: cred.user.uid, ...profile };
       } finally {
-        try { await appM.deleteApp(secApp); } catch (_) {}
+        // JANGAN di-await: bila createUser gagal (mis. nama sudah dipakai),
+        // auth kedua tak pernah punya sesi dan deleteApp() menggantung
+        // selamanya — errornya jadi tak pernah sampai ke pemanggil (modal
+        // membeku tanpa pesan). Lepas app-nya di latar belakang saja.
+        Promise.resolve(appM.deleteApp(secApp)).catch(() => {});
       }
     },
 
@@ -478,73 +491,16 @@ const DB = (() => {
       await F.deleteDoc(F.doc(db, 'users', id));
     },
 
-    async login(email, password) {
+    // `identitas` = nama lengkap (guru/siswa) ATAU email (admin).
+    // `password` = NIS/NIP untuk akun sekolah, sandi biasa untuk lainnya.
+    async login(identitas, password) {
       const { auth, A } = await this._load();
       try {
-        const cred = await A.signInWithEmailAndPassword(auth, email.trim(), password);
+        const cred = await A.signInWithEmailAndPassword(auth, toAuthEmail(identitas), toAuthPassword(password));
         return await this._loadProfile(cred.user);
       } catch (e) {
         throw new Error(this._msg(e));
       }
-    },
-
-    // Login/daftar dengan akun Google (popup). Akun baru otomatis
-    // dibuatkan profil dengan profileComplete: false → masuk onboarding.
-    async loginGoogle() {
-      const { auth, A } = await this._load();
-      if (location.protocol === 'file:') {
-        throw new Error(tr('Login Google tidak bisa dijalankan dari file lokal (file://). Buka aplikasi lewat https://tumara-id.web.app atau jalankan server lokal (localhost).', 'Google sign-in cannot run from a local file (file://). Open the app via https://tumara-id.web.app or run a local server (localhost).'));
-      }
-      const provider = new A.GoogleAuthProvider();
-      provider.setCustomParameters({ prompt: 'select_account' });
-
-      // Kode yang berarti USER sendiri yang membatalkan — jangan dipaksa
-      // fallback ke redirect, cukup tampilkan pesannya.
-      const userCancelled = new Set(['auth/popup-closed-by-user', 'auth/cancelled-popup-request']);
-
-      try {
-        // Timeout jaga-jaga: bila popup macet setelah akun dipilih (mis.
-        // domain Google diblokir VPN/ad-blocker/antivirus di jaringan lokal),
-        // signInWithPopup() bisa menggantung tanpa pernah resolve/reject —
-        // tanpa timeout ini tombol akan disabled selamanya tanpa pesan error.
-        const cred = await this._withTimeout(
-          A.signInWithPopup(auth, provider),
-          20000,
-          tr('Login Google tidak merespons.', 'Google sign-in did not respond in time.')
-        );
-        return await this._loadProfile(cred.user); // profil dibuat otomatis bila belum ada
-      } catch (e) {
-        if (!e.__timeout && userCancelled.has(e.code)) {
-          throw new Error(this._msg(e));
-        }
-        // Popup gagal/macet/diblokir (timeout, network error, popup-blocked, dll.) →
-        // fallback ke redirect satu halaman penuh, yang tidak bergantung pada
-        // iframe relay (authDomain/__/auth/iframe) yang bisa diblokir jaringan lokal.
-        // Hasilnya ditangani oleh getRedirectResult() di init().
-        toast(tr('Popup Google bermasalah, mencoba metode alternatif (redirect)…',
-                 'Google popup had an issue, trying an alternative method (redirect)…'), 'info');
-        try {
-          await A.signInWithRedirect(auth, provider);
-          return new Promise(() => {}); // halaman akan berpindah
-        } catch (e2) {
-          throw new Error(this._msg(e2));
-        }
-      }
-    },
-
-    // Bungkus promise dengan batas waktu; lempar Error dengan pesan siap-pakai bila kelewat.
-    _withTimeout(promise, ms, message) {
-      return new Promise((resolve, reject) => {
-        const t = setTimeout(() => {
-          const err = new Error(message);
-          err.__timeout = true;
-          reject(err);
-        }, ms);
-        promise.then(
-          v => { clearTimeout(t); resolve(v); },
-          e => { clearTimeout(t); reject(e); }
-        );
-      });
     },
 
     async logout() {
@@ -686,22 +642,16 @@ const DB = (() => {
 
     _msg(e) {
       const map = {
-        'auth/email-already-in-use': tr('Email sudah terdaftar. Silakan masuk.', 'This email is already registered. Please sign in.'),
-        'auth/invalid-email': tr('Format email tidak valid.', 'Invalid email format.'),
-        'auth/weak-password': tr('Kata sandi terlalu lemah (minimal 6 karakter).', 'Password is too weak (minimum 6 characters).'),
-        'auth/user-not-found': tr('Email tidak ditemukan. Belum punya akun?', "Email not found. Don't have an account yet?"),
-        'auth/wrong-password': tr('Kata sandi salah.', 'Incorrect password.'),
-        'auth/invalid-credential': tr('Email atau kata sandi salah.', 'Incorrect email or password.'),
+        'auth/email-already-in-use': tr('Username ini sudah dipakai akun lain. Bedakan (mis. tambahkan nama kedua: muhammadthoriq).', 'This username is already taken. Make it distinct (e.g. add a second name: muhammadthoriq).'),
+        'auth/invalid-email': tr('Username tidak valid — gunakan huruf/angka.', 'Invalid username — please use letters/numbers.'),
+        'auth/weak-password': tr('NIS/kata sandi terlalu pendek. Gunakan minimal 4 angka.', 'The NIS/password is too short. Use at least 4 digits.'),
+        'auth/user-not-found': tr('Nama tidak ditemukan. Pastikan ejaannya sama persis dengan data dari admin.', 'Name not found. Make sure it is spelled exactly as registered by the admin.'),
+        'auth/wrong-password': tr('NIS / kata sandi salah.', 'Incorrect NIS / password.'),
+        'auth/invalid-credential': tr('Nama atau NIS salah. Periksa lagi ejaan namamu.', 'Incorrect name or NIS. Please check the spelling of your name.'),
         'auth/too-many-requests': tr('Terlalu banyak percobaan. Coba lagi nanti.', 'Too many attempts. Please try again later.'),
         'auth/network-request-failed': tr('Gagal terhubung. Periksa koneksi internetmu.', 'Connection failed. Please check your internet connection.'),
         'auth/requires-recent-login': tr('Demi keamanan, silakan keluar lalu masuk lagi sebelum mengganti kata sandi.', 'For security, please sign out and sign in again before changing your password.'),
-        'auth/popup-closed-by-user': tr('Jendela login Google ditutup sebelum selesai.', 'The Google sign-in window was closed before finishing.'),
-        'auth/cancelled-popup-request': tr('Jendela login Google ditutup sebelum selesai.', 'The Google sign-in window was closed before finishing.'),
-        'auth/popup-blocked': tr('Pop-up diblokir browser. Izinkan pop-up untuk situs ini lalu coba lagi.', 'Pop-up blocked by the browser. Allow pop-ups for this site and try again.'),
-        'auth/operation-not-supported-in-this-environment': tr('Login Google butuh halaman http/https. Buka lewat https://tumara-id.web.app atau server lokal (localhost), bukan file lokal.', 'Google sign-in needs an http/https page. Open via https://tumara-id.web.app or a local server (localhost), not a local file.'),
         'auth/internal-error': tr('Terjadi kesalahan internal. Coba lagi beberapa saat.', 'An internal error occurred. Please try again shortly.'),
-        'auth/unauthorized-domain': tr('Domain ini belum diizinkan. Tambahkan di Firebase Console → Authentication → Settings → Authorized domains.', 'This domain is not authorized yet. Add it in Firebase Console → Authentication → Settings → Authorized domains.'),
-        'auth/account-exists-with-different-credential': tr('Email ini sudah terdaftar dengan metode lain. Coba masuk dengan email & kata sandi.', 'This email is registered with a different method. Try signing in with email & password.'),
         'auth/operation-not-allowed': tr('Metode login ini belum diaktifkan di Firebase Console → Authentication → Sign-in method.', 'This sign-in method is not enabled yet in Firebase Console → Authentication → Sign-in method.')
       };
       return map[e.code] || e.message || 'Terjadi kesalahan. Coba lagi.';
@@ -741,7 +691,6 @@ const DB = (() => {
     init: () => adapter.init(),
     register: d => adapter.register(d),
     login: (e, p) => adapter.login(e, p),
-    loginGoogle: () => adapter.loginGoogle(),
     logout: () => adapter.logout(),
     updateUser: p => adapter.updateUser(p),
     changePassword: (o, n) => adapter.changePassword(o, n),

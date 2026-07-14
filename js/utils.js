@@ -15,6 +15,57 @@ function uid() {
   return Date.now().toString(36) + Math.random().toString(36).slice(2, 9);
 }
 
+/* ============================================================
+   IDENTITAS AKUN — nama lengkap sebagai username, NIS sebagai sandi
+   ------------------------------------------------------------
+   Firebase Auth (Email/Password) selalu butuh alamat email. Agar
+   guru & siswa cukup mengingat NAMA LENGKAP + NIS, nama diubah
+   menjadi email internal yang tidak pernah ditampilkan/dikirim:
+
+     "Budi Santoso"  →  budi.santoso@akun.tumara.id
+     NIS "12345"     →  sandi "012345" (dilengkapi 0 di depan bila
+                        kurang dari 6 karakter — syarat minimum Firebase)
+
+   Pemetaannya deterministik: fungsi yang sama dipakai saat admin
+   membuat akun DAN saat pengguna masuk, jadi keduanya selalu cocok.
+   Konsekuensinya, dua orang dengan nama identik tidak bisa punya akun
+   sekaligus — bedakan namanya (mis. tambahkan nama tengah/inisial).
+   ============================================================ */
+
+const AUTH_USERNAME_DOMAIN = 'akun.tumara.id';
+const AUTH_MIN_PASS = 6; // batas minimum Firebase Auth
+
+// "Budi   Santoso Jr." → "budi.santoso.jr"
+function usernameOf(nama) {
+  return String(nama ?? '')
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '') // buang diakritik (é → e)
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '.')  // spasi & tanda baca → titik
+    .replace(/^\.+|\.+$/g, '');   // rapikan titik di ujung
+}
+
+// Identitas login → email untuk Firebase Auth. Bila pengguna mengetik
+// email sungguhan (admin bootstrap), pakai apa adanya.
+function toAuthEmail(identitas) {
+  const s = String(identitas ?? '').trim();
+  if (s.includes('@')) return s.toLowerCase();
+  const u = usernameOf(s);
+  return u ? `${u}@${AUTH_USERNAME_DOMAIN}` : '';
+}
+
+// NIS/NIP → sandi Auth. Dilengkapi '0' di depan bila < 6 karakter,
+// sehingga NIS pendek (mis. "1234") tetap bisa dipakai apa adanya.
+function toAuthPassword(sandi) {
+  const s = String(sandi ?? '').trim();
+  return s.length && s.length < AUTH_MIN_PASS ? s.padStart(AUTH_MIN_PASS, '0') : s;
+}
+
+// Email internal hasil toAuthEmail() — hanya urusan Firebase, JANGAN
+// pernah ditampilkan ke pengguna (mereka tak pernah mengetiknya).
+function isInternalEmail(email) {
+  return String(email ?? '').toLowerCase().endsWith('@' + AUTH_USERNAME_DOMAIN);
+}
+
 /* ---------- Tanggal & format ---------- */
 
 // HARI & BULAN kini disediakan js/i18n.js (mengikuti bahasa aktif)

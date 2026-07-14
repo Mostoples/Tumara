@@ -92,7 +92,7 @@ const Teacher = {
     const ampu = new Set(DB.user?.kelasAmpu || []);
     return (await DB.gList('school_classes')).filter(c => ampu.has(c.id)).sort(this._byOrder);
   },
-  // Roster = akun siswa yang SUDAH login (Google) & memilih kelas ini saat
+  // Roster = akun siswa yang SUDAH login & memilih kelas ini saat
   // onboarding (field kelasId di profil). Data admin (school_roster) hanya acuan.
   async _students(classId) {
     return (await DB.listStudentsByClass(classId))
@@ -329,7 +329,7 @@ const Teacher = {
           <div class="guru-hero-avatar">${this._avatarHTML(u)}</div>
           <div style="min-width:0;flex:1;">
             <div class="guru-hero-name">${esc(u.nama)}</div>
-            <div class="guru-hero-sub">${esc(u.mapel || u.sekolah || u.email)}</div>
+            <div class="guru-hero-sub">${esc(u.mapel || u.sekolah || (isInternalEmail(u.email) ? '' : (u.email || '')))}</div>
           </div>
           <span class="guru-hero-badge">${isWali ? `<ion-icon name="ribbon"></ion-icon> ${tr('Wali Kelas', 'Homeroom')}` : `<ion-icon name="school"></ion-icon> ${tr('Guru', 'Teacher')}`}</span>
         </div>
@@ -490,7 +490,7 @@ const Teacher = {
         <div class="card empty-state" style="padding:24px 10px;">
           <ion-icon name="people-outline"></ion-icon>
           <div class="es-title">${tr('Belum ada siswa yang bergabung', 'No students have joined yet')}</div>
-          <div class="es-sub">${tr('Siswa akan muncul otomatis setelah login dengan Google & memilih kelas ini beserta NIS-nya.', 'Students appear automatically after they sign in with Google & pick this class with their NIS.')}</div>
+          <div class="es-sub">${tr('Siswa akan muncul otomatis setelah masuk (nama lengkap + NIS dari admin) & memilih kelas ini.', 'Students appear automatically once they sign in (full name + NIS from the admin) & pick this class.')}</div>
         </div>`}`;
   },
 

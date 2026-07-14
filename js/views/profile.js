@@ -39,7 +39,9 @@ const Profile = {
         <div class="avatar">${this._avatarHTML(u)}</div>
         <div style="flex:1;min-width:0;">
           <div style="font-weight:800;font-size:1.15rem;letter-spacing:-.01em;">${esc(u.nama)}</div>
-          <div style="font-size:.84rem;color:var(--text-3);margin-top:2px;">${esc(u.email)}</div>
+          <!-- Akun sekolah: tampilkan username (yang ia ketik saat masuk),
+               bukan email internal (…@akun.tumara.id). -->
+          <div style="font-size:.84rem;color:var(--text-3);margin-top:2px;">${esc(isInternalEmail(u.email) ? (u.username || usernameOf(u.nama || '') || roleLabel(u.role)) : (u.email || ''))}</div>
           ${u.sekolah ? `<span class="badge badge-green" style="margin-top:8px;"><ion-icon name="school-outline"></ion-icon>${esc(u.sekolah)}</span>` : ''}
         </div>
       </div>
@@ -108,8 +110,8 @@ const Profile = {
                 <input type="text" class="input" disabled value="${u.kelasNama ? esc(u.kelasNama) : tr('Belum ada kelas', 'No classes yet')}">`}
               </div>
               <div class="field">
-                <label>NIS</label>
-                <input type="text" class="input" id="pfNis" inputmode="numeric" maxlength="20" placeholder="${tr('No. Induk Siswa', 'Student ID')}" value="${esc(u.nis || '')}" ${dis}>
+                <label>NIS <span style="font-weight:500;color:var(--text-3)">${tr('(kata sandimu — dari admin)', '(your password — set by admin)')}</span></label>
+                <input type="text" class="input" id="pfNis" value="${esc(u.nis || '-')}" disabled>
               </div>
             </div>
             <div class="field">
@@ -172,10 +174,16 @@ const Profile = {
                 </div>
                 <ion-icon name="chevron-forward" style="color:var(--text-3);"></ion-icon>
               </div>
-              <div class="setting-row" style="cursor:pointer;" id="pfPass">
+              <!-- Nama masuk & NIS ditetapkan admin sekolah, jadi siswa tidak
+                   bisa mengganti sandinya sendiri (NIS = kata sandi). Baris
+                   "Ganti kata sandi" sengaja dihilangkan. -->
+              <div class="setting-row">
                 <ion-icon name="key-outline" style="font-size:1.2rem;color:var(--text-3);"></ion-icon>
-                <div class="sr-text"><div class="sr-title">${tr('Ganti kata sandi', 'Change password')}</div></div>
-                <ion-icon name="chevron-forward" style="color:var(--text-3);"></ion-icon>
+                <div class="sr-text">
+                  <div class="sr-title">${tr('Nama masuk &amp; kata sandi', 'Sign-in name &amp; password')}</div>
+                  <div class="sr-sub">${tr('Diatur oleh admin sekolah. Lupa NIS? Hubungi admin/wali kelasmu.', 'Managed by the school admin. Forgot your NIS? Contact your admin/homeroom teacher.')}</div>
+                </div>
+                <ion-icon name="lock-closed-outline" style="color:var(--text-3);"></ion-icon>
               </div>
               ${u.finPin ? `
                 <div class="setting-row" style="cursor:pointer;" id="pfResetPin">
@@ -226,8 +234,6 @@ const Profile = {
         jk = c.dataset.val;
         $$('#pfJK .radio-card', el).forEach(x => x.classList.toggle('selected', x === c));
       });
-      const nisEl = $('#pfNis', el);
-      if (nisEl) nisEl.oninput = () => { nisEl.value = nisEl.value.replace(/\D/g, '').slice(0, 20); };
     }
 
     $('#pfForm', el).onsubmit = async e => {
@@ -242,7 +248,8 @@ const Profile = {
       const tdee = Calc.tdee(Calc.bmr({ jenisKelamin: jk, berat, tinggi, usia }), aktivitas);
       const air = Calc.waterTarget(berat);
 
-      // Kelas & NIS (bila daftar kelas tersedia) — penautan ke roster guru.
+      // Kelas — penautan ke roster guru. NIS TIDAK ikut disimpan: itu kata
+      // sandi akun (ditetapkan admin), jadi field-nya hanya untuk dibaca.
       const kelasSel = $('#pfKelas', el);
       const patch = {
         usia, jenisKelamin: jk, tinggi, berat, aktivitas,
@@ -252,7 +259,6 @@ const Profile = {
       if (kelasSel) {
         patch.kelasId = kelasSel.value;
         patch.kelasNama = classes.find(c => c.id === kelasSel.value)?.nama || '';
-        patch.nis = ($('#pfNis', el).value || '').replace(/\D/g, '').slice(0, 20);
       }
       await DB.updateUser(patch);
       toast(tr(`Tersimpan! Target baru: ±${tdee.toLocaleString('id-ID')} kkal & ${air.gelas} gelas air/hari 💧`,
@@ -310,8 +316,6 @@ const Profile = {
     // Selaraskan tombol "Pasang aplikasi" dengan status PWA (klik ditangani pwa.js).
     if (window.PWA) PWA.sync();
 
-    $('#pfPass', el).onclick = () => this._passwordModal();
-
     // Satu-satunya jalan keluar bila PIN Keuangan lupa. Baris ini hanya muncul
     // saat PIN memang terpasang (lihat u.finPin di atas).
     $('#pfResetPin', el) && ($('#pfResetPin', el).onclick = async () => {
@@ -336,39 +340,5 @@ const Profile = {
       await DB.logout();
       App.showAuth();
     };
-  },
-
-  _passwordModal() {
-    openModal({
-      title: tr('Ganti Kata Sandi', 'Change Password'),
-      body: `
-        <div class="field">
-          <label>${tr('Kata sandi lama', 'Old password')}</label>
-          <input type="password" class="input" id="mOld" placeholder="••••••••" autocomplete="current-password">
-        </div>
-        <div class="field">
-          <label>${tr('Kata sandi baru', 'New password')}</label>
-          <input type="password" class="input" id="mNew" placeholder="${tr('Minimal 6 karakter', 'At least 6 characters')}" autocomplete="new-password">
-        </div>
-        <div class="field">
-          <label>${tr('Ulangi kata sandi baru', 'Repeat new password')}</label>
-          <input type="password" class="input" id="mNew2" placeholder="••••••••" autocomplete="new-password">
-        </div>
-        <button class="btn btn-primary btn-block" id="mSave"><ion-icon name="checkmark"></ion-icon> ${tr('Simpan Kata Sandi', 'Save Password')}</button>`,
-      onMount: m => {
-        $('#mSave', m).onclick = async () => {
-          const oldP = $('#mOld', m).value, newP = $('#mNew', m).value;
-          if (newP.length < 6) return toast(tr('Kata sandi baru minimal 6 karakter.', 'New password must be at least 6 characters.'), 'warning');
-          if (newP !== $('#mNew2', m).value) return toast(tr('Ulangan kata sandi tidak sama.', "Passwords don't match."), 'warning');
-          try {
-            await DB.changePassword(oldP, newP);
-            closeModal();
-            toast(tr('Kata sandi berhasil diganti 🔒', 'Password changed successfully 🔒'));
-          } catch (err) {
-            toast(err.message, 'error');
-          }
-        };
-      }
-    });
   }
 };

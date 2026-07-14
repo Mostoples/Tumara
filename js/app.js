@@ -75,7 +75,7 @@ const App = {
       <div class="avatar">${avatar}</div>
       <div style="min-width:0;">
         <div class="u-name">${esc(u.nama)}</div>
-        <div class="u-school">${esc(u.sekolah || u.email)}</div>
+        <div class="u-school">${esc(u.sekolah || u.kelasNama || (isInternalEmail(u.email) ? roleLabel(u.role) : (u.email || '')))}</div>
       </div>`;
 
     // navigasi (sidebar + bottom nav + menu kolom "lainnya")

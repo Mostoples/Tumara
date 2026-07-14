@@ -416,6 +416,8 @@ ion-icon { pointer-events: none; flex-shrink: 0; }
 .input-unit { position: absolute; right: 15px; top: 50%; transform: translateY(-50%); font-size: .82rem; font-weight: 600; color: var(--text-3); pointer-events: none; }
 
 .radio-cards { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+/* Pilihan pendek & banyak (mis. tingkat kelas X / XI / XII / XIII) */
+.radio-cards.cols-4 { grid-template-columns: repeat(4, 1fr); }
 .radio-card {
   border: 1.5px solid var(--border); border-radius: var(--radius-sm);
   padding: 13px; text-align: center; cursor: pointer; font-weight: 600; font-size: .88rem;
@@ -683,18 +685,6 @@ ion-icon { pointer-events: none; flex-shrink: 0; }
 .af-switch { text-align: center; margin-top: 22px; font-size: .87rem; color: var(--text-2); }
 .af-switch a { color: var(--brand-dark); font-weight: 700; cursor: pointer; text-decoration: none; }
 [data-theme="dark"] .af-switch a { color: #34d399; }
-
-.auth-divider {
-  display: flex; align-items: center; gap: 14px;
-  margin: 20px 0 16px;
-  font-size: .78rem; font-weight: 600; color: var(--text-3);
-}
-.auth-divider::before, .auth-divider::after {
-  content: ''; flex: 1; height: 1px; background: var(--border);
-}
-
-.btn-google { gap: 11px; padding: 12px 20px; }
-.btn-google svg { flex-shrink: 0; }
 
 /* Onboarding */
 .onboard-card {

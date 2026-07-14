@@ -1,5 +1,5 @@
 /* ============================================================
-   TUMARA — Tampilan Auth (Masuk / Daftar) & Onboarding
+   TUMARA — Tampilan Auth (Masuk) & Onboarding
    ============================================================ */
 
 // Simpan kredensial ke pengelola sandi browser agar muncul notifikasi
@@ -21,8 +21,9 @@ async function savePasswordCredential(email, password) {
   } catch (_) { /* tidak didukung — abaikan */ }
 }
 
+// Halaman ini HANYA untuk masuk. Akun guru & siswa dibuat oleh admin sekolah
+// lewat admin.html — tidak ada pendaftaran mandiri.
 const AuthView = {
-  mode: 'login', // 'login' | 'register'
 
   render() {
     const brand = `
@@ -40,40 +41,24 @@ const AuthView = {
         <div class="ab-quote">${tr('"Keseimbangan kecil setiap hari, hasil besar di masa depan."', '"A little balance every day, big results in the future."')}</div>
       </div>`;
 
-    const form = this.mode === 'login' ? this._loginForm() : this._registerForm();
-    $('#authCard').innerHTML = brand + form;
+    $('#authCard').innerHTML = brand + this._loginForm();
     this._bind();
-  },
-
-  // Tombol "Lanjutkan dengan Google" + pemisah (dipakai kedua form)
-  _googleSection() {
-    return `
-      <div class="auth-divider"><span>${tr('atau', 'or')}</span></div>
-      <button type="button" class="btn btn-block btn-google" id="googleBtn">
-        <svg width="19" height="19" viewBox="0 0 48 48" aria-hidden="true">
-          <path fill="#FFC107" d="M43.6 20.1H42V20H24v8h11.3C33.7 32.7 29.2 36 24 36c-6.6 0-12-5.4-12-12s5.4-12 12-12c3.1 0 5.8 1.2 8 3l5.7-5.7C34.3 6 29.4 4 24 4 13 4 4 13 4 24s9 20 20 20 20-9 20-20c0-1.3-.1-2.6-.4-3.9z"/>
-          <path fill="#FF3D00" d="M6.3 14.7l6.6 4.8C14.6 15.1 18.9 12 24 12c3.1 0 5.8 1.2 8 3l5.7-5.7C34.3 6 29.4 4 24 4 16.3 4 9.7 8.3 6.3 14.7z"/>
-          <path fill="#4CAF50" d="M24 44c5.2 0 9.9-2 13.4-5.2l-6.2-5.2C29.2 35.1 26.7 36 24 36c-5.2 0-9.6-3.3-11.3-8l-6.5 5C9.5 39.6 16.2 44 24 44z"/>
-          <path fill="#1976D2" d="M43.6 20.1H42V20H24v8h11.3c-.8 2.2-2.2 4.2-4.1 5.6l6.2 5.2C36.9 39.2 44 34 44 24c0-1.3-.1-2.6-.4-3.9z"/>
-        </svg>
-        ${tr('Lanjutkan dengan Google', 'Continue with Google')}
-      </button>`;
   },
 
   _loginForm() {
     return `
       <div class="auth-form-side">
         <h2 class="af-title">${tr('Selamat datang kembali 👋', 'Welcome back 👋')}</h2>
-        <p class="af-sub">${tr('Masuk untuk melanjutkan perjalananmu.', 'Sign in to continue your journey.')}</p>
+        <p class="af-sub">${tr('Masuk dengan username & NIS dari sekolahmu.', 'Sign in with the username & NIS given by your school.')}</p>
         <form id="authForm" novalidate>
           <div class="field">
-            <label>Email</label>
-            <input type="email" class="input" id="fEmail" name="email" placeholder="${tr('nama@email.com', 'name@email.com')}" required autocomplete="username">
+            <label>Username</label>
+            <input type="text" class="input" id="fEmail" name="username" placeholder="${tr('mis. budi.santoso', 'e.g. budi.santoso')}" required autocomplete="username" autocapitalize="off" spellcheck="false">
           </div>
           <div class="field">
-            <label>${tr('Kata sandi', 'Password')}</label>
+            <label>${tr('NIS / Kata sandi', 'NIS / Password')}</label>
             <div class="input-group">
-              <input type="password" class="input" id="fPass" name="password" placeholder="••••••••" required autocomplete="current-password">
+              <input type="password" class="input" id="fPass" name="password" placeholder="${tr('NIS-mu', 'Your NIS')}" required autocomplete="current-password">
               <button type="button" class="suffix-btn" id="togglePass"><ion-icon name="eye-outline"></ion-icon></button>
             </div>
           </div>
@@ -81,60 +66,11 @@ const AuthView = {
             ${tr('Masuk', 'Sign In')} <ion-icon name="arrow-forward"></ion-icon>
           </button>
         </form>
-        ${this._googleSection()}
-        <p class="af-switch">${tr('Belum punya akun?', "Don't have an account?")} <a id="switchMode">${tr('Daftar sekarang', 'Sign up now')}</a></p>
-      </div>`;
-  },
-
-  _registerForm() {
-    return `
-      <div class="auth-form-side">
-        <h2 class="af-title">${tr('Buat akun baru ✨', 'Create a new account ✨')}</h2>
-        <p class="af-sub">${tr('Gratis, kurang dari satu menit.', 'Free, takes less than a minute.')}</p>
-        <form id="authForm" novalidate>
-          <div class="field">
-            <label>${tr('Nama lengkap', 'Full name')}</label>
-            <input type="text" class="input" id="fNama" name="name" placeholder="${tr('Nama kamu', 'Your name')}" required autocomplete="name">
-          </div>
-          <div class="field">
-            <label>Email</label>
-            <input type="email" class="input" id="fEmail" name="email" placeholder="${tr('nama@email.com', 'name@email.com')}" required autocomplete="username">
-          </div>
-          <div class="field">
-            <label>${tr('Kata sandi', 'Password')}</label>
-            <div class="input-group">
-              <input type="password" class="input" id="fPass" name="password" placeholder="${tr('Minimal 6 karakter', 'At least 6 characters')}" required autocomplete="new-password">
-              <button type="button" class="suffix-btn" id="togglePass"><ion-icon name="eye-outline"></ion-icon></button>
-            </div>
-          </div>
-          <button type="submit" class="btn btn-primary btn-block btn-lg" id="authSubmit" style="margin-top:8px;">
-            ${tr('Daftar', 'Sign Up')} <ion-icon name="arrow-forward"></ion-icon>
-          </button>
-        </form>
-        ${this._googleSection()}
-        <p class="af-switch">${tr('Sudah punya akun?', 'Already have an account?')} <a id="switchMode">${tr('Masuk', 'Sign in')}</a></p>
+        <p class="af-switch">${tr('Belum punya akun? Akun dibuat oleh admin sekolah — hubungi admin atau wali kelasmu.', 'No account yet? Accounts are created by the school admin — contact your admin or homeroom teacher.')}</p>
       </div>`;
   },
 
   _bind() {
-    $('#switchMode').onclick = () => {
-      this.mode = this.mode === 'login' ? 'register' : 'login';
-      this.render();
-    };
-
-    $('#googleBtn').onclick = async () => {
-      const btn = $('#googleBtn');
-      btn.disabled = true;
-      try {
-        const u = await DB.loginGoogle();
-        toast(tr(`Selamat datang, ${(u.nama || '').split(' ')[0]}! 🌱`, `Welcome, ${(u.nama || '').split(' ')[0]}! 🌱`));
-        setTimeout(() => location.replace(roleHome(u.role)), 400);
-      } catch (err) {
-        toast(err.message, 'error');
-        btn.disabled = false;
-      }
-    };
-
     $('#togglePass').onclick = () => {
       const inp = $('#fPass');
       const icon = $('#togglePass ion-icon');
@@ -146,41 +82,43 @@ const AuthView = {
     $('#authForm').onsubmit = async e => {
       e.preventDefault();
       const btn = $('#authSubmit');
-      const email = $('#fEmail').value.trim();
+      // Identitas: nama lengkap (guru/siswa) atau email (admin di ADMIN_EMAILS).
+      const identitas = $('#fEmail').value.trim();
       const pass = $('#fPass').value;
+      const isEmail = identitas.includes('@');
 
-      if (!email || !/^\S+@\S+\.\S+$/.test(email)) return toast(tr('Masukkan email yang valid.', 'Please enter a valid email.'), 'warning');
-      if (pass.length < 6) return toast(tr('Kata sandi minimal 6 karakter.', 'Password must be at least 6 characters.'), 'warning');
+      if (!isEmail && !usernameOf(identitas)) {
+        return toast(tr('Masukkan username-mu.', 'Please enter your username.'), 'warning');
+      }
+      // Akun sekolah bersandi NIS: boleh lebih pendek dari 6 (dilengkapi otomatis).
+      const minPass = isEmail ? 6 : 4;
+      if (pass.trim().length < minPass) {
+        return toast(isEmail
+          ? tr('Kata sandi minimal 6 karakter.', 'Password must be at least 6 characters.')
+          : tr('Masukkan NIS / kata sandimu (minimal 4 karakter).', 'Enter your NIS / password (at least 4 characters).'), 'warning');
+      }
 
       btn.disabled = true;
       try {
+        const isAdminEmail = typeof ADMIN_EMAILS !== 'undefined'
+          && ADMIN_EMAILS.map(x => x.toLowerCase()).includes(identitas.toLowerCase());
         let u;
-        if (this.mode === 'register') {
-          const nama = $('#fNama').value.trim();
-          if (nama.length < 2) { btn.disabled = false; return toast(tr('Masukkan nama kamu.', 'Please enter your name.'), 'warning'); }
-          u = await DB.register({ nama, email, password: pass });
-          toast(tr(`Selamat datang di Tumara, ${nama.split(' ')[0]}! 🌱`, `Welcome to Tumara, ${nama.split(' ')[0]}! 🌱`));
-        } else {
-          const isAdminEmail = typeof ADMIN_EMAILS !== 'undefined'
-            && ADMIN_EMAILS.map(x => x.toLowerCase()).includes(email.toLowerCase());
+        try {
+          u = await DB.login(identitas, pass);
+        } catch (loginErr) {
+          // Bootstrap admin: satu-satunya pembuatan akun dari halaman ini.
+          // Bila akun admin (email di ADMIN_EMAILS) belum ada, dibuat otomatis
+          // saat login pertama. Selain itu, akun HANYA dibuat lewat panel admin.
+          if (!isAdminEmail) throw loginErr;
           try {
-            u = await DB.login(email, pass);
-          } catch (loginErr) {
-            // Bootstrap admin: bila akun admin belum ada, buat otomatis saat
-            // login pertama dengan kredensial admin (email di ADMIN_EMAILS).
-            // Jika akun sudah ada tapi sandi salah, register gagal
-            // (email-already-in-use) → tampilkan error login aslinya.
-            if (!isAdminEmail) throw loginErr;
-            try {
-              u = await DB.register({ nama: 'Administrator', email, password: pass, role: 'admin' });
-            } catch (_) {
-              throw loginErr;
-            }
+            u = await DB.register({ nama: 'Administrator', email: identitas, password: pass, role: 'admin' });
+          } catch (_) {
+            throw loginErr; // akun ada tapi sandi salah → tampilkan error aslinya
           }
-          toast(tr(`Selamat datang, ${(u.nama || '').split(' ')[0]}!`, `Welcome, ${(u.nama || '').split(' ')[0]}!`));
         }
+        toast(tr(`Selamat datang, ${(u.nama || '').split(' ')[0]}!`, `Welcome, ${(u.nama || '').split(' ')[0]}!`));
         // Picu notifikasi "Simpan sandi" browser sebelum berpindah halaman.
-        await savePasswordCredential(email, pass);
+        await savePasswordCredential(identitas, pass);
         setTimeout(() => location.replace(roleHome(u.role)), 400); // beri waktu toast tampil
       } catch (err) {
         toast(err.message, 'error');
@@ -266,8 +204,9 @@ const OnboardView = {
             <input type="text" class="input" disabled value="${tr('Belum ada kelas — hubungi admin', 'No classes yet — contact admin')}">`}
           </div>
           <div class="field">
-            <label>NIS</label>
-            <input type="text" class="input" id="obNis" inputmode="numeric" maxlength="20" placeholder="${tr('No. Induk Siswa', 'Student ID')}" value="${esc(u.nis || '')}">
+            <label>NIS ${u.nis ? `<span style="font-weight:500;color:var(--text-3)">${tr('(kata sandimu — dari admin)', '(your password — set by admin)')}</span>` : ''}</label>
+            <!-- NIS dari admin = kata sandi akun → hanya bisa dibaca. -->
+            <input type="text" class="input" id="obNis" inputmode="numeric" maxlength="20" placeholder="${tr('No. Induk Siswa', 'Student ID')}" value="${esc(u.nis || '')}" ${u.nis ? 'disabled' : ''}>
           </div>
         </div>
         <div class="field">

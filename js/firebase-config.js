@@ -4,6 +4,12 @@
    Firebase AKTIF. Lapisan data di js/db.js otomatis memakai
    Firebase Auth (Email/Password) + Cloud Firestore.
 
+   CATATAN LOGIN: guru & siswa masuk TANPA email — cukup NAMA LENGKAP
+   (username) + NIS/NIP (kata sandi). Nama diubah menjadi email internal
+   (budi.santoso@akun.tumara.id) oleh toAuthEmail() di js/utils.js, karena
+   Firebase Auth selalu meminta email. Metode Email/Password di console
+   tetap wajib aktif. Admin di ADMIN_EMAILS tetap masuk dengan emailnya.
+
    Pastikan di console.firebase.google.com (project: tumara-id):
    1. "Authentication" → metode Email/Password sudah diaktifkan.
    2. "Cloud Firestore" sudah dibuat (region terdekat, mis. asia-southeast).

@@ -1758,3 +1758,52 @@ ion-icon { pointer-events: none; flex-shrink: 0; }
 /* Tombol "mata" penyembunyi saldo (Keuangan & Beranda) — ikon saja, ringkas. */
 .saldo-eye { padding: 6px 9px; line-height: 1; }
 .saldo-eye ion-icon { font-size: 1.05rem; }
+
+/* ============================================================
+   JADWAL MENGAJAR — foto jadwal (guru)
+   Guru memotret / mengunggah jadwalnya sendiri; fotonya disimpan
+   di Supabase dan ditampilkan di sini.
+   ============================================================ */
+.jf-card { padding: 14px; }
+
+.jf-foto {
+  display: block; width: 100%; padding: 0; position: relative;
+  border: 1px solid var(--border); border-radius: var(--radius-sm);
+  background: var(--surface-2); cursor: zoom-in; overflow: hidden;
+}
+.jf-foto img { display: block; width: 100%; height: auto; }
+.jf-zoom {
+  position: absolute; right: 10px; bottom: 10px;
+  display: flex; align-items: center; justify-content: center;
+  width: 34px; height: 34px; border-radius: 50%;
+  background: rgba(16,24,40,.55); color: #fff; font-size: 1rem;
+  opacity: 0; transition: opacity .15s ease;
+}
+.jf-foto:hover .jf-zoom, .jf-foto:focus-visible .jf-zoom { opacity: 1; }
+@media (hover: none) { .jf-zoom { opacity: 1; } }
+
+.jf-meta {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 12px; flex-wrap: wrap; margin-top: 12px;
+}
+.jf-tgl { display: flex; align-items: center; gap: 6px; font-size: .8rem; font-weight: 600; color: var(--text-3); }
+.jf-tgl ion-icon { font-size: 1rem; color: var(--brand); }
+
+.jf-es-aksi { display: flex; gap: 10px; flex-wrap: wrap; justify-content: center; margin-top: 14px; }
+
+/* Foto ukuran penuh di dalam modal */
+.jf-besar {
+  border: 1px solid var(--border); border-radius: var(--radius-sm);
+  background: var(--surface-2); overflow: auto; max-height: 65vh;
+}
+.jf-besar img { display: block; width: 100%; height: auto; }
+
+/* ---- Kamera (getUserMedia) ---- */
+.cam-view {
+  position: relative; width: 100%; aspect-ratio: 4 / 3;
+  border-radius: var(--radius-sm); overflow: hidden;
+  background: #000; border: 1px solid var(--border);
+}
+.cam-view video { width: 100%; height: 100%; object-fit: cover; display: block; }
+.cam-pesan { margin-top: 10px; font-size: .8rem; line-height: 1.5; color: var(--text-3); }
+.cam-err { color: var(--danger); font-weight: 600; }

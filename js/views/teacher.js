@@ -242,62 +242,25 @@ const Teacher = {
     return `<span class="jam-range"><b>${this._jam(a)}</b><span class="jam-sd">-</span><b>${this._jam(b)}</b></span>`;
   },
 
-  /* Jenis jadwal:
-     - 'rutin'  → berulang tiap minggu pada `hari` (0–6). Ini default.
-     - 'sekali' → hanya berlaku pada `tanggal` (YYYY-MM-DD); untuk jadwal
-                  pengganti/mendadak yang cuma sehari.
-     Entri lama belum punya field `tipe` → diperlakukan sebagai 'rutin'. */
-  _tipeJadwal(s) {
-    return s?.tipe === 'sekali' ? 'sekali' : 'rutin';
-  },
-  _isSekali(s) { return this._tipeJadwal(s) === 'sekali'; },
-
-  // Apakah entri jadwal ini berlaku pada tanggal tertentu (YYYY-MM-DD)?
-  _berlakuPada(s, iso) {
-    if (this._isSekali(s)) return s.tanggal === iso;
-    return +s.hari === new Date(`${iso}T00:00:00`).getDay();
-  },
-
-  // "Besok" / "3 hari lagi" — pengingat relatif untuk jadwal tanggal tertentu.
-  _selisihHari(iso, dariIso = todayStr()) {
-    const a = parseDate(iso), b = parseDate(dariIso);
-    if (!a || !b || isNaN(a) || isNaN(b)) return null;
-    return Math.round((a - b) / 86400000);
-  },
-  _relatifHari(iso) {
-    const n = this._selisihHari(iso);
-    if (n === null) return '';
-    if (n === 1) return tr('Besok', 'Tomorrow');
-    return tr(`${n} hari lagi`, `in ${n} days`);
-  },
-
-  // Kolom kiri kartu "Jadwal Hari Ini" di beranda:
-  //  - jadwal sekali → tanggal & bulan (mis. 14 / Jul)
-  //  - jadwal rutin  → nama hari (mis. Senin), ditandai "Rutin"
-  _tsWhen(s) {
-    if (this._isSekali(s)) {
-      const d = parseDate(s.tanggal);
-      if (d && !isNaN(d)) {
-        return `<div class="ts-time">
-          <b>${d.getDate()}</b>
-          <span>${BULAN[d.getMonth()].slice(0, 3)}</span>
-        </div>`;
-      }
-    }
-    return `<div class="ts-time">
-      <b class="ts-hari">${HARI[+s.hari] || '-'}</b>
-      <span>${tr('Rutin', 'Weekly')}</span>
-    </div>`;
-  },
-
   MENIT: ['00', '05', '10', '15', '20', '25', '30', '35', '40', '45', '50', '55'],
+
+  /* Jam sekolah: pelajaran paling pagi mulai sekitar 06:00 dan paling sore
+     selesai sekitar 15:35, jadi pilihan jam dibatasi 06–17. Daftar 00–23 yang
+     lama menawarkan jam malam (mis. 21:00) yang tak pernah dipakai sekolah dan
+     hanya membingungkan guru saat mengisi jadwal. */
+  JAM_AWAL: 6,
+  JAM_AKHIR: 17,
 
   // Pemilih jam 24-jam. <input type="time"> bawaan Chrome mengikuti locale
   // browser (bisa muncul AM/PM) dan itu TIDAK bisa dipaksa lewat HTML/CSS —
   // atribut lang pun diabaikan. Maka dipakai dua <select> agar pasti 24 jam.
   _jamPicker(id, val, fallback = '07:00') {
     const [h0, m0] = String(val || fallback).split(':');
-    const jam = Array.from({ length: 24 }, (_, i) => String(i).padStart(2, '0'));
+    const jam = Array.from({ length: this.JAM_AKHIR - this.JAM_AWAL + 1 },
+      (_, i) => String(this.JAM_AWAL + i).padStart(2, '0'));
+    // Jadwal lama di luar jam sekolah (mis. 21:00) tetap muncul sebagai pilihan
+    // agar nilainya tidak berubah diam-diam saat guru sekadar mengubah kelasnya.
+    if (h0 && !jam.includes(h0)) { jam.push(h0); jam.sort(); }
     // Nilai menit lama yang tak kelipatan 5 tetap dipertahankan agar tak berubah diam-diam.
     const menit = this.MENIT.includes(m0) ? [...this.MENIT] : [...this.MENIT, m0].sort();
     return `
@@ -335,45 +298,6 @@ const Teacher = {
     let totalSiswa = 0;
     for (const c of classes) totalSiswa += (await this._students(c.id)).length;
     const isWali = !!u.waliKelasId;
-
-    // Jadwal mengajar hari ini — pengingat di bagian bawah beranda.
-    const now = new Date();
-    const jamKini = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
-    // Jadwal rutin yang jatuh pada hari ini + jadwal sekali bertanggal hari ini.
-    const isoHariIni = todayStr();
-    const semuaJadwal = await DB.list('schedule');
-    const jadwalHariIni = semuaJadwal
-      .filter(s => this._berlakuPada(s, isoHariIni))
-      .sort((a, b) => (a.jamMulai || '').localeCompare(b.jamMulai || ''));
-
-    // Lewat sore (≥ 18.00) jadwal hari ini praktis sudah selesai → tampilkan
-    // jadwal BESOK sebagai persiapan.
-    const JAM_PRATINJAU_BESOK = 18;
-    const pratinjauBesok = now.getHours() >= JAM_PRATINJAU_BESOK;
-    const isoBesok = todayStr(new Date(now.getTime() + 86400000));
-    const jadwalBesok = pratinjauBesok
-      ? semuaJadwal
-          .filter(s => this._berlakuPada(s, isoBesok))
-          .sort((a, b) => (a.jamMulai || '').localeCompare(b.jamMulai || ''))
-      : [];
-
-    // Jadwal "tanggal tertentu" yang AKAN DATANG — ditampilkan terpisah sebagai
-    // pengingat, karena mudah terlupa (tidak berulang mingguan). Batasnya digeser
-    // ke besok bila seksi "Jadwal Besok" sedang tampil, supaya tidak dobel.
-    const batasKhusus = pratinjauBesok ? isoBesok : isoHariIni;
-    const jadwalKhusus = semuaJadwal
-      .filter(s => this._isSekali(s) && (s.tanggal || '') > batasKhusus)
-      .sort((a, b) => (a.tanggal || '').localeCompare(b.tanggal || '') || (a.jamMulai || '').localeCompare(b.jamMulai || ''))
-      .slice(0, 5);
-    // jam pertama yang belum berakhir = sedang berlangsung (bila sudah mulai) atau berikutnya
-    const aktifIdx = jadwalHariIni.findIndex(s => (s.jamSelesai || '') > jamKini);
-    const sisa = aktifIdx === -1 ? 0 : jadwalHariIni.length - aktifIdx;
-    const stateOf = (s, i) => {
-      if ((s.jamSelesai || '') <= jamKini) return 'done';
-      if (i === aktifIdx) return (s.jamMulai || '') <= jamKini ? 'now' : 'next';
-      return '';
-    };
-    const badgeText = { now: tr('Berlangsung', 'Ongoing'), next: tr('Berikutnya', 'Up next'), done: tr('Selesai', 'Done') };
 
     const tiles = [
       { route: 'kelas',       icon: 'people-outline',        label: tr('Kelas & Siswa', 'Classes'),        color: 'brand' },
@@ -434,92 +358,7 @@ const Teacher = {
             <span class="guru-tile-ic" style="color:var(--${t.color});background:var(--${t.color}-soft);"><ion-icon name="${t.icon}"></ion-icon></span>
             <span class="guru-tile-lb">${t.label}</span>
           </button>`).join('')}
-      </div>
-
-      <div class="section-head" style="margin-top:26px;">
-        <h2>${tr('Jadwal Hari Ini', 'Today\'s Schedule')} <span class="ts-day">· ${HARI[now.getDay()]}</span></h2>
-        <button class="btn btn-sm" data-goto="jadwal"><ion-icon name="calendar-outline"></ion-icon> ${tr('Semua Jadwal', 'All Schedules')}</button>
-      </div>
-
-      ${jadwalHariIni.length ? `
-        <div class="ts-note">${sisa
-          ? tr(`Masih ada <b>${sisa}</b> jam mengajar tersisa hari ini.`, `You still have <b>${sisa}</b> teaching slot(s) left today.`)
-          : tr('Semua jam mengajar hari ini sudah selesai. 🎉', 'All teaching slots for today are done. 🎉')}</div>
-        <div class="today-sched">
-          ${jadwalHariIni.map((s, i) => {
-            const st = stateOf(s, i);
-            return `
-              <div class="ts-item ${st}">
-                ${this._tsWhen(s)}
-                <div class="ts-body">
-                  <div class="ts-class">${esc(s.kelas || tr('Tanpa kelas', 'No class'))}
-                    ${this._isSekali(s) ? `<span class="badge badge-purple" style="margin-left:6px;">${tr('Hari ini saja', 'Today only')}</span>` : ''}
-                  </div>
-                  <div class="ts-sub">${esc(s.mapel || u.mapel || '-')}</div>
-                  <div class="ts-jam"><ion-icon name="time-outline"></ion-icon> ${this._jamRange(s.jamMulai, s.jamSelesai)}</div>
-                </div>
-                ${st ? `<span class="ts-badge ${st}">${badgeText[st]}</span>` : ''}
-              </div>`;
-          }).join('')}
-        </div>` : `
-        <div class="card empty-state" style="padding:26px 20px;">
-          <ion-icon name="cafe-outline"></ion-icon>
-          <div class="es-title">${tr('Tidak ada jadwal mengajar hari ini', 'No teaching schedule today')}</div>
-          <div class="es-sub">${tr('Kalau seharusnya ada, tambahkan di menu Jadwal Mengajar.', 'If there should be one, add it in My Schedule.')}</div>
-          <button class="btn btn-primary btn-sm" data-goto="jadwal" style="margin-top:12px;"><ion-icon name="add"></ion-icon> ${tr('Atur Jadwal', 'Set Schedule')}</button>
-        </div>`}
-
-      ${pratinjauBesok ? `
-        <div class="section-head" style="margin-top:26px;">
-          <h2>
-            <ion-icon name="sunny-outline" style="vertical-align:-2px;color:var(--brand);"></ion-icon>
-            ${tr('Jadwal Besok', "Tomorrow's Schedule")}
-            <span class="ts-day">· ${HARI[(now.getDay() + 1) % 7]}</span>
-          </h2>
-        </div>
-        ${jadwalBesok.length ? `
-          <div class="ts-note">${tr('Jadwal hari ini sudah lewat — ini persiapan untuk besok.', "Today is wrapping up — here's what's coming tomorrow.")}</div>
-          <div class="today-sched">
-            ${jadwalBesok.map(s => `
-              <div class="ts-item besok">
-                ${this._tsWhen(s)}
-                <div class="ts-body">
-                  <div class="ts-class">${esc(s.kelas || tr('Tanpa kelas', 'No class'))}
-                    ${this._isSekali(s) ? `<span class="badge badge-purple" style="margin-left:6px;">${tr('Sekali', 'One-off')}</span>` : ''}
-                  </div>
-                  <div class="ts-sub">${esc(s.mapel || u.mapel || '-')}</div>
-                  <div class="ts-jam"><ion-icon name="time-outline"></ion-icon> ${this._jamRange(s.jamMulai, s.jamSelesai)}</div>
-                </div>
-                <span class="ts-badge besok">${tr('Besok', 'Tomorrow')}</span>
-              </div>`).join('')}
-          </div>` : `
-          <div class="card empty-state" style="padding:22px 20px;">
-            <ion-icon name="bed-outline"></ion-icon>
-            <div class="es-title">${tr('Besok tidak ada jadwal mengajar', 'No teaching schedule tomorrow')}</div>
-            <div class="es-sub">${tr('Istirahat yang cukup ya. 😴', 'Get some good rest. 😴')}</div>
-          </div>`}` : ''}
-
-      ${jadwalKhusus.length ? `
-        <div class="section-head" style="margin-top:26px;">
-          <h2>
-            <ion-icon name="calendar-outline" style="vertical-align:-2px;color:var(--brand);"></ion-icon>
-            ${tr('Jadwal Tanggal Tertentu', 'One-off Schedule')}
-          </h2>
-          <span class="badge badge-purple">${tr('Jangan sampai lupa', "Don't forget")}</span>
-        </div>
-        <div class="ts-note">${tr('Jadwal berikut hanya berlaku pada tanggalnya — tidak berulang tiap minggu.', 'These apply only on their date — they do not repeat weekly.')}</div>
-        <div class="today-sched">
-          ${jadwalKhusus.map(s => `
-            <div class="ts-item upcoming">
-              ${this._tsWhen(s)}
-              <div class="ts-body">
-                <div class="ts-class">${esc(s.kelas || tr('Tanpa kelas', 'No class'))}</div>
-                <div class="ts-sub">${esc(s.mapel || u.mapel || '-')}</div>
-                <div class="ts-jam"><ion-icon name="time-outline"></ion-icon> ${this._jamRange(s.jamMulai, s.jamSelesai)}</div>
-              </div>
-              <span class="ts-badge upcoming">${this._relatifHari(s.tanggal)}</span>
-            </div>`).join('')}
-        </div>` : ''}`;
+      </div>`;
 
     $$('[data-goto]', el).forEach(b => b.onclick = () => this._goto(b.dataset.goto));
 
@@ -1370,224 +1209,206 @@ const Teacher = {
     });
   },
 
-  /* ============ TAB: JADWAL MENGAJAR ============ */
+  /* ============ TAB: JADWAL MENGAJAR (foto) ============
+     Bentuk jadwal tiap sekolah berbeda-beda dan versi cetaknya sudah ada di
+     tangan guru. Daripada memaksa guru mengetik ulang jam per jam, guru cukup
+     memotret atau mengunggah jadwalnya, lalu melihatnya kapan saja.
+
+     Fotonya disimpan di Supabase Storage (bucket yang sama dengan foto jurnal,
+     folder "jadwal"); yang dicatat di Firestore hanya URL publiknya, pada
+     profil guru: users/{uid}.jadwalFoto = { url, dibuatPada }. */
 
   async renderJadwal(el) {
-    const all = await DB.list('schedule');
-    const hariIni = todayStr();
-    const dayOrder = [1, 2, 3, 4, 5, 6, 0];
-
-    // Rutin (berulang mingguan) vs sekali (tanggal tertentu).
-    const rutin = all.filter(s => !this._isSekali(s))
-      .sort((a, b) => (+a.hari - +b.hari) || (a.jamMulai || '').localeCompare(b.jamMulai || ''));
-    const sekali = all.filter(s => this._isSekali(s))
-      .sort((a, b) => (a.tanggal || '').localeCompare(b.tanggal || '') || (a.jamMulai || '').localeCompare(b.jamMulai || ''));
-
-    const aksi = s => `
-      <td style="text-align:right;white-space:nowrap;">
-        <button class="mini-icon-btn" data-edit="${s.id}"><ion-icon name="create-outline"></ion-icon></button>
-        <button class="mini-icon-btn danger" data-del="${s.id}"><ion-icon name="trash-outline"></ion-icon></button>
-      </td>`;
+    const foto = DB.user.jadwalFoto || null;
+    const tglUnggah = foto?.dibuatPada ? fmtDate(String(foto.dibuatPada).slice(0, 10)) : '';
 
     el.innerHTML = `
       <div class="portal-head" style="margin-bottom:16px;">
-        <div><h1 style="font-size:1.2rem;">${tr('Jadwal Mengajar', 'Teaching Schedule')}</h1></div>
+        <div>
+          <h1 style="font-size:1.2rem;">${tr('Jadwal Mengajar', 'Teaching Schedule')}</h1>
+          <p>${tr('Foto jadwal mengajarmu — potret atau unggah sendiri.', 'A photo of your teaching schedule — snap or upload it yourself.')}</p>
+        </div>
         <div style="display:flex;gap:8px;flex-wrap:wrap;">
-          <button class="btn btn-sm" id="exportJadwal"><ion-icon name="download-outline"></ion-icon> CSV</button>
-          <button class="btn btn-sm" id="printJadwal"><ion-icon name="print-outline"></ion-icon> PDF</button>
-          ${Kop.btnHTML('kopJadwal')}
-          <button class="btn btn-primary btn-sm" id="addJadwal"><ion-icon name="add"></ion-icon> ${tr('Tambah', 'Add')}</button>
+          <button class="btn btn-sm" id="jfKamera"><ion-icon name="camera-outline"></ion-icon> ${tr('Buka Kamera', 'Open Camera')}</button>
+          <button class="btn btn-primary btn-sm" id="jfUnggah">
+            <ion-icon name="cloud-upload-outline"></ion-icon> ${foto ? tr('Ganti Foto', 'Replace Photo') : tr('Unggah Foto', 'Upload Photo')}
+          </button>
         </div>
       </div>
 
-      ${!all.length ? `
-        <div class="card empty-state"><ion-icon name="calendar-outline"></ion-icon>
-          <div class="es-title">${tr('Belum ada jadwal mengajar', 'No teaching schedule yet')}</div>
-          <div class="es-sub">${tr('Tambahkan jam, kelas, dan mapel yang kamu ajar 🗓️', 'Add the time, class, and subject you teach 🗓️')}</div>
-        </div>` : ''}
+      <input type="file" accept="image/*" id="jfFile" hidden>
 
-      ${rutin.length ? `
-        <div class="section-head">
-          <h2><ion-icon name="repeat-outline" style="vertical-align:-2px;color:var(--brand);"></ion-icon> ${tr('Jadwal Rutin', 'Weekly Schedule')}</h2>
-          <span class="badge badge-green">${tr('Berulang tiap minggu', 'Repeats weekly')}</span>
-        </div>
-        <div class="table-wrap">
-          <table class="data-table">
-            <thead><tr><th>${tr('Hari', 'Day')}</th><th>${tr('Jam', 'Time')}</th><th>${tr('Kelas', 'Class')}</th><th>${tr('Mapel', 'Subject')}</th><th style="text-align:right;">${tr('Aksi', 'Actions')}</th></tr></thead>
-            <tbody>
-              ${dayOrder.filter(d => rutin.some(s => +s.hari === d)).map(d => rutin.filter(s => +s.hari === d).map((s, idx) => `
-                <tr>
-                  <td>${idx === 0 ? `<b>${HARI[d]}</b>` : ''}</td>
-                  <td>${this._jamRange(s.jamMulai, s.jamSelesai)}</td>
-                  <td>${esc(s.kelas || '-')}</td>
-                  <td>${esc(s.mapel || '-')}</td>
-                  ${aksi(s)}
-                </tr>`).join('')).join('')}
-            </tbody>
-          </table>
-        </div>` : ''}
+      ${foto?.url ? `
+        <div class="card jf-card">
+          <button class="jf-foto" id="jfLihat" title="${tr('Ketuk untuk memperbesar', 'Tap to zoom')}">
+            <img src="${esc(foto.url)}" alt="${tr('Foto jadwal mengajar', 'Teaching schedule photo')}">
+            <span class="jf-zoom"><ion-icon name="expand-outline"></ion-icon></span>
+          </button>
+          <div class="jf-meta">
+            <span class="jf-tgl">
+              <ion-icon name="checkmark-circle-outline"></ion-icon>
+              ${tglUnggah ? tr(`Diunggah ${tglUnggah}`, `Uploaded ${tglUnggah}`) : tr('Tersimpan', 'Saved')}
+            </span>
+            <button class="btn btn-sm btn-danger" id="jfHapus"><ion-icon name="trash-outline"></ion-icon> ${tr('Hapus', 'Delete')}</button>
+          </div>
+        </div>` : `
+        <div class="card empty-state">
+          <ion-icon name="image-outline"></ion-icon>
+          <div class="es-title">${tr('Belum ada foto jadwal', 'No schedule photo yet')}</div>
+          <div class="es-sub">${tr('Potret jadwal mengajarmu dengan kamera, atau unggah fotonya dari galeri 📸', 'Snap your teaching schedule with the camera, or upload it from your gallery 📸')}</div>
+          <div class="jf-es-aksi">
+            <button class="btn btn-sm" data-jf="kamera"><ion-icon name="camera-outline"></ion-icon> ${tr('Buka Kamera', 'Open Camera')}</button>
+            <button class="btn btn-primary btn-sm" data-jf="unggah"><ion-icon name="cloud-upload-outline"></ion-icon> ${tr('Unggah Foto', 'Upload Photo')}</button>
+          </div>
+        </div>`}`;
 
-      ${sekali.length ? `
-        <div class="section-head" style="margin-top:26px;">
-          <h2><ion-icon name="calendar-outline" style="vertical-align:-2px;color:var(--brand);"></ion-icon> ${tr('Jadwal Tanggal Tertentu', 'One-off Schedule')}</h2>
-          <span class="badge badge-purple">${tr('Berlaku 1 hari saja', 'Single day only')}</span>
-        </div>
-        <div class="table-wrap">
-          <table class="data-table">
-            <thead><tr><th>${tr('Tanggal', 'Date')}</th><th>${tr('Jam', 'Time')}</th><th>${tr('Kelas', 'Class')}</th><th>${tr('Mapel', 'Subject')}</th><th style="text-align:right;">${tr('Aksi', 'Actions')}</th></tr></thead>
-            <tbody>
-              ${sekali.map(s => {
-                const lewat = (s.tanggal || '') < hariIni;
-                return `
-                <tr style="${lewat ? 'opacity:.5;' : ''}">
-                  <td style="white-space:nowrap;">
-                    <b>${fmtDate(s.tanggal, { weekday: true })}</b>
-                    ${s.tanggal === hariIni ? `<span class="badge badge-green" style="margin-left:6px;">${tr('Hari ini', 'Today')}</span>` : ''}
-                    ${lewat ? `<span class="badge" style="margin-left:6px;">${tr('Lewat', 'Past')}</span>` : ''}
-                  </td>
-                  <td>${this._jamRange(s.jamMulai, s.jamSelesai)}</td>
-                  <td>${esc(s.kelas || '-')}</td>
-                  <td>${esc(s.mapel || '-')}</td>
-                  ${aksi(s)}
-                </tr>`;
-              }).join('')}
-            </tbody>
-          </table>
-        </div>` : ''}`;
+    const berkas = $('#jfFile', el);
+    const pilihBerkas = () => berkas.click();
 
-    $('#addJadwal', el).onclick = () => this._jadwalModal();
-    $$('[data-edit]', el).forEach(b => b.onclick = () => this._jadwalModal(all.find(s => s.id === b.dataset.edit)));
-    $$('[data-del]', el).forEach(b => b.onclick = async () => {
-      if (!await confirmDialog(tr('Hapus jadwal ini?', 'Delete this schedule?'), { danger: true, okText: tr('Hapus', 'Delete') })) return;
-      await DB.remove('schedule', b.dataset.del);
-      toast(tr('Jadwal dihapus.', 'Schedule deleted.'));
-      this.render(this._el);
-    });
-    $('#exportJadwal', el).onclick = () => {
-      const rows = [[tr('Jenis', 'Type'), tr('Berlaku', 'Applies on'), tr('Mulai', 'Start'), tr('Selesai', 'End'), tr('Kelas', 'Class'), tr('Mapel', 'Subject')]];
-      [...rutin, ...sekali].forEach(s => rows.push([
-        this._isSekali(s) ? tr('Sekali', 'One-off') : tr('Rutin', 'Weekly'),
-        this._isSekali(s) ? s.tanggal : HARI[+s.hari],
-        this._jam(s.jamMulai), this._jam(s.jamSelesai), s.kelas || '', s.mapel || ''
-      ]));
-      downloadCSV(rows, 'jadwal_mengajar.csv');
+    berkas.onchange = async e => {
+      const f = e.target.files[0];
+      berkas.value = '';                 // agar memilih foto yang sama lagi tetap memicu onchange
+      if (f) await this._simpanFotoJadwal(f);
     };
 
-    $('#kopJadwal', el).onclick = () => Kop.modal();
+    $('#jfUnggah', el).onclick = pilihBerkas;
+    $('#jfKamera', el).onclick = () => this._kameraJadwal();
+    $$('[data-jf]', el).forEach(b => b.onclick = () =>
+      b.dataset.jf === 'kamera' ? this._kameraJadwal() : pilihBerkas());
 
-    $('#printJadwal', el).onclick = () => {
-      const kop = Kop.html({
-        judul: tr('JADWAL MENGAJAR', 'TEACHING SCHEDULE'),
-        meta: [
-          [tr('Guru', 'Teacher'), DB.user.nama || ''],
-          [tr('Mata Pelajaran', 'Subject'), DB.user.mapel || ''],
-          [tr('Tanggal cetak', 'Printed on'), fmtDate(todayStr())]
-        ]
-      });
-      const cols = `<colgroup>
-        <col style="width:6%"><col style="width:12%"><col style="width:24%"><col style="width:20%"><col style="width:19%"><col style="width:19%">
-      </colgroup>`;
-      const th = `<tr><th>No</th><th>${tr('Jenis', 'Type')}</th><th>${tr('Berlaku', 'Applies on')}</th><th>${tr('Jam', 'Time')}</th><th>${tr('Kelas', 'Class')}</th><th>${tr('Mapel', 'Subject')}</th></tr>`;
-      const body = [...rutin, ...sekali].map((s, i) => `<tr>
-        <td class="center">${i + 1}</td>
-        <td>${this._isSekali(s) ? tr('Sekali', 'One-off') : tr('Rutin', 'Weekly')}</td>
-        <td>${this._isSekali(s) ? fmtDate(s.tanggal, { weekday: true }) : HARI[+s.hari]}</td>
-        <td class="center nowrap">${this._jamRange(s.jamMulai, s.jamSelesai)}</td>
-        <td>${esc(s.kelas || '')}</td>
-        <td>${esc(s.mapel || DB.user.mapel || '')}</td>
-      </tr>`).join('');
-      printHTML(tr('Jadwal Mengajar', 'Teaching Schedule'),
-        `${kop}<table>${cols}<thead>${th}</thead><tbody>${body}</tbody></table>`);
-    };
+    if (foto?.url) {
+      $('#jfLihat', el).onclick = () => this._lihatFotoJadwal(foto.url);
+      $('#jfHapus', el).onclick = async () => {
+        if (!await confirmDialog(
+          tr('Hapus foto jadwal ini?', 'Delete this schedule photo?'),
+          { danger: true, okText: tr('Hapus', 'Delete') })) return;
+        await DB.updateUser({ jadwalFoto: null });
+        await Storage.deleteByUrl(foto.url);
+        toast(tr('Foto jadwal dihapus.', 'Schedule photo deleted.'));
+        this.render(this._el);
+      };
+    }
   },
 
-  async _jadwalModal(item = null) {
-    const dayOrder = [1, 2, 3, 4, 5, 6, 0];
-    const classes = await this._classes();
-    const tipe = this._tipeJadwal(item);   // 'rutin' (default) | 'sekali'
+  // Unggah foto (dari galeri maupun hasil jepretan kamera) → Supabase → profil.
+  async _simpanFotoJadwal(file) {
+    if (!file.type.startsWith('image/')) {
+      return toast(tr('Berkas itu bukan gambar.', 'That file is not an image.'), 'warning');
+    }
+    if (!Storage.ready()) {
+      return toast(tr('Penyimpanan foto belum siap. Cek koneksi lalu muat ulang halaman.',
+                      'Photo storage is not ready. Check your connection and reload.'), 'error');
+    }
+    if (this._jfSibuk) return;           // cegah unggah ganda saat guru menekan dua kali
+    this._jfSibuk = true;
+
+    const lama = DB.user.jadwalFoto?.url || '';
+    toast(tr('Mengunggah foto jadwal…', 'Uploading schedule photo…'));
+    try {
+      // Resolusi sengaja lebih besar dari foto jurnal: tulisan jam & kelas di
+      // jadwal harus tetap terbaca ketika fotonya diperbesar.
+      const url = await Storage.uploadFoto(file, 'jadwal', { maxDim: 1800, quality: 0.82 });
+      await DB.updateUser({ jadwalFoto: { url, dibuatPada: new Date().toISOString() } });
+      // Foto lama baru dibuang SETELAH yang baru tersimpan, supaya kegagalan di
+      // tengah jalan tidak meninggalkan guru tanpa foto sama sekali.
+      if (lama) await Storage.deleteByUrl(lama);
+      toast(tr('Foto jadwal tersimpan 📸', 'Schedule photo saved 📸'));
+      this.render(this._el);
+    } catch (e) {
+      toast(tr('Gagal mengunggah foto: ', 'Failed to upload photo: ') + e.message, 'error');
+    } finally {
+      this._jfSibuk = false;
+    }
+  },
+
+  // Lihat foto ukuran penuh (bisa digeser & diperbesar lewat peramban).
+  _lihatFotoJadwal(url) {
+    openModal({
+      title: tr('Jadwal Mengajar', 'Teaching Schedule'),
+      body: `
+        <div class="jf-besar"><img src="${esc(url)}" alt="${tr('Foto jadwal mengajar', 'Teaching schedule photo')}"></div>
+        <a class="btn btn-block" style="margin-top:14px;" href="${esc(url)}" target="_blank" rel="noopener">
+          <ion-icon name="open-outline"></ion-icon> ${tr('Buka ukuran asli', 'Open full size')}
+        </a>`
+    });
+  },
+
+  /* Kamera langsung di halaman (getUserMedia). Atribut capture pada <input file>
+     hanya bekerja di ponsel; di laptop ia diabaikan diam-diam. Dengan getUserMedia,
+     "Buka Kamera" berarti benar-benar membuka kamera di kedua perangkat. */
+  _kameraJadwal() {
+    if (!navigator.mediaDevices?.getUserMedia) {
+      return toast(tr('Peramban ini tidak bisa membuka kamera. Pakai tombol Unggah Foto.',
+                      'This browser cannot open the camera. Use the Upload Photo button.'), 'warning');
+    }
+
+    let stream = null;
+    let arah = 'environment';            // utamakan kamera belakang (untuk memotret kertas)
 
     openModal({
-      title: item ? tr('Ubah Jadwal', 'Edit Schedule') : tr('Jadwal Baru', 'New Schedule'),
+      title: tr('Ambil Foto Jadwal', 'Take Schedule Photo'),
       body: `
-        <div class="field">
-          <label>${tr('Jenis jadwal', 'Schedule type')}</label>
-          <div class="seg" id="mTipe">
-            <button type="button" class="seg-btn ${tipe === 'rutin' ? 'active' : ''}" data-tipe="rutin">
-              <ion-icon name="repeat-outline"></ion-icon> ${tr('Ulangi tiap minggu', 'Repeat weekly')}
-            </button>
-            <button type="button" class="seg-btn ${tipe === 'sekali' ? 'active' : ''}" data-tipe="sekali">
-              <ion-icon name="calendar-outline"></ion-icon> ${tr('Tanggal tertentu', 'Specific date')}
-            </button>
-          </div>
-          <div class="hint" id="mTipeHint"></div>
-        </div>
-
-        <div class="field" id="mFieldHari">
-          <label>${tr('Hari', 'Day')}</label>
-          <select class="select" id="mHari">${dayOrder.map(d => `<option value="${d}" ${(item ? +item.hari : new Date().getDay()) === d ? 'selected' : ''}>${HARI[d]}</option>`).join('')}</select>
-        </div>
-
-        <div class="field" id="mFieldTanggal">
-          <label>${tr('Tanggal', 'Date')}</label>
-          <input type="date" class="input" id="mTanggal" value="${esc(item?.tanggal || todayStr())}">
-        </div>
-
-        <div class="grid grid-2 keep-2 jam-fields" style="gap:12px;">
-          <div class="field"><label>${tr('Jam mulai', 'Start time')}</label>${this._jamPicker('mMulai', item?.jamMulai, '07:00')}</div>
-          <div class="field"><label>${tr('Jam selesai', 'End time')}</label>${this._jamPicker('mSelesai', item?.jamSelesai, '08:30')}</div>
-        </div>
-        <div class="field">
-          <label>${tr('Kelas', 'Class')}</label>
-          <input type="text" class="input" id="mKelas" list="clsList" placeholder="${tr('mis. X TKJ 2', 'e.g. X TKJ 2')}" value="${esc(item?.kelas || '')}">
-          <datalist id="clsList">${classes.map(c => `<option value="${esc(c.nama)}">`).join('')}</datalist>
-        </div>
-        <div class="field"><label>${tr('Mata pelajaran', 'Subject')}</label><input type="text" class="input" id="mMapel" value="${esc(item?.mapel || DB.user.mapel || '')}"></div>
-        <button class="btn btn-primary btn-block" id="mSave"><ion-icon name="checkmark"></ion-icon> ${tr('Simpan', 'Save')}</button>`,
+        <div class="cam-view"><video id="camVid" playsinline autoplay muted></video></div>
+        <div class="cam-pesan" id="camPesan">${tr('Arahkan kamera ke jadwal, pastikan tulisannya terbaca.',
+                                                  'Point the camera at your schedule; make sure the text is readable.')}</div>
+        <div style="display:flex;gap:10px;margin-top:14px;">
+          <button class="btn btn-block" id="camPutar"><ion-icon name="camera-reverse-outline"></ion-icon> ${tr('Balik Kamera', 'Flip Camera')}</button>
+          <button class="btn btn-primary btn-block" id="camAmbil"><ion-icon name="camera"></ion-icon> ${tr('Ambil Foto', 'Capture')}</button>
+        </div>`,
       onMount: m => {
-        let cur = tipe;
+        const vid = $('#camVid', m), pesan = $('#camPesan', m), ambil = $('#camAmbil', m);
+        const matikan = () => { if (stream) stream.getTracks().forEach(t => t.stop()); stream = null; };
 
-        // Tampilkan "Hari" untuk jadwal rutin, "Tanggal" untuk jadwal sekali.
-        const syncTipe = () => {
-          $('#mFieldHari', m).style.display = cur === 'rutin' ? '' : 'none';
-          $('#mFieldTanggal', m).style.display = cur === 'sekali' ? '' : 'none';
-          $('#mTipeHint', m).textContent = cur === 'rutin'
-            ? tr('Berulang setiap minggu pada hari yang dipilih.', 'Repeats every week on the chosen day.')
-            : tr('Hanya berlaku pada tanggal itu saja (jadwal pengganti/mendadak).', 'Applies only on that date (one-off / replacement).');
-          $$('.seg-btn', m).forEach(b => b.classList.toggle('active', b.dataset.tipe === cur));
-        };
-        $$('.seg-btn', m).forEach(b => b.onclick = () => { cur = b.dataset.tipe; syncTipe(); });
-        syncTipe();
+        // Kamera WAJIB mati begitu modal ditutup — lewat tombol X, klik latar,
+        // maupun tombol lain. Tanpa ini lampu kamera tetap menyala setelahnya.
+        const obs = new MutationObserver(() => {
+          if (!m.isConnected) { matikan(); obs.disconnect(); }
+        });
+        obs.observe(document.getElementById('modalRoot'), { childList: true });
 
-        $('#mSave', m).onclick = async () => {
-          const jamMulai = this._jamValue('mMulai', m), jamSelesai = this._jamValue('mSelesai', m);
-          if (!jamMulai || !jamSelesai) return toast(tr('Isi jam mulai & selesai.', 'Enter start & end time.'), 'warning');
-          if (jamSelesai <= jamMulai) return toast(tr('Jam selesai harus setelah jam mulai.', 'End time must be after start time.'), 'warning');
-
-          let hari, tanggal = '';
-          if (cur === 'sekali') {
-            tanggal = $('#mTanggal', m).value;
-            if (!tanggal) return toast(tr('Pilih tanggalnya.', 'Pick a date.'), 'warning');
-            // `hari` tetap diisi (turunan dari tanggal) agar pengurutan &
-            // penyaringan berbasis hari yang sudah ada tetap jalan.
-            hari = new Date(`${tanggal}T00:00:00`).getDay();
-          } else {
-            hari = +$('#mHari', m).value;
+        const nyalakan = async () => {
+          matikan();
+          try {
+            stream = await navigator.mediaDevices.getUserMedia({
+              video: { facingMode: arah, width: { ideal: 1920 } }, audio: false
+            });
+            if (!m.isConnected) return matikan();   // modal keburu ditutup
+            vid.srcObject = stream;
+            ambil.disabled = false;
+          } catch (e) {
+            const alasan =
+              e.name === 'NotAllowedError' ? tr('Izin kamera ditolak. Aktifkan lewat ikon gembok di bilah alamat.',
+                                                'Camera permission denied. Allow it from the lock icon in the address bar.')
+            : e.name === 'NotFoundError'   ? tr('Tidak ada kamera di perangkat ini. Pakai tombol Unggah Foto.',
+                                                'No camera on this device. Use the Upload Photo button.')
+            : e.message;
+            pesan.textContent = alasan;
+            pesan.classList.add('cam-err');
+            ambil.disabled = true;
           }
+        };
+        nyalakan();
 
-          const data = {
-            tipe: cur, hari, tanggal, jamMulai, jamSelesai,
-            kelas: $('#mKelas', m).value.trim(), mapel: $('#mMapel', m).value.trim()
-          };
-          if (item) await DB.update('schedule', item.id, data);
-          else await DB.add('schedule', data);
-          closeModal();
-          toast(tr('Jadwal tersimpan 🗓️', 'Schedule saved 🗓️'));
-          this.render(this._el);
+        $('#camPutar', m).onclick = () => {
+          arah = arah === 'environment' ? 'user' : 'environment';
+          nyalakan();
+        };
+
+        ambil.onclick = () => {
+          if (!stream || !vid.videoWidth) return;
+          const kanvas = document.createElement('canvas');
+          kanvas.width = vid.videoWidth;
+          kanvas.height = vid.videoHeight;
+          kanvas.getContext('2d').drawImage(vid, 0, 0);
+          kanvas.toBlob(async blob => {
+            matikan();
+            closeModal();
+            if (blob) await this._simpanFotoJadwal(new File([blob], 'jadwal.jpg', { type: 'image/jpeg' }));
+          }, 'image/jpeg', 0.92);
         };
       }
     });
   },
-
   /* ============ TAB: TUGAS KELAS (kirim tugas ke siswa) ============
      Semua guru pengampu kelas boleh mengirim tugas → koleksi class_tasks.
      Siswa menerimanya read-only di app (boleh centang selesai). */

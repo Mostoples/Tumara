@@ -24,15 +24,18 @@ const Storage = {
   /**
    * Unggah satu File gambar → kembalikan URL publiknya.
    * Gambar dikompres dulu (memakai compressImage dari utils.js) agar hemat.
-   * @param {File} file  file dari <input type="file">
+   * @param {File} file  file dari <input type="file"> (Blob hasil kamera juga boleh)
    * @param {string} folder  subfolder di dalam bucket (mis. "jurnal")
+   * @param {{maxDim?: number, quality?: number}} opsi  ukuran kompresi. Default
+   *   cukup untuk foto kegiatan; foto dokumen (mis. jadwal mengajar) perlu lebih
+   *   besar agar tulisannya tetap terbaca saat diperbesar.
    * @returns {Promise<string>} URL publik untuk disimpan di Firestore
    */
-  async uploadFoto(file, folder = 'umum') {
+  async uploadFoto(file, folder = 'umum', { maxDim = 1000, quality = 0.6 } = {}) {
     if (!_sb) throw new Error('Supabase belum siap (library gagal dimuat).');
 
     // compressImage mengembalikan dataURL base64 → ubah jadi Blob untuk diunggah.
-    const dataUrl = await compressImage(file, { maxDim: 1000, quality: 0.6 });
+    const dataUrl = await compressImage(file, { maxDim, quality });
     const blob = await (await fetch(dataUrl)).blob();
 
     const rand = Math.random().toString(36).slice(2, 8);

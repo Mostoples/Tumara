@@ -49,16 +49,16 @@ const AuthView = {
     return `
       <div class="auth-form-side">
         <h2 class="af-title">${tr('Selamat datang kembali 👋', 'Welcome back 👋')}</h2>
-        <p class="af-sub">${tr('Masuk dengan username & NIS dari sekolahmu.', 'Sign in with the username & NIS given by your school.')}</p>
+        <p class="af-sub">${tr('Siswa: username + NIS. Guru & admin: email + kata sandi.', 'Students: username + NIS. Teachers & admins: email + password.')}</p>
         <form id="authForm" novalidate>
           <div class="field">
-            <label>Username</label>
-            <input type="text" class="input" id="fEmail" name="username" placeholder="${tr('mis. budi.santoso', 'e.g. budi.santoso')}" required autocomplete="username" autocapitalize="off" spellcheck="false">
+            <label>${tr('Username / Email', 'Username / Email')}</label>
+            <input type="text" class="input" id="fEmail" name="username" placeholder="${tr('budi.santoso  •  guru@sekolah.sch.id', 'budi.santoso  •  teacher@school.edu')}" required autocomplete="username" autocapitalize="off" spellcheck="false">
           </div>
           <div class="field">
             <label>${tr('NIS / Kata sandi', 'NIS / Password')}</label>
             <div class="input-group">
-              <input type="password" class="input" id="fPass" name="password" placeholder="${tr('NIS-mu', 'Your NIS')}" required autocomplete="current-password">
+              <input type="password" class="input" id="fPass" name="password" placeholder="${tr('NIS atau kata sandimu', 'Your NIS or password')}" required autocomplete="current-password">
               <button type="button" class="suffix-btn" id="togglePass"><ion-icon name="eye-outline"></ion-icon></button>
             </div>
           </div>
@@ -88,7 +88,7 @@ const AuthView = {
       const isEmail = identitas.includes('@');
 
       if (!isEmail && !usernameOf(identitas)) {
-        return toast(tr('Masukkan username-mu.', 'Please enter your username.'), 'warning');
+        return toast(tr('Masukkan username (siswa) atau email (guru/admin).', 'Enter your username (student) or email (teacher/admin).'), 'warning');
       }
       // Akun sekolah bersandi NIS: boleh lebih pendek dari 6 (dilengkapi otomatis).
       const minPass = isEmail ? 6 : 4;

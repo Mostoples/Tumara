@@ -210,6 +210,54 @@ const AdminView = {
     return arr.sort((a, b) => (a.urutan ?? 999999) - (b.urutan ?? 999999) || (a.nama || '').localeCompare(b.nama || ''));
   },
 
+  /* ---- Gerbang "pilih kelas" (mengikuti pola portal guru) ----
+     Halaman ini TIDAK langsung menumpahkan daftar siswa: admin memilih
+     kelas dulu, baru daftar siswanya terbuka. Di HP ini penting — tabel
+     siswa yang panjang membuat tombol kelas terdorong jauh ke bawah. */
+
+  // Tingkat kelas: pakai field `tingkat` bila ada, selain itu tebak dari nama
+  // ("XI TKJ 1" → XI). Urutan XIII→XII→XI→X penting agar "XIII" tidak keburu
+  // cocok sebagai "XII"/"XI"/"X".
+  _tingkatOf(cls) {
+    if (cls?.tingkat) return cls.tingkat;
+    const m = String(cls?.nama || '').trim().toUpperCase().match(/^(?:KELAS\s+)?(XIII|XII|XI|X)\b/);
+    return m ? m[1] : null;
+  },
+
+  _groupByTingkat(classes) {
+    const groups = [];
+    for (const t of this.TINGKAT) {
+      const list = classes.filter(c => this._tingkatOf(c) === t);
+      if (list.length) groups.push({ label: `${tr('Kelas', 'Grade')} ${t}`, list });
+    }
+    const lain = classes.filter(c => !this.TINGKAT.includes(this._tingkatOf(c)));
+    if (lain.length) groups.push({ label: tr('Lainnya', 'Others'), list: lain });
+    return groups;
+  },
+
+  // Kartu kelas + jumlah siswanya. Klik → buka detail kelas.
+  _classGate(classes, jumlah) {
+    return this._groupByTingkat(classes).map(g => `
+      <div class="tingkat-head">
+        <span class="tingkat-name">${esc(g.label)}</span>
+        <span class="tingkat-count">${g.list.length} ${tr('kelas', 'classes')}</span>
+      </div>
+      <div class="kelas-card-grid">
+        ${g.list.map(c => {
+          const n = jumlah[c.id] || 0;
+          return `
+          <button class="kelas-card" data-cls="${c.id}">
+            <span class="kelas-card-ic"><ion-icon name="school"></ion-icon></span>
+            <span class="kelas-card-body">
+              <span class="kelas-card-nm">${esc(c.nama)}</span>
+              <span class="kelas-card-sub">${n} ${tr('siswa', 'students')}</span>
+            </span>
+            <ion-icon name="chevron-forward"></ion-icon>
+          </button>`;
+        }).join('')}
+      </div>`).join('');
+  },
+
   // NIS: hanya angka, maksimal 20 digit.
   _cleanNis(v) { return String(v || '').replace(/\D/g, '').slice(0, 20); },
   // Batasi input #mNis ke digit & maks 20 angka saat diketik/tempel.
@@ -235,39 +283,74 @@ const AdminView = {
       return;
     }
 
-    if (classes.length && (!this.activeClassId || !classes.find(c => c.id === this.activeClassId))) {
-      this.activeClassId = classes[0].id;
-    }
+    // Kelas yang dipilih sebelumnya mungkin sudah dihapus → balik ke gerbang.
+    if (this.activeClassId && !classes.find(c => c.id === this.activeClassId)) this.activeClassId = null;
     const active = classes.find(c => c.id === this.activeClassId) || null;
-    // Daftar siswa kelas ini = AKUN siswa dengan kelasId tsb (bukan catatan terpisah).
-    const siswa = active
-      ? (await DB.listStudentsByClass(active.id)).sort((a, b) => (a.nama || '').localeCompare(b.nama || ''))
-      : [];
 
-    el.innerHTML = `
+    const head = `
       ${this._switcher()}
       <div class="portal-head" style="margin-bottom:16px;">
         <div>
           <h1>${tr('Kelas & Siswa', 'Classes & Students')}</h1>
-          <p>${tr('Buat kelas, lalu tambahkan siswanya — tiap siswa yang ditambahkan langsung dibuatkan akun (username + NIS).', 'Create classes, then add their students — each student added gets an account right away (username + NIS).')}</p>
+          <p>${tr('Pilih kelas untuk melihat & menambah siswanya. Tiap siswa yang ditambahkan langsung dibuatkan akun (username + NIS).', 'Pick a class to view & add its students. Each student added gets an account right away (username + NIS).')}</p>
         </div>
         <button class="btn btn-primary" id="addClass"><ion-icon name="add"></ion-icon> ${tr('Kelas Baru', 'New Class')}</button>
+      </div>`;
+
+    /* ---------- LAYAR 1: belum ada kelas terpilih → gerbang pilih kelas ---------- */
+    if (!active) {
+      if (!classes.length) {
+        el.innerHTML = head + `
+          <div class="card empty-state">
+            <ion-icon name="school-outline"></ion-icon>
+            <div class="es-title">${tr('Belum ada kelas', 'No classes yet')}</div>
+            <div class="es-sub">${tr('Buat kelas pertama, mis. tingkat "X" + nama "TKJ 1" 🏫', 'Create your first class, e.g. grade "X" + name "TKJ 1" 🏫')}</div>
+          </div>`;
+        this._bindSwitcher(el);
+        $('#addClass', el).onclick = () => this._classModal();
+        return;
+      }
+
+      // Jumlah siswa tiap kelas — satu query untuk semua kelas (bukan per kelas).
+      const jumlah = {};
+      try {
+        (await DB.listStudents()).forEach(s => {
+          if (s.kelasId) jumlah[s.kelasId] = (jumlah[s.kelasId] || 0) + 1;
+        });
+      } catch (_) { /* jumlah kosong — kartu tetap tampil */ }
+
+      el.innerHTML = head + this._classGate(classes, jumlah);
+      this._bindSwitcher(el);
+      $('#addClass', el).onclick = () => this._classModal();
+      $$('[data-cls]', el).forEach(b => b.onclick = () => {
+        this.activeClassId = b.dataset.cls;
+        this.render(this._el);
+      });
+      return;
+    }
+
+    /* ---------- LAYAR 2: detail kelas terpilih ---------- */
+    // Daftar siswa kelas ini = AKUN siswa dengan kelasId tsb (bukan catatan terpisah).
+    const siswa = (await DB.listStudentsByClass(active.id))
+      .sort((a, b) => (a.nama || '').localeCompare(b.nama || ''));
+
+    el.innerHTML = `
+      ${this._switcher()}
+      <div class="class-bar">
+        <button class="btn btn-sm" id="backCls"><ion-icon name="arrow-back-outline"></ion-icon> ${tr('Ganti Kelas', 'Change Class')}</button>
+        <span class="class-bar-name"><ion-icon name="school"></ion-icon> ${esc(active.nama)}</span>
       </div>
 
-      ${classes.length ? `
-        <div style="display:flex;gap:9px;flex-wrap:wrap;margin-bottom:20px;">
-          ${classes.map(c => `<button class="chip ${c.id === this.activeClassId ? 'active' : ''}" data-pick="${c.id}">${esc(c.nama)}</button>`).join('')}
-        </div>
-
+      ${`
         <div class="card">
           <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;">
-            <div class="card-title" style="margin:0;"><ion-icon name="people" style="color:var(--brand)"></ion-icon>${esc(active.nama)} <span class="badge badge-blue">${siswa.length} ${tr('siswa', 'students')}</span></div>
-            <div style="display:flex;gap:8px;flex-wrap:wrap;">
+            <div class="card-title" style="margin:0;"><ion-icon name="people" style="color:var(--brand)"></ion-icon>${tr('Siswa', 'Students')} <span class="badge badge-blue">${siswa.length}</span></div>
+            <div class="kelas-actions">
               <button class="btn btn-primary btn-sm" id="addStudent"><ion-icon name="person-add-outline"></ion-icon> ${tr('Tambah Siswa', 'Add Student')}</button>
               <button class="btn btn-sm" id="importStudents"><ion-icon name="cloud-upload-outline"></ion-icon> ${tr('Import Massal', 'Bulk Import')}</button>
               <button class="btn btn-sm" id="exportRoster"${siswa.length ? '' : ' disabled'}><ion-icon name="download-outline"></ion-icon> CSV</button>
               <button class="btn btn-sm" id="editClass"><ion-icon name="create-outline"></ion-icon> ${tr('Ubah', 'Edit')}</button>
-              <button class="btn btn-sm btn-soft-danger" id="delClass"><ion-icon name="trash-outline"></ion-icon></button>
+              <button class="btn btn-sm btn-soft-danger" id="delClass" title="${tr('Hapus kelas', 'Delete class')}"><ion-icon name="trash-outline"></ion-icon></button>
             </div>
           </div>
 
@@ -299,55 +382,48 @@ const AdminView = {
               <div class="es-title">${tr('Belum ada siswa di kelas ini', 'No students in this class yet')}</div>
               <div class="es-sub">${tr('Tekan "Tambah Siswa" (nama + NIS) — akunnya langsung dibuat.', 'Press "Add Student" (name + NIS) — the account is created right away.')}</div>
             </div>`}
-        </div>` : `
-        <div class="card empty-state">
-          <ion-icon name="school-outline"></ion-icon>
-          <div class="es-title">${tr('Belum ada kelas', 'No classes yet')}</div>
-          <div class="es-sub">${tr('Buat kelas pertama, mis. tingkat "X" + nama "TKJ 1" 🏫', 'Create your first class, e.g. grade "X" + name "TKJ 1" 🏫')}</div>
         </div>`}`;
 
     this._bindSwitcher(el);
-    $('#addClass', el).onclick = () => this._classModal();
-    $$('[data-pick]', el).forEach(b => b.onclick = () => { this.activeClassId = b.dataset.pick; this.render(this._el); });
+    // "Ganti Kelas" → kembali ke gerbang pilih kelas.
+    $('#backCls', el).onclick = () => { this.activeClassId = null; this.render(this._el); };
 
-    if (active) {
-      $('#editClass', el).onclick = () => this._classModal(active);
-      $('#delClass', el).onclick = async () => {
-        // Kelas berisi akun siswa: hapus siswanya dulu — supaya tak ada akun
-        // yang menggantung tanpa kelas (dan admin sadar apa yang ia hapus).
-        if (siswa.length) {
-          return toast(tr(`Kelas "${active.nama}" masih berisi ${siswa.length} akun siswa. Hapus/pindahkan siswanya dulu.`,
-                          `Class "${active.nama}" still has ${siswa.length} student accounts. Remove/move them first.`), 'warning');
-        }
-        if (!await confirmDialog(
-          tr(`Hapus kelas "${active.nama}"?`, `Delete class "${active.nama}"?`),
-          { danger: true, okText: tr('Hapus Kelas', 'Delete Class') })) return;
-        try {
-          await DB.gRemove('school_classes', active.id);
-          this.activeClassId = null;
-          toast(tr('Kelas dihapus.', 'Class deleted.'));
-          this.render(this._el);
-        } catch (e) { toast(e.message, 'error'); }
-      };
-      $('#importStudents', el).onclick = () => this._rosterImportModal(active);
-      $('#addStudent', el).onclick = () => this._studentModal(active, null);
-      $$('[data-edits]', el).forEach(b => b.onclick = () => this._studentModal(active, siswa.find(s => s.id === b.dataset.edits)));
-      $$('[data-dels]', el).forEach(b => b.onclick = async () => {
-        const s = siswa.find(x => x.id === b.dataset.dels);
-        if (!await confirmDialog(
-          tr(`Hapus akun siswa "${s.nama}"? Data profil & catatannya ikut hilang. Tindakan ini tidak bisa dibatalkan.`,
-             `Delete the student account "${s.nama}"? Their profile & records go with it. This cannot be undone.`),
-          { danger: true, okText: tr('Hapus Akun', 'Delete Account') })) return;
-        try { await DB.adminDeleteUser(s.id); toast(tr('Akun siswa dihapus.', 'Student account deleted.')); this.render(this._el); }
-        catch (e) { toast(e.message, 'error'); }
-      });
-      const expBtn = $('#exportRoster', el);
-      if (expBtn && siswa.length) expBtn.onclick = () => {
-        const rows = [[tr('No', 'No'), tr('Nama', 'Name'), 'Username', 'NIS']];
-        siswa.forEach((s, i) => rows.push([i + 1, s.nama, this._loginId(s), s.nis || '']));
-        downloadCSV(rows, `siswa_${(active.nama || 'kelas').replace(/\s+/g, '_')}.csv`);
-      };
-    }
+    $('#editClass', el).onclick = () => this._classModal(active);
+    $('#delClass', el).onclick = async () => {
+      // Kelas berisi akun siswa: hapus siswanya dulu — supaya tak ada akun
+      // yang menggantung tanpa kelas (dan admin sadar apa yang ia hapus).
+      if (siswa.length) {
+        return toast(tr(`Kelas "${active.nama}" masih berisi ${siswa.length} akun siswa. Hapus/pindahkan siswanya dulu.`,
+                        `Class "${active.nama}" still has ${siswa.length} student accounts. Remove/move them first.`), 'warning');
+      }
+      if (!await confirmDialog(
+        tr(`Hapus kelas "${active.nama}"?`, `Delete class "${active.nama}"?`),
+        { danger: true, okText: tr('Hapus Kelas', 'Delete Class') })) return;
+      try {
+        await DB.gRemove('school_classes', active.id);
+        this.activeClassId = null;
+        toast(tr('Kelas dihapus.', 'Class deleted.'));
+        this.render(this._el);
+      } catch (e) { toast(e.message, 'error'); }
+    };
+    $('#importStudents', el).onclick = () => this._rosterImportModal(active);
+    $('#addStudent', el).onclick = () => this._studentModal(active, null);
+    $$('[data-edits]', el).forEach(b => b.onclick = () => this._studentModal(active, siswa.find(s => s.id === b.dataset.edits)));
+    $$('[data-dels]', el).forEach(b => b.onclick = async () => {
+      const s = siswa.find(x => x.id === b.dataset.dels);
+      if (!await confirmDialog(
+        tr(`Hapus akun siswa "${s.nama}"? Data profil & catatannya ikut hilang. Tindakan ini tidak bisa dibatalkan.`,
+           `Delete the student account "${s.nama}"? Their profile & records go with it. This cannot be undone.`),
+        { danger: true, okText: tr('Hapus Akun', 'Delete Account') })) return;
+      try { await DB.adminDeleteUser(s.id); toast(tr('Akun siswa dihapus.', 'Student account deleted.')); this.render(this._el); }
+      catch (e) { toast(e.message, 'error'); }
+    });
+    const expBtn = $('#exportRoster', el);
+    if (expBtn && siswa.length) expBtn.onclick = () => {
+      const rows = [[tr('No', 'No'), tr('Nama', 'Name'), 'Username', 'NIS']];
+      siswa.forEach((s, i) => rows.push([i + 1, s.nama, this._loginId(s), s.nis || '']));
+      downloadCSV(rows, `siswa_${(active.nama || 'kelas').replace(/\s+/g, '_')}.csv`);
+    };
   },
 
   // Kelas = tingkat (X/XI/XII/XIII) + nama kelas yang ditulis sendiri
@@ -543,17 +619,13 @@ const AdminView = {
   },
 
   /* ------------------------------------------------------------
-     Buat/ubah akun — TANPA email.
-     Masuk memakai NAMA LENGKAP sebagai username dan NIS (guru: NIP,
-     admin: kata sandi bebas) sebagai kata sandi. Nama diubah menjadi
-     email internal di balik layar (lihat toAuthEmail di js/utils.js),
-     karena Firebase Auth selalu meminta email.
-     ------------------------------------------------------------ */
+     Buat/ubah akun GURU & ADMIN — memakai EMAIL + kata sandi biasa,
+     seperti login pada umumnya (mereka punya email dan bisa mengganti
+     sandinya sendiri).
 
-  // Label kredensial per peran (dipakai di modal buat akun & info kredensial).
-  _credLabel(r) {
-    return r === 'siswa' ? 'NIS' : r === 'guru' ? 'NIP/NIK' : tr('Kata sandi', 'Password');
-  },
+     Hanya SISWA yang memakai username + NIS (dibuat di tab Kelas &
+     Siswa), karena siswa belum tentu punya email — lihat _studentModal.
+     ------------------------------------------------------------ */
 
   // Field username: tergenerate dari nama, tapi boleh disunting admin —
   // untuk memangkas nama panjang jadi nama panggilan, atau membedakan nama
@@ -585,28 +657,16 @@ const AdminView = {
     const editing = !!user;
     let role = user?.role || 'guru';
 
-    // Field kredensial + data tambahan; digambar ulang tiap peran berganti.
-    const roleFields = r => {
-      const cred = editing ? '' : `
-        <div class="field">
-          <label>${this._credLabel(r)} <span style="font-weight:500;color:var(--text-3)">${tr('— dipakai sebagai kata sandi', '— used as the password')}</span></label>
-          <div class="input-group">
-            <input type="text" class="input" id="mPass" ${r === 'siswa' ? 'inputmode="numeric" maxlength="20"' : ''} placeholder="${r === 'siswa' ? tr('Nomor Induk Siswa', 'Student ID number') : r === 'guru' ? tr('Nomor induk pegawai', 'Employee ID number') : tr('Minimal 4 karakter', 'At least 4 characters')}">
-            ${r === 'siswa' ? '' : `<button type="button" class="suffix-btn" id="genPass" title="${tr('Buat otomatis', 'Auto-generate')}"><ion-icon name="refresh"></ion-icon></button>`}
-          </div>
-        </div>`;
-
-      const extra = r === 'guru' ? `
+    // Data tambahan per peran; digambar ulang tiap peran berganti.
+    const roleFields = r => r === 'guru' ? `
         <div class="grid grid-2 keep-2" style="gap:12px;">
           <div class="field"><label>${tr('Mata pelajaran', 'Subject')}</label><input type="text" class="input" id="mMapel" placeholder="${tr('mis. Matematika', 'e.g. Math')}" value="${esc(user?.mapel || '')}"></div>
-          <div class="field"><label>${tr('Asal sekolah', 'School')} <span style="font-weight:500;color:var(--text-3)">${tr('(opsional)', '(optional)')}</span></label><input type="text" class="input" id="mSekolah" value="${esc(user?.sekolah || '')}"></div>
-        </div>`
-        : r === 'siswa' ? `
+          <div class="field"><label>NIP/NIK <span style="font-weight:500;color:var(--text-3)">${tr('(opsional)', '(optional)')}</span></label><input type="text" class="input" id="mNip" value="${esc(user?.nip || '')}"></div>
+        </div>
+        <div class="field"><label>${tr('Asal sekolah', 'School')} <span style="font-weight:500;color:var(--text-3)">${tr('(opsional)', '(optional)')}</span></label><input type="text" class="input" id="mSekolah" value="${esc(user?.sekolah || '')}"></div>`
+      : r === 'siswa' ? `
         <div class="field"><label>${tr('Kelas', 'Class')}</label><input type="text" class="input" id="mKelas" placeholder="${tr('mis. X TKJ 2', 'e.g. X TKJ 2')}" value="${esc(user?.kelas || '')}"></div>`
-        : '';
-
-      return cred + extra;
-    };
+      : '';
 
     // Peran yang bisa dipilih. Akun SISWA tidak dibuat di sini — dibuat di
     // halaman "Kelas & Siswa" agar langsung tertaut ke kelasnya. Saat MENGUBAH
@@ -623,7 +683,7 @@ const AdminView = {
         ${editing ? '' : `
         <div class="disclaimer" style="margin:0 0 16px;">
           <ion-icon name="information-circle-outline"></ion-icon>
-          <span>${tr('Akun <b>siswa</b> dibuat di tab <b>Kelas & Siswa</b> (Tambah Siswa) agar langsung tertaut ke kelasnya.', 'Student accounts are created in the <b>Classes & Students</b> tab (Add Student) so they link straight to their class.')}</span>
+          <span>${tr('Guru & admin masuk dengan <b>email + kata sandi</b>. Akun <b>siswa</b> (username + NIS) dibuat di tab <b>Kelas & Siswa</b>.', 'Teachers & admins sign in with <b>email + password</b>. <b>Student</b> accounts (username + NIS) are created in the <b>Classes & Students</b> tab.')}</span>
         </div>`}
         <div class="field">
           <label>${tr('Peran', 'Role')}</label>
@@ -637,27 +697,33 @@ const AdminView = {
         </div>
         ${editing ? `
         <div class="field">
-          <label>${tr('Username', 'Username')} <span style="font-weight:500;color:var(--text-3)">${tr('(tidak bisa diubah)', '(cannot be changed)')}</span></label>
+          <label>${tr('Masuk dengan', 'Signs in with')} <span style="font-weight:500;color:var(--text-3)">${tr('(tidak bisa diubah)', '(cannot be changed)')}</span></label>
           <input type="text" class="input" value="${esc(this._loginId(user))}" disabled>
-        </div>` : this._usernameField()}
+        </div>` : `
+        <div class="field">
+          <label>Email <span style="font-weight:500;color:var(--text-3)">${tr('— dipakai untuk masuk', '— used to sign in')}</span></label>
+          <input type="email" class="input" id="mEmail" placeholder="nama@sekolah.sch.id" autocapitalize="off" spellcheck="false">
+        </div>
+        <div class="field">
+          <label>${tr('Kata sandi awal', 'Initial password')}</label>
+          <div class="input-group">
+            <input type="text" class="input" id="mPass" placeholder="${tr('Minimal 6 karakter', 'At least 6 characters')}">
+            <button type="button" class="suffix-btn" id="genPass" title="${tr('Buat otomatis', 'Auto-generate')}"><ion-icon name="refresh"></ion-icon></button>
+          </div>
+          <div style="font-size:.76rem;color:var(--text-3);margin-top:5px;">
+            ${tr('Bisa mereka ganti sendiri lewat menu Profil setelah masuk.', 'They can change it themselves from the Profile menu after signing in.')}
+          </div>
+        </div>`}
         <div id="mExtra">${roleFields(role)}</div>
         <button class="btn btn-primary btn-block" id="mSave"><ion-icon name="checkmark"></ion-icon> ${editing ? tr('Simpan Perubahan', 'Save Changes') : tr('Buat Akun', 'Create Account')}</button>`,
       onMount: m => {
-        this._bindUsernameAuto(m);
-        const bindPass = () => {
-          // Kredensial siswa = NIS → batasi ke angka saja (maks 20 digit).
-          const p = $('#mPass', m);
-          if (p && role === 'siswa') p.oninput = () => { p.value = this._cleanNis(p.value); };
-          const gen = $('#genPass', m);
-          if (gen) gen.onclick = () => { $('#mPass', m).value = 'tumara' + Math.floor(1000 + Math.random() * 9000); };
-        };
-        bindPass();
+        const gen = $('#genPass', m);
+        if (gen) gen.onclick = () => { $('#mPass', m).value = 'tumara' + Math.floor(1000 + Math.random() * 9000); };
 
         $$('#mRole .radio-card', m).forEach(c => c.onclick = () => {
           role = c.dataset.val;
           $$('#mRole .radio-card', m).forEach(x => x.classList.toggle('selected', x === c));
           $('#mExtra', m).innerHTML = roleFields(role);
-          bindPass(); // ikat ulang setelah field berganti peran
         });
 
         $('#mSave', m).onclick = async () => {
@@ -665,7 +731,7 @@ const AdminView = {
           if (nama.length < 2) return toast(tr('Isi nama lengkap.', 'Enter a full name.'), 'warning');
 
           const extra = {};
-          if (role === 'guru') { extra.mapel = $('#mMapel', m)?.value.trim() || ''; extra.sekolah = $('#mSekolah', m)?.value.trim() || ''; }
+          if (role === 'guru') { extra.mapel = $('#mMapel', m)?.value.trim() || ''; extra.nip = $('#mNip', m)?.value.trim() || ''; extra.sekolah = $('#mSekolah', m)?.value.trim() || ''; }
           else if (role === 'siswa') { extra.kelas = $('#mKelas', m)?.value.trim() || ''; }
 
           const btn = $('#mSave', m); btn.disabled = true;
@@ -679,19 +745,16 @@ const AdminView = {
               await DB.adminUpdateUser(user.id, patch);
               toast(tr('Akun diperbarui.', 'Account updated.'));
             } else {
-              const username = usernameOf($('#mUser', m).value || nama);
-              if (!username) { btn.disabled = false; return toast(tr('Username harus mengandung huruf atau angka.', 'The username must contain letters or numbers.'), 'warning'); }
-
-              // Kredensial = NIP (guru) / kata sandi (admin).
-              // Disimpan juga sebagai data profil agar terlihat di daftar akun.
+              // Guru & admin: email sungguhan + kata sandi biasa (min 6 —
+              // batas Firebase Auth). Hanya siswa yang memakai username + NIS.
+              const email = $('#mEmail', m).value.trim();
               const pass = $('#mPass', m).value.trim();
-              if (pass.length < 4) { btn.disabled = false; return toast(tr(`${this._credLabel(role)} minimal 4 karakter.`, `${this._credLabel(role)} must be at least 4 characters.`), 'warning'); }
-              if (role === 'siswa') extra.nis = pass;
-              else if (role === 'guru') extra.nip = pass;
+              if (!/^\S+@\S+\.\S+$/.test(email)) { btn.disabled = false; return toast(tr('Masukkan email yang valid.', 'Please enter a valid email.'), 'warning'); }
+              if (pass.length < 6) { btn.disabled = false; return toast(tr('Kata sandi minimal 6 karakter.', 'Password must be at least 6 characters.'), 'warning'); }
 
-              await DB.adminCreateUser({ nama, username, password: pass, role, extra });
+              await DB.adminCreateUser({ nama, email, password: pass, role, extra });
               closeModal();
-              this._createdInfoModal(nama, username, pass, role);
+              this._createdInfoModal(nama, email, pass, role);
               this.render(this._el);
               return;
             }
@@ -707,23 +770,28 @@ const AdminView = {
   },
 
   // Tampilkan kredensial akun yang baru dibuat agar admin bisa menyerahkannya.
-  _createdInfoModal(nama, username, pass, role) {
-    const labelPass = `${this._credLabel(role)}${role === 'admin' ? '' : ` ${tr('(kata sandi)', '(password)')}`}`;
+  // `identitas` = email (guru/admin) atau username (siswa).
+  _createdInfoModal(nama, identitas, pass, role) {
+    const siswa = role === 'siswa';
+    const labelId = siswa ? 'Username' : 'Email';
+    const labelPass = siswa ? `NIS ${tr('(kata sandi)', '(password)')}` : tr('Kata sandi', 'Password');
     openModal({
       title: tr('Akun Berhasil Dibuat ✅', 'Account Created ✅'),
       body: `
         <p style="font-size:.86rem;color:var(--text-2);line-height:1.6;margin-bottom:14px;">
-          ${tr(`Akun ${roleLabel(role).toLowerCase()} untuk <b>${esc(nama)}</b> sudah dibuat. Berikan kredensial berikut kepada yang bersangkutan — masuk di halaman "Masuk", tanpa email:`, `The ${roleLabel(role).toLowerCase()} account for <b>${esc(nama)}</b> is created. Share these credentials with them — they sign in on the "Sign In" page, no email needed:`)}
+          ${tr(`Akun ${roleLabel(role).toLowerCase()} untuk <b>${esc(nama)}</b> sudah dibuat. Berikan kredensial berikut kepada yang bersangkutan:`, `The ${roleLabel(role).toLowerCase()} account for <b>${esc(nama)}</b> is created. Share these credentials with them:`)}
         </p>
         <div class="cred-box">
-          <div><span>Username</span><b id="cUser">${esc(username)}</b></div>
+          <div><span>${labelId}</span><b id="cUser">${esc(identitas)}</b></div>
           <div><span>${labelPass}</span><b id="cPass">${esc(pass)}</b></div>
         </div>
-        <p style="font-size:.78rem;color:var(--text-3);margin:12px 0 16px;">${tr('Username diketik persis seperti di atas (huruf besar/kecil bebas).', 'The username is typed exactly as above (capitalization does not matter).')}</p>
+        <p style="font-size:.78rem;color:var(--text-3);margin:12px 0 16px;">${siswa
+          ? tr('Username diketik persis seperti di atas (huruf besar/kecil bebas). Siswa tidak bisa mengganti sandinya sendiri.', 'The username is typed exactly as above (capitalization does not matter). Students cannot change their own password.')
+          : tr('Sarankan mereka mengganti kata sandi setelah login pertama (menu Profil).', 'Advise them to change the password after their first sign-in (Profile menu).')}</p>
         <button class="btn btn-primary btn-block" id="cCopy"><ion-icon name="copy-outline"></ion-icon> ${tr('Salin Kredensial', 'Copy Credentials')}</button>`,
       onMount: m => {
         $('#cCopy', m).onclick = async () => {
-          const text = `Tumara\n${nama}\nUsername: ${username}\n${labelPass}: ${pass}`;
+          const text = `Tumara\n${nama}\n${labelId}: ${identitas}\n${labelPass}: ${pass}`;
           try { await navigator.clipboard.writeText(text); toast(tr('Kredensial disalin 📋', 'Credentials copied 📋')); }
           catch (_) { toast(tr('Tidak bisa menyalin otomatis — catat manual ya.', 'Could not auto-copy — please note it manually.'), 'warning'); }
         };

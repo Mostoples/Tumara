@@ -75,7 +75,7 @@ const DB = (() => {
       const email = toAuthEmail(identitas);
       password = toAuthPassword(password);
       const u = this._users().find(x => x.email === email);
-      if (!u) throw new Error(tr('Nama tidak ditemukan. Pastikan ejaannya sama persis dengan data dari admin.', 'Name not found. Make sure it is spelled exactly as registered by the admin.'));
+      if (!u) throw new Error(tr('Akun tidak ditemukan. Periksa username (siswa) atau email (guru/admin) dari admin sekolah.', 'Account not found. Check the username (student) or email (teacher/admin) given by the school admin.'));
       if (u.passHash !== await hashText(password)) throw new Error(tr('NIS / kata sandi salah.', 'Incorrect NIS / password.'));
       // Bootstrap admin lewat ADMIN_EMAILS (mode lokal)
       if (typeof ADMIN_EMAILS !== 'undefined' && ADMIN_EMAILS.includes(email) && u.role !== 'admin') {
@@ -642,12 +642,12 @@ const DB = (() => {
 
     _msg(e) {
       const map = {
-        'auth/email-already-in-use': tr('Username ini sudah dipakai akun lain. Bedakan (mis. tambahkan nama kedua: muhammadthoriq).', 'This username is already taken. Make it distinct (e.g. add a second name: muhammadthoriq).'),
-        'auth/invalid-email': tr('Username tidak valid — gunakan huruf/angka.', 'Invalid username — please use letters/numbers.'),
-        'auth/weak-password': tr('NIS/kata sandi terlalu pendek. Gunakan minimal 4 angka.', 'The NIS/password is too short. Use at least 4 digits.'),
-        'auth/user-not-found': tr('Nama tidak ditemukan. Pastikan ejaannya sama persis dengan data dari admin.', 'Name not found. Make sure it is spelled exactly as registered by the admin.'),
+        'auth/email-already-in-use': tr('Username/email ini sudah dipakai akun lain. Untuk siswa, bedakan username-nya (mis. tambahkan nama kedua: muhammadthoriq).', 'This username/email is already taken. For students, make the username distinct (e.g. add a second name: muhammadthoriq).'),
+        'auth/invalid-email': tr('Username/email tidak valid.', 'Invalid username/email.'),
+        'auth/weak-password': tr('Kata sandi terlalu pendek (siswa: NIS minimal 4 angka; guru/admin: minimal 6 karakter).', 'Password too short (students: NIS min 4 digits; teachers/admins: min 6 characters).'),
+        'auth/user-not-found': tr('Akun tidak ditemukan. Periksa username (siswa) atau email (guru/admin) dari admin sekolah.', 'Account not found. Check the username (student) or email (teacher/admin) given by the school admin.'),
         'auth/wrong-password': tr('NIS / kata sandi salah.', 'Incorrect NIS / password.'),
-        'auth/invalid-credential': tr('Nama atau NIS salah. Periksa lagi ejaan namamu.', 'Incorrect name or NIS. Please check the spelling of your name.'),
+        'auth/invalid-credential': tr('Username/email atau kata sandi salah. Periksa lagi ejaannya.', 'Incorrect username/email or password. Please check the spelling.'),
         'auth/too-many-requests': tr('Terlalu banyak percobaan. Coba lagi nanti.', 'Too many attempts. Please try again later.'),
         'auth/network-request-failed': tr('Gagal terhubung. Periksa koneksi internetmu.', 'Connection failed. Please check your internet connection.'),
         'auth/requires-recent-login': tr('Demi keamanan, silakan keluar lalu masuk lagi sebelum mengganti kata sandi.', 'For security, please sign out and sign in again before changing your password.'),

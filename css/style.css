@@ -1138,6 +1138,49 @@ ion-icon { pointer-events: none; flex-shrink: 0; }
 .class-bar-name ion-icon { font-size: 1.05rem; }
 [data-theme="dark"] .class-bar-name { color: #34d399; }
 
+/* ---- Kartu kelas di panel admin (gerbang "pilih kelas") ----
+   auto-fill + minmax: 3–4 kolom di desktop, otomatis 1 kolom di HP
+   tanpa media query terpisah. */
+.kelas-card-grid {
+  display: grid; gap: 12px; margin-bottom: 20px;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+}
+.kelas-card {
+  display: flex; align-items: center; gap: 13px; text-align: left;
+  padding: 15px 16px; background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius-sm); cursor: pointer; font-family: var(--font);
+  transition: transform .12s ease, box-shadow .18s ease, border-color .18s ease;
+}
+.kelas-card:hover { transform: translateY(-2px); box-shadow: var(--shadow-sm); border-color: var(--brand); }
+.kelas-card:active { transform: scale(.98); }
+.kelas-card-ic {
+  flex-shrink: 0; width: 44px; height: 44px; border-radius: 50%;
+  display: grid; place-items: center; font-size: 1.35rem;
+  background: var(--brand-soft); color: var(--brand-dark);
+}
+/* display:block wajib — isinya <span>, yang default-nya inline sehingga
+   nama kelas & jumlah siswa akan menempel di satu baris. */
+.kelas-card-body { display: block; min-width: 0; flex: 1; }
+.kelas-card-nm {
+  display: block;
+  font-size: .95rem; font-weight: 800; color: var(--text); letter-spacing: -.01em;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.kelas-card-sub { display: block; font-size: .78rem; font-weight: 600; color: var(--text-3); margin-top: 2px; }
+.kelas-card > ion-icon:last-child { flex-shrink: 0; color: var(--text-3); font-size: 1.1rem; }
+
+/* Baris tombol aksi kelas (Tambah Siswa, Import, CSV, Ubah, Hapus) */
+.kelas-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+@media (max-width: 640px) {
+  /* Di HP tombol dibuat memenuhi baris & setinggi minimal 44px — ukuran
+     target sentuh yang nyaman ditekan dengan jempol. */
+  .kelas-actions { width: 100%; }
+  .kelas-actions .btn {
+    flex: 1 1 calc(50% - 4px); justify-content: center; min-height: 44px;
+  }
+  .kelas-actions .btn-soft-danger { flex: 0 0 auto; min-width: 52px; }
+}
+
 .guru-menu-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
 .guru-tile {
   position: relative;

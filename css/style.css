@@ -1807,3 +1807,7 @@ ion-icon { pointer-events: none; flex-shrink: 0; }
 .cam-view video { width: 100%; height: 100%; object-fit: cover; display: block; }
 .cam-pesan { margin-top: 10px; font-size: .8rem; line-height: 1.5; color: var(--text-3); }
 .cam-err { color: var(--danger); font-weight: 600; }
+
+/* Baris "PDF Daftar Hadir" di tab Jurnal (pemilih bulan + tombol cetak). */
+.hd-bar { display: flex; gap: 12px; flex-wrap: wrap; align-items: flex-end; margin-bottom: 16px; }
+.hd-hint { flex: 1; min-width: 220px; font-size: .78rem; line-height: 1.5; color: var(--text-3); margin-bottom: 3px; }

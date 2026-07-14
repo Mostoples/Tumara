@@ -19,6 +19,7 @@ const Teacher = {
   classId: null,          // kelas aktif (absensi/nilai/jurnal)
   attDate: todayStr(),
   attPertemuan: 1,
+  hadirBulan: todayStr().slice(0, 7),   // bulan (YYYY-MM) untuk PDF daftar hadir
   healthDate: todayStr(),
   aturMenu: false,        // beranda: mode susun ulang tile menu (drag & drop)
   _el: null,
@@ -992,7 +993,8 @@ const Teacher = {
       this._bindClassGate(el); return;
     }
     const activeCls = classes.find(c => c.id === this.classId);
-    const jmlSiswa = (await this._students(this.classId)).length;
+    const students = await this._students(this.classId);
+    const jmlSiswa = students.length;
 
     const journals = (await DB.list('journals'))
       .filter(j => j.classId === this.classId)
@@ -1004,9 +1006,23 @@ const Teacher = {
         <button class="btn btn-primary btn-sm" id="addJurnal" style="margin-bottom:1px;"><ion-icon name="add"></ion-icon> ${tr('Jurnal Baru', 'New Journal')}</button>
         ${journals.length ? `
           <button class="btn btn-sm" id="exportJurnal" style="margin-bottom:1px;"><ion-icon name="download-outline"></ion-icon> ${tr('Ekspor CSV', 'Export CSV')}</button>
-          <button class="btn btn-sm" id="printJurnal" style="margin-bottom:1px;"><ion-icon name="print-outline"></ion-icon> PDF</button>` : ''}
+          <button class="btn btn-sm" id="printJurnal" style="margin-bottom:1px;"><ion-icon name="print-outline"></ion-icon> ${tr('PDF Jurnal', 'Journal PDF')}</button>` : ''}
         ${Kop.btnHTML('kopJurnal')}
       </div>
+
+      ${jmlSiswa || journals.length ? `
+        <div class="hd-bar">
+          <div class="field" style="margin:0;">
+            <label>${tr('Bulan (untuk PDF)', 'Month (for PDFs)')}</label>
+            <input type="month" class="input" id="hdBulan" value="${this.hadirBulan}" style="max-width:180px;">
+          </div>
+          ${jmlSiswa ? `
+            <button class="btn btn-sm" id="printHadir" style="margin-bottom:1px;">
+              <ion-icon name="grid-outline"></ion-icon> ${tr('PDF Daftar Hadir', 'Attendance PDF')}
+            </button>` : ''}
+          <span class="hd-hint">${tr('Kedua PDF memakai bulan ini: jurnal tercetak 31 baris tanggal, daftar hadir 31 kotak tanggal (✓ hadir, S/I/A/D sesuai keterangan, kolom terakhir % kehadiran).',
+                                      'Both PDFs use this month: the journal prints 31 date rows, the attendance sheet 31 date boxes (✓ present, S/I/A/D as noted, last column shows attendance %).')}</span>
+        </div>` : ''}
 
       <div class="ts-note">
         <ion-icon name="school-outline" style="vertical-align:-2px;"></ion-icon>
@@ -1053,6 +1069,12 @@ const Teacher = {
 
     $('#kopJurnal', el).onclick = () => Kop.modal();
 
+    // Bulan cukup disimpan (tanpa render ulang) — nilainya baru dipakai saat dicetak.
+    $('#hdBulan', el) && ($('#hdBulan', el).onchange = e => {
+      this.hadirBulan = e.target.value || todayStr().slice(0, 7);
+    });
+    $('#printHadir', el) && ($('#printHadir', el).onclick = () => this._printDaftarHadir(activeCls, students));
+
     $('#exportJurnal', el) && ($('#exportJurnal', el).onclick = () => {
       const rows = [[
         tr('No', 'No'), tr('Kelas', 'Class'), tr('Tanggal', 'Date'), tr('Pertemuan', 'Meeting'),
@@ -1071,12 +1093,21 @@ const Teacher = {
     // Kelas, lalu tabel per pertemuan. Kolom Ketercapaian & Tanda Tangan sengaja
     // dibiarkan kosong — diisi tangan setelah dicetak, seperti form aslinya.
     $('#printJurnal', el) && ($('#printJurnal', el).onclick = () => {
+      /* Formnya selalu berisi 31 baris tanggal — satu baris untuk tiap tanggal
+         di bulan yang dipilih, bukan hanya tanggal yang sudah ada jurnalnya.
+         Guru mungkin mengajar seminggu sekali, jadi sisa barisnya dibiarkan
+         kosong dan bisa diisi tangan setelah dicetak. */
+      const bulan = this.hadirBulan || todayStr().slice(0, 7);
+      const [thn, bln] = bulan.split('-').map(Number);
+      const jmlHari = new Date(thn, bln, 0).getDate();   // 28–31: batas tanggal nyata
+
       const kop = Kop.html({
         judul: tr('JURNAL GURU', 'TEACHING JOURNAL'),
         meta: [
           [tr('Mata Pelajaran', 'Subject'), DB.user.mapel || ''],
           [tr('Kelas', 'Class'), activeCls?.nama || ''],
-          [tr('Guru', 'Teacher'), DB.user.nama || '']
+          [tr('Guru', 'Teacher'), DB.user.nama || ''],
+          [tr('Bulan', 'Month'), `${BULAN[bln - 1]} ${thn}`]
         ]
       });
       // Lebar kolom dikunci: uraian materi mendapat porsi terbesar (seperti form
@@ -1086,7 +1117,7 @@ const Teacher = {
         <col style="width:9%"><col style="width:8%"><col style="width:9%"><col style="width:11%">
       </colgroup>`;
       const th = `<tr>
-        <th>No</th>
+        <th>${tr('Tgl', 'Date')}</th>
         <th>${tr('Hari, tanggal', 'Day, date')}</th>
         <th>${tr('Pert. ke', 'Meeting')}</th>
         <th>${tr('Judul / Materi & Kegiatan', 'Title / Material & Activities')}</th>
@@ -1095,20 +1126,42 @@ const Teacher = {
         <th>${tr('Tidak Hadir', 'Absent')}</th>
         <th>${tr('Ket. / Tanda Tangan', 'Notes / Signature')}</th>
       </tr>`;
-      const body = jurnalUrut().map((j, i) => {
-        const tidakHadir = j.hadir != null && jmlSiswa ? Math.max(0, jmlSiswa - j.hadir) : null;
+
+      const body = Array.from({ length: 31 }, (_, i) => {
+        const d = i + 1;
+        // Tanggal yang tidak ada di bulan ini (mis. 30–31 Februari) tetap dicetak
+        // agar barisnya selalu 31, tapi diarsir supaya tak terisi keliru.
+        if (d > jmlHari) {
+          return `<tr class="jr-off"><td class="center">${d}</td><td colspan="7"></td></tr>`;
+        }
+        const iso = `${bulan}-${String(d).padStart(2, '0')}`;
+        // Satu tanggal bisa punya lebih dari satu jurnal (mengajar 2 jam berbeda).
+        const js = jurnalUrut().filter(j => j.tanggal === iso);
+        const gab = (f) => js.map(f).filter(v => v !== '' && v != null).join('<br>');
+        const tidakHadir = j => (j.hadir != null && jmlSiswa ? Math.max(0, jmlSiswa - j.hadir) : null);
         return `<tr>
-          <td class="center">${i + 1}</td>
-          <td>${j.tanggal ? fmtDate(j.tanggal, { weekday: true }) : '-'}</td>
-          <td class="center">${j.pertemuan ?? '-'}</td>
-          <td><b>${esc(j.judul || '')}</b>${j.materi ? `<div style="white-space:pre-wrap;">${esc(j.materi)}</div>` : ''}</td>
-          <td class="center">${jmlSiswa || '-'}</td>
-          <td class="center">${j.hadir ?? '-'}</td>
-          <td class="center">${tidakHadir ?? '-'}</td>
+          <td class="center">${d}</td>
+          <td class="nowrap">${fmtDate(iso, { weekday: true })}</td>
+          <td class="center">${gab(j => j.pertemuan ?? '')}</td>
+          <td>${js.map(j => `<b>${esc(j.judul || '')}</b>${j.materi ? `<div style="white-space:pre-wrap;">${esc(j.materi)}</div>` : ''}`).join('<hr>')}</td>
+          <td class="center">${js.length ? (jmlSiswa || '') : ''}</td>
+          <td class="center">${gab(j => j.hadir ?? '')}</td>
+          <td class="center">${gab(j => tidakHadir(j) ?? '')}</td>
           <td></td>
         </tr>`;
       }).join('');
-      printHTML(`Jurnal ${activeCls?.nama || ''}`, `${kop}<table>${cols}<thead>${th}</thead><tbody>${body}</tbody></table>`);
+
+      printHTML(`Jurnal ${activeCls?.nama || ''} ${bulan}`, `
+        <style>
+          /* Baris tanggal dibuat cukup tinggi supaya bisa ditulisi tangan. */
+          table td{height:26px;}
+          .jr-off td{background:#eaeaea;-webkit-print-color-adjust:exact;print-color-adjust:exact;}
+        </style>
+        ${kop}<table>${cols}<thead>${th}</thead><tbody>${body}</tbody></table>
+        <p class="muted" style="margin-top:8px;">
+          ${tr('Baris kosong = belum ada jurnal pada tanggal itu (boleh diisi tangan). Kotak berarsir = tanggal yang tidak ada di bulan ini.',
+               'An empty row = no journal on that date (may be filled in by hand). Shaded boxes = dates that do not exist in this month.')}
+        </p>`);
     });
 
     $$('[data-edit]', el).forEach(b => b.onclick = () => this._jurnalModal(journals.find(j => j.id === b.dataset.edit), classes));
@@ -1123,6 +1176,173 @@ const Teacher = {
     $$('[data-foto]', el).forEach(img => img.onclick = () => {
       openModal({ title: tr('Foto Pembelajaran', 'Learning Photo'), body: `<img src="${img.src}" style="width:100%;border-radius:12px;">` });
     });
+  },
+
+  /* ---- PDF "DAFTAR HADIR" bulanan ----
+     Bentuknya mengikuti daftar hadir cetak sekolah: satu baris per siswa, satu
+     kotak per tanggal (sebanyak hari di bulan itu), lalu kolom terakhir berisi
+     persentase kehadiran sebulan.
+
+     Guru bisa saja mengajar kelas ini cuma seminggu sekali, jadi laporannya
+     TIDAK dibuat per hari: kotak tanggal yang belum ada catatan absensinya
+     sengaja dibiarkan KOSONG — boleh diisi tangan setelah dicetak. */
+  async _printDaftarHadir(cls, students) {
+    if (!students.length) {
+      return toast(tr('Kelas ini belum punya siswa.', 'This class has no students yet.'), 'warning');
+    }
+
+    const bulan = this.hadirBulan || todayStr().slice(0, 7);
+    const [thn, bln] = bulan.split('-').map(Number);
+    // Kotaknya SELALU 31 (bentuk formnya tetap, tak berubah tiap bulan). Tanggal
+    // yang tidak ada di bulan itu (mis. 30–31 Februari) tetap punya kotak, tapi
+    // diarsir supaya tidak terisi keliru.
+    const jmlHari = new Date(thn, bln, 0).getDate();     // batas tanggal nyata: 28–31
+    const hari = Array.from({ length: 31 }, (_, i) => i + 1);
+    const nyata = d => d <= jmlHari;
+
+    const recs = (await DB.list('attendance'))
+      .filter(a => a.classId === this.classId && String(a.tanggal || '').startsWith(`${bulan}-`));
+
+    /* Satu tanggal bisa punya lebih dari satu pertemuan. Status yang "paling
+       berat" yang dipakai (A > I > S > D > H), supaya ketidakhadiran di satu jam
+       tidak tertutup oleh kehadiran di jam lain pada hari yang sama. */
+    const BOBOT = { A: 5, I: 4, S: 3, D: 2, H: 1 };
+    const status = {};                    // status[tanggal][idSiswa] = 'H' | 'S' | …
+    recs.forEach(r => {
+      const d = +String(r.tanggal).slice(8, 10);
+      if (!d) return;
+      status[d] = status[d] || {};
+      Object.entries(r.entries || {}).forEach(([sid, k]) => {
+        const lama = status[d][sid];
+        if (!lama || (BOBOT[k] || 0) > (BOBOT[lama] || 0)) status[d][sid] = k;
+      });
+    });
+
+    // Persentase dihitung per siswa: hanya dari pertemuan yang benar-benar
+    // tercatat untuk siswa itu — hari tanpa catatan tidak dianggap bolos.
+    const rekap = s => {
+      const tercatat = hari.filter(d => status[d]?.[s.id]);
+      if (!tercatat.length) return null;
+      const hadir = tercatat.filter(d => status[d][s.id] === 'H').length;
+      return { n: tercatat.length, h: hadir, pct: Math.round(hadir / tercatat.length * 100) };
+    };
+
+    const isi = (d, s) => {
+      const k = status[d]?.[s.id];
+      return !k ? '' : (k === 'H' ? '✓' : k);
+    };
+
+    /* Kop memakai kotak kode form dengan judul "DAFTAR HADIR" — persis form
+       aslinya. Keterangan (bulan/kelas/wali) TIDAK dititipkan ke `meta` karena
+       di form asli letaknya di kanan, bukan sebagai baris di bawah kop. */
+    const kop = Kop.html({ judul: tr('DAFTAR HADIR', 'ATTENDANCE') });
+
+    // Semester & tahun pelajaran diturunkan dari bulannya: Juli–Desember =
+    // Gasal (tahun ajaran baru), Januari–Juni = Genap (lanjutan tahun sebelumnya).
+    const gasal = bln >= 7;
+    const semester = gasal ? tr('GASAL', 'ODD') : tr('GENAP', 'EVEN');
+    const tapel = gasal ? `${thn} / ${thn + 1}` : `${thn - 1} / ${thn}`;
+
+    // Nama wali kelas hanya diketahui bila guru yang mencetak memang wali kelas
+    // ini. Bila bukan, barisnya dibiarkan kosong — diisi tangan seperti form asli.
+    const wali = DB.user.waliKelasId === this.classId ? (DB.user.nama || '') : '';
+
+    const lebarHari = (56 / 31).toFixed(3);   // sisa lebar dibagi rata ke 31 kotak
+    const cols = `<colgroup>
+      <col style="width:3.5%"><col style="width:9%"><col style="width:8%"><col style="width:17%">
+      ${hari.map(() => `<col style="width:${lebarHari}%">`).join('')}
+      <col style="width:6.5%">
+    </colgroup>`;
+
+    // Minggu diarsir tipis; tanggal yang tak ada di bulan ini diarsir lebih tegas.
+    const kelasHari = d => !nyata(d) ? ' hd-off'
+      : (new Date(thn, bln - 1, d).getDay() === 0 ? ' hd-mgg' : '');
+
+    const thHari = hari.map(d => `<th class="hd-d${kelasHari(d)}">${d}</th>`).join('');
+
+    const body = students.map((s, i) => {
+      const r = rekap(s);
+      return `<tr>
+        <td class="center">${i + 1}</td>
+        <td class="hd-no">${esc(s.nisn || '')}</td>
+        <td class="hd-no">${esc(s.nis || '')}</td>
+        <td class="hd-nama">${esc(s.nama)}</td>
+        ${hari.map(d => {
+          const v = nyata(d) ? isi(d, s) : '';
+          return `<td class="hd-d${kelasHari(d)}${v && v !== '✓' ? ' red' : ''}">${v}</td>`;
+        }).join('')}
+        <td class="center hd-pct">${r ? `${r.pct}%<span class="hd-frac">${r.h}/${r.n}</span>` : '–'}</td>
+      </tr>`;
+    }).join('');
+
+    const ket = this.ABSEN.filter(a => a.k !== 'H').map(a => `<b>${a.k}</b> = ${tr(a.id, a.en)}`).join(' · ');
+    const k = Kop.get();
+
+    printHTML(`${tr('Daftar Hadir', 'Attendance')} ${cls?.nama || ''} ${bulan}`, `
+      <style>
+        /* Daftar hadir butuh 31 kolom tanggal → kertas mendatar. */
+        @page{size:A4 landscape;margin:10mm;}
+
+        /* Judul & blok keterangan mengikuti form cetak sekolah: judul TEPAT di
+           tengah kertas, BULAN / KELAS / WALI KELAS mengambang di kanan.
+           Dengan flex biasa, judul hanya terpusat pada sisa ruang di sebelah kiri
+           blok kanan — hasilnya terlihat meleset ke kiri. Blok kanan karena itu
+           dikeluarkan dari alur (absolute) agar tidak menggeser judul. */
+        .hd-head{position:relative;margin:2px 0 8px;font-family:"Times New Roman",Times,serif;}
+        /* Sela kiri-kanan sama besar → judul tetap di tengah kertas sekaligus
+           tak pernah bertabrakan dengan blok keterangan di kanan. */
+        .hd-judul{text-align:center;font-size:14px;font-weight:bold;line-height:1.45;letter-spacing:.02em;padding:0 235px;}
+        table.hd-info{position:absolute;right:0;top:0;width:auto;border:none;margin:0;font-family:"Times New Roman",Times,serif;}
+        table.hd-info td{border:none;padding:1px 4px 1px 0;font-size:12px;white-space:nowrap;}
+        table.hd-info td.hi-l{letter-spacing:.06em;}
+        table.hd-info td.hi-v{border-bottom:1px dotted #000;min-width:190px;font-weight:bold;padding-left:6px;}
+
+        table.hd th,table.hd td{padding:2px 1px;font-size:10px;text-align:center;}
+        table.hd td.hd-nama{text-align:left;padding:2px 5px;font-size:10.5px;white-space:nowrap;overflow:hidden;}
+        table.hd td.hd-no{font-size:9.5px;letter-spacing:-.02em;}
+        table.hd th.hd-d{padding:2px 0;}
+        table.hd td.hd-d{height:19px;font-weight:bold;}
+        .hd-mgg{background:#eaeaea;-webkit-print-color-adjust:exact;print-color-adjust:exact;}
+        /* Tanggal yang tidak ada di bulan ini (mis. 30–31 Februari) — diarsir tegas. */
+        .hd-off{background:#b8b8b8;-webkit-print-color-adjust:exact;print-color-adjust:exact;}
+        .hd-pct{font-weight:bold;font-size:10.5px;}
+        .hd-frac{display:block;font-size:8px;font-weight:normal;color:#444;}
+        .hd-ket{margin-top:8px;font-size:10.5px;line-height:1.6;}
+      </style>
+      ${kop}
+      <div class="hd-head">
+        <div class="hd-judul">
+          ${tr(`DAFTAR HADIR SISWA SEMESTER ${semester}`, `STUDENT ATTENDANCE — ${semester} SEMESTER`)}<br>
+          ${esc(k.sekolah || '')}<br>
+          ${tr('TAHUN PELAJARAN', 'ACADEMIC YEAR')} ${tapel}
+        </div>
+        <table class="hd-info">
+          <tr><td class="hi-l">${tr('BULAN', 'MONTH')}</td><td>:</td><td class="hi-v">${BULAN[bln - 1]} ${thn}</td></tr>
+          <tr><td class="hi-l">${tr('KELAS', 'CLASS')}</td><td>:</td><td class="hi-v">${esc(cls?.nama || '')}</td></tr>
+          <tr><td class="hi-l">${tr('WALI KELAS', 'HOMEROOM')}</td><td>:</td><td class="hi-v">${esc(wali)}</td></tr>
+        </table>
+      </div>
+      <table class="hd">${cols}
+        <thead>
+          <tr>
+            <th rowspan="2">No</th>
+            <th rowspan="2">NISN</th>
+            <th rowspan="2">${tr('INDUK', 'STUDENT ID')}</th>
+            <th rowspan="2">${tr('NAMA', 'NAME')}</th>
+            <th colspan="31">${tr('Tanggal', 'Date')}</th>
+            <th rowspan="2">% ${tr('Hadir', 'Present')}</th>
+          </tr>
+          <tr>${thHari}</tr>
+        </thead>
+        <tbody>${body}</tbody>
+      </table>
+      <div class="hd-ket">
+        <b>✓</b> = ${tr('Hadir', 'Present')} · ${ket}<br>
+        ${tr('Kotak kosong = belum ada catatan absensi pada tanggal itu (boleh diisi tangan). Kotak berarsir tebal = tanggal yang tidak ada di bulan ini.',
+             'An empty box = no attendance record on that date (may be filled in by hand). Dark shaded boxes = dates that do not exist in this month.')}<br>
+        ${tr('% Hadir = jumlah ✓ dibagi jumlah pertemuan yang tercatat untuk siswa itu.',
+             '% Present = number of ✓ divided by the meetings recorded for that student.')}
+      </div>`);
   },
 
   async _jurnalModal(j = null, classes = []) {

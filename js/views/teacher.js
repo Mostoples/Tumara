@@ -1646,6 +1646,10 @@ const Teacher = {
     const tasks = (await DB.gListWhere('class_tasks', 'classId', this.classId))
       .sort((a, b) => prioUrut(a.prioritas) - prioUrut(b.prioritas)
                    || (a.tenggat || '9999-99-99').localeCompare(b.tenggat || '9999-99-99'));
+    // Sekali baca semua pengumpulan kelas ini → hitung jumlah per tugas.
+    const subs = await DB.gListWhere('class_submissions', 'classId', this.classId);
+    const subCount = {};
+    subs.forEach(s => { subCount[s.taskId] = (subCount[s.taskId] || 0) + 1; });
 
     el.innerHTML = `
       ${this._classBar(activeCls)}
@@ -1665,6 +1669,8 @@ const Teacher = {
                   ${t.mapel ? `<span class="badge badge-purple">${esc(t.mapel)}</span>` : ''}
                   ${t.tenggat ? `<span class="badge badge-gray"><ion-icon name="calendar-outline"></ion-icon> ${fmtDate(t.tenggat, { short: true })}</span>` : ''}
                   ${prioBadge(t.prioritas)}
+                  ${t.lampiran ? `<a href="${esc(t.lampiran)}" target="_blank" rel="noopener" class="badge badge-gray"><ion-icon name="image-outline"></ion-icon> ${tr('Lampiran', 'Attachment')}</a>` : ''}
+                  <button class="badge badge-gray" data-subs="${t.id}" style="border:none;cursor:pointer;"><ion-icon name="documents-outline"></ion-icon> ${tr('Pengumpulan', 'Submissions')} (${subCount[t.id] || 0})</button>
                   ${t.guruNama ? `<span style="font-size:.72rem;color:var(--text-3);">${esc(t.guruNama)}</span>` : ''}
                 </div>
               </div>
@@ -1681,15 +1687,48 @@ const Teacher = {
     this._bindClassBar(el);
     $('#addTugas', el).onclick = () => this._tugasKelasModal();
     $$('[data-edit]', el).forEach(b => b.onclick = () => this._tugasKelasModal(tasks.find(t => t.id === b.dataset.edit)));
+    $$('[data-subs]', el).forEach(b => b.onclick = () => {
+      const t = tasks.find(x => x.id === b.dataset.subs);
+      this._pengumpulanModal(t, subs.filter(s => s.taskId === t.id));
+    });
     $$('[data-del]', el).forEach(b => b.onclick = async () => {
       if (!await confirmDialog(tr('Hapus tugas ini dari kelas?', 'Delete this task from the class?'), { danger: true, okText: tr('Hapus', 'Delete') })) return;
+      const t = tasks.find(x => x.id === b.dataset.del);
       await DB.gRemove('class_tasks', b.dataset.del);
+      if (t?.lampiran) Storage.deleteByUrl(t.lampiran);   // bersihkan file lampiran (best-effort)
       toast(tr('Tugas dihapus.', 'Task deleted.'));
       this.render(this._el);
     });
   },
 
+  // Modal guru: daftar pengumpulan siswa untuk satu tugas (read-only).
+  _pengumpulanModal(task, subs) {
+    const rows = subs.slice().sort((a, b) => (a.studentNama || '').localeCompare(b.studentNama || ''));
+    openModal({
+      title: tr('Pengumpulan', 'Submissions') + ` — ${esc(task.judul)}`,
+      body: rows.length ? `
+        <div style="font-size:.8rem;color:var(--text-3);margin-bottom:10px;">${tr(`${rows.length} siswa mengumpulkan.`, `${rows.length} student(s) submitted.`)}</div>
+        <div style="display:flex;flex-direction:column;gap:8px;">
+          ${rows.map(s => `
+            <a href="${esc(s.url)}" target="_blank" rel="noopener" class="list-item" style="text-decoration:none;color:inherit;">
+              <div class="item-icon" style="background:var(--prod-soft);color:var(--prod);">
+                <ion-icon name="${s.isPdf ? 'document-text-outline' : 'image-outline'}"></ion-icon>
+              </div>
+              <div style="flex:1;min-width:0;">
+                <div style="font-weight:700;font-size:.9rem;">${esc(s.studentNama || tr('Siswa', 'Student'))}</div>
+                <div style="font-size:.74rem;color:var(--text-3);">${s.isPdf ? 'PDF' : tr('Foto', 'Photo')}${s.submittedAt ? ' · ' + fmtDate(s.submittedAt, { short: true }) : ''}</div>
+              </div>
+              <ion-icon name="open-outline" style="color:var(--text-3);"></ion-icon>
+            </a>`).join('')}
+        </div>` : `
+        <div class="card empty-state"><ion-icon name="documents-outline"></ion-icon>
+          <div class="es-title">${tr('Belum ada yang mengumpulkan', 'No submissions yet')}</div>
+        </div>`
+    });
+  },
+
   _tugasKelasModal(task = null) {
+    let lampiran = task?.lampiran || '';   // URL lampiran foto (Supabase)
     openModal({
       title: task ? tr('Ubah Tugas', 'Edit Task') : tr('Kirim Tugas ke Kelas', 'Send Task to Class'),
       body: `
@@ -1707,12 +1746,41 @@ const Teacher = {
           </select>
           <div style="font-size:.75rem;color:var(--text-3);margin-top:5px;">${tr('P1 tampil paling atas di app siswa, supaya yang krusial tidak terlewat.', 'P1 appears at the top in the student app, so critical work is not missed.')}</div>
         </div>
+        <div class="field">
+          <label>${tr('Lampiran foto', 'Photo attachment')} <span style="font-weight:500;color:var(--text-3)">${tr('(opsional — soal/instruksi)', '(optional — question/instructions)')}</span></label>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;">
+            <label class="btn btn-ghost btn-sm" style="cursor:pointer;"><ion-icon name="image-outline"></ion-icon> ${tr('Galeri', 'Gallery')}
+              <input type="file" accept="image/*" id="mLampGaleri" hidden></label>
+            <label class="btn btn-ghost btn-sm" style="cursor:pointer;"><ion-icon name="camera-outline"></ion-icon> ${tr('Kamera', 'Camera')}
+              <input type="file" accept="image/*" capture="environment" id="mLampKamera" hidden></label>
+          </div>
+          <div id="lampPrev" style="margin-top:8px;">${lampiran ? `<img src="${esc(lampiran)}" style="max-height:90px;border-radius:8px;">` : ''}</div>
+        </div>
         <button class="btn btn-primary btn-block" id="mSave"><ion-icon name="paper-plane-outline"></ion-icon> ${task ? tr('Simpan', 'Save') : tr('Kirim', 'Send')}</button>`,
       onMount: m => {
+        const onPick = async e => {
+          const f = e.target.files[0];
+          if (!f) return;
+          const prev = $('#lampPrev', m);
+          const oldUrl = lampiran;
+          prev.innerHTML = `<span style="display:inline-flex;align-items:center;gap:6px;font-size:.82rem;color:var(--text-3);">
+            <ion-icon name="cloud-upload-outline"></ion-icon> ${tr('Mengunggah…', 'Uploading…')}</span>`;
+          try {
+            lampiran = await Storage.uploadFoto(f, 'tugas');
+            prev.innerHTML = `<img src="${lampiran}" style="max-height:90px;border-radius:8px;">`;
+            if (oldUrl) Storage.deleteByUrl(oldUrl);
+          } catch (err) {
+            lampiran = oldUrl;
+            prev.innerHTML = oldUrl ? `<img src="${oldUrl}" style="max-height:90px;border-radius:8px;">` : '';
+            toast(tr('Gagal mengunggah: ', 'Upload failed: ') + (err.message || ''), 'error');
+          }
+        };
+        $('#mLampGaleri', m).onchange = onPick;
+        $('#mLampKamera', m).onchange = onPick;
         $('#mSave', m).onclick = async () => {
           const judul = $('#mJudul', m).value.trim();
           if (!judul) return toast(tr('Isi judul tugas.', 'Enter a task title.'), 'warning');
-          const data = { judul, mapel: $('#mMapel', m).value.trim(), tenggat: $('#mTenggat', m).value, prioritas: $('#mPrioritas', m).value };
+          const data = { judul, mapel: $('#mMapel', m).value.trim(), tenggat: $('#mTenggat', m).value, prioritas: $('#mPrioritas', m).value, lampiran };
           const btn = $('#mSave', m); btn.disabled = true;
           try {
             if (task) await DB.gUpdate('class_tasks', task.id, data);

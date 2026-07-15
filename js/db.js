@@ -266,6 +266,22 @@ const DB = (() => {
     _user: null,
     fb: null,
 
+    // Cache baca in-memory per sesi. Tanpa ini, tiap `getDocs` (perpindahan
+    // tab, reload komponen) selalu menembak server saat online → kena kuota
+    // baca harian Firestore. Cache ini ditulis-tembus (write-through) pada
+    // add/update/set/remove sehingga tetap segar tanpa membaca ulang, dan
+    // dikosongkan saat login/logout (ganti pengguna).
+    //   own → subkoleksi milik pengguna (users/{uid}/{coll})
+    //   g   → koleksi global sekolah (gList)
+    //   gw  → query global berfilter (gListWhere), key `coll|field|value`
+    _cache: { own: new Map(), g: new Map(), gw: new Map() },
+    _cacheClear() { this._cache.own.clear(); this._cache.g.clear(); this._cache.gw.clear(); },
+    // Buang cache global untuk satu koleksi (dipakai saat admin menulisnya).
+    _gInvalidate(coll) {
+      this._cache.g.delete(coll);
+      for (const k of this._cache.gw.keys()) if (k.startsWith(coll + '|')) this._cache.gw.delete(k);
+    },
+
     async _load() {
       if (this.fb) return this.fb;
       const V = '10.12.2';
@@ -276,7 +292,18 @@ const DB = (() => {
       ]);
       const app = appM.initializeApp(FIREBASE_CONFIG);
       const auth = authM.getAuth(app);
-      const db = fsM.getFirestore(app);
+      // Cache disk persisten (IndexedDB): data yang sudah dibaca tetap ada
+      // lintas reload & saat offline. Multi-tab manager agar aman dibuka di
+      // beberapa tab. Fallback ke cache memori bila browser menolak (mis. mode
+      // privat / IndexedDB tak tersedia).
+      let db;
+      try {
+        db = fsM.initializeFirestore(app, {
+          localCache: fsM.persistentLocalCache({ tabManager: fsM.persistentMultipleTabManager() })
+        });
+      } catch (_) {
+        db = fsM.getFirestore(app);
+      }
       this._connectEmulator(fsM, authM, db, auth);
       this.fb = { auth, db, A: authM, F: fsM };
       return this.fb;
@@ -495,6 +522,7 @@ const DB = (() => {
     // `password` = NIS/NIP untuk akun sekolah, sandi biasa untuk lainnya.
     async login(identitas, password) {
       const { auth, A } = await this._load();
+      this._cacheClear();
       try {
         const cred = await A.signInWithEmailAndPassword(auth, toAuthEmail(identitas), toAuthPassword(password));
         return await this._loadProfile(cred.user);
@@ -506,6 +534,7 @@ const DB = (() => {
     async logout() {
       const { auth, A } = await this._load();
       await A.signOut(auth);
+      this._cacheClear();
       this._user = null;
     },
 
@@ -533,12 +562,18 @@ const DB = (() => {
     },
 
     async list(coll) {
+      const cache = this._cache.own;
+      if (cache.has(coll)) return cache.get(coll).slice();
       const { F } = this.fb;
       const snap = await F.getDocs(this._colRef(coll));
-      return snap.docs.map(d => ({ id: d.id, ...d.data() }));
+      const arr = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+      cache.set(coll, arr);
+      return arr.slice();
     },
 
-    // Guru: baca data subkoleksi siswa tertentu di Firestore
+    // Guru: baca data subkoleksi siswa tertentu di Firestore.
+    // TIDAK di-cache: guru memantau data siswa yang bisa berubah — harus segar,
+    // lagipula volumenya kecil (80 guru, dibuka per-siswa saat diklik).
     async listStudentData(studentUid, coll) {
       const { F, db } = this.fb;
       const ref = F.collection(db, 'users', studentUid, coll);
@@ -550,12 +585,17 @@ const DB = (() => {
       const { F } = this.fb;
       const id = uid();
       await F.setDoc(F.doc(this._colRef(coll), id), this._clean(item));
-      return { id, ...item };
+      const rec = { id, ...item };
+      const cached = this._cache.own.get(coll);
+      if (cached) cached.push(rec);
+      return rec;
     },
 
     async update(coll, id, patch) {
       const { F } = this.fb;
       await F.setDoc(F.doc(this._colRef(coll), id), this._clean(patch), { merge: true });
+      const cached = this._cache.own.get(coll);
+      if (cached) { const i = cached.findIndex(x => x.id === id); if (i >= 0) cached[i] = { ...cached[i], ...patch }; }
       return { id, ...patch };
     },
 
@@ -563,12 +603,19 @@ const DB = (() => {
     async set(coll, id, item) {
       const { F } = this.fb;
       await F.setDoc(F.doc(this._colRef(coll), id), this._clean(item), { merge: true });
+      const cached = this._cache.own.get(coll);
+      if (cached) {
+        const i = cached.findIndex(x => x.id === id);
+        if (i >= 0) cached[i] = { ...cached[i], ...item, id }; else cached.push({ ...item, id });
+      }
       return { id, ...item };
     },
 
     async remove(coll, id) {
       const { F } = this.fb;
       await F.deleteDoc(F.doc(this._colRef(coll), id));
+      const cached = this._cache.own.get(coll);
+      if (cached) { const i = cached.findIndex(x => x.id === id); if (i >= 0) cached.splice(i, 1); }
     },
 
     /* ---------- koleksi GLOBAL sekolah (top-level, dikelola admin) ----------
@@ -580,22 +627,32 @@ const DB = (() => {
     },
 
     async gList(coll) {
+      const cache = this._cache.g;
+      if (cache.has(coll)) return cache.get(coll).slice();
       const { F } = this.fb;
       const snap = await F.getDocs(this._gColRef(coll));
-      return snap.docs.map(d => ({ id: d.id, ...d.data() }));
+      const arr = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+      cache.set(coll, arr);
+      return arr.slice();
     },
 
     async gListWhere(coll, field, value) {
+      const key = `${coll}|${field}|${value}`;
+      const cache = this._cache.gw;
+      if (cache.has(key)) return cache.get(key).slice();
       const { F } = this.fb;
       const qy = F.query(this._gColRef(coll), F.where(field, '==', value));
       const snap = await F.getDocs(qy);
-      return snap.docs.map(d => ({ id: d.id, ...d.data() }));
+      const arr = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+      cache.set(key, arr);
+      return arr.slice();
     },
 
     async gAdd(coll, item) {
       const { F } = this.fb;
       const id = uid();
       await F.setDoc(F.doc(this._gColRef(coll), id), this._clean(item));
+      this._gInvalidate(coll);
       return { id, ...item };
     },
 
@@ -612,18 +669,21 @@ const DB = (() => {
         }
         await batch.commit();
       }
+      this._gInvalidate(coll);
       return recs;
     },
 
     async gUpdate(coll, id, patch) {
       const { F } = this.fb;
       await F.setDoc(F.doc(this._gColRef(coll), id), this._clean(patch), { merge: true });
+      this._gInvalidate(coll);
       return { id, ...patch };
     },
 
     async gRemove(coll, id) {
       const { F } = this.fb;
       await F.deleteDoc(F.doc(this._gColRef(coll), id));
+      this._gInvalidate(coll);
     },
 
     // Baca satu dokumen global by id (mis. class_schedule/{classId}).

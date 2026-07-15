@@ -18,8 +18,10 @@ const SUPABASE_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFz
    Dipisah supaya foto jadwal punya bucket sendiri dan tidak menumpang di
    bucket jurnal — kuota dan policy-nya jadi bisa diatur terpisah. */
 const BUCKETS = {
-  jurnal: 'jurnal-foto',   // foto kegiatan pada Jurnal Mengajar
-  jadwal: 'jadwal-foto',   // foto Jadwal Mengajar (halaman guru)
+  jurnal: 'jurnal-foto',       // foto kegiatan pada Jurnal Mengajar
+  jadwal: 'jadwal-foto',       // foto Jadwal Mengajar (halaman guru)
+  tugas: 'tugas-lampiran',     // lampiran foto tugas DARI GURU (halaman Tugas Kelas)
+  pengumpulan: 'tugas-jawaban', // pengumpulan siswa (foto ATAU PDF)
 };
 const BUCKET_CADANGAN = 'jurnal-foto';   // dipakai kalau `jenis` tak dikenal
 
@@ -60,6 +62,49 @@ const Storage = {
 
     const { data } = _sb.storage.from(bucket).getPublicUrl(path);
     return data.publicUrl;
+  },
+
+  /**
+   * Unggah SEBARANG file (foto ATAU PDF) → kembalikan metadata + URL publik.
+   * Berbeda dari uploadFoto(): file gambar tetap dikompres, tapi file lain
+   * (PDF/dokumen) diunggah APA ADANYA — kompresi kanvas hanya berlaku untuk
+   * gambar dan akan merusak PDF. Dipakai untuk pengumpulan tugas siswa.
+   * @param {File} file  file dari <input type="file"> (image/* atau application/pdf)
+   * @param {string} jenis  kunci bucket (lihat BUCKETS), mis. "pengumpulan"
+   * @param {{maxDim?: number, quality?: number, maxMB?: number}} opsi
+   * @returns {Promise<{url:string, name:string, type:string, isPdf:boolean}>}
+   */
+  async uploadFile(file, jenis = 'umum', { maxDim = 1400, quality = 0.7, maxMB = 15 } = {}) {
+    if (!_sb) throw new Error('Supabase belum siap (library gagal dimuat).');
+    const bucket = BUCKETS[jenis] || BUCKET_CADANGAN;
+    const isImg = (file.type || '').startsWith('image/');
+
+    let blob, ext, contentType;
+    if (isImg) {
+      // Gambar → kompres seperti uploadFoto agar hemat kuota.
+      const dataUrl = await compressImage(file, { maxDim, quality });
+      blob = await (await fetch(dataUrl)).blob();
+      ext = 'jpg';
+      contentType = 'image/jpeg';
+    } else {
+      // PDF / lainnya → unggah utuh (jangan lewat kanvas).
+      if (file.size > maxMB * 1024 * 1024) {
+        throw new Error(tr(`File terlalu besar (maks ${maxMB}MB).`, `File too large (max ${maxMB}MB).`));
+      }
+      blob = file;
+      ext = (file.name.split('.').pop() || 'bin').toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 5) || 'bin';
+      contentType = file.type || 'application/octet-stream';
+    }
+
+    const rand = Math.random().toString(36).slice(2, 8);
+    const path = `${jenis}/${Date.now()}-${rand}.${ext}`;
+    const { error } = await _sb.storage.from(bucket).upload(path, blob, {
+      contentType, cacheControl: '3600', upsert: false,
+    });
+    if (error) throw new Error(error.message);
+
+    const { data } = _sb.storage.from(bucket).getPublicUrl(path);
+    return { url: data.publicUrl, name: file.name || 'file', type: contentType, isPdf: contentType.includes('pdf') };
   },
 
   /**

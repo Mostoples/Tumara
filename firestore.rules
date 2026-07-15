@@ -101,5 +101,18 @@ service cloud.firestore {
       allow write: if isGuru()
         && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.waliKelasId == classId;
     }
+
+    // Pengumpulan tugas siswa (id = "{taskId}_{studentId}"). Yang disimpan di
+    // sini hanya METADATA + URL file; file-nya (foto/PDF) ada di Supabase.
+    // Guru boleh membaca semua (memantau kelasnya); siswa hanya miliknya.
+    // Siswa hanya boleh menulis/menimpa pengumpulan atas namanya sendiri.
+    match /class_submissions/{id} {
+      allow read: if isGuru()
+        || (request.auth != null && resource.data.studentId == request.auth.uid);
+      allow create, update: if request.auth != null
+        && request.resource.data.studentId == request.auth.uid;
+      allow delete: if isGuru()
+        || (request.auth != null && resource.data.studentId == request.auth.uid);
+    }
   }
 }

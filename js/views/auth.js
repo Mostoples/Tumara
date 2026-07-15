@@ -49,16 +49,16 @@ const AuthView = {
     return `
       <div class="auth-form-side">
         <h2 class="af-title">${tr('Selamat datang kembali 👋', 'Welcome back 👋')}</h2>
-        <p class="af-sub">${tr('Siswa: username + NIS. Guru & admin: email + kata sandi.', 'Students: username + NIS. Teachers & admins: email + password.')}</p>
+        <p class="af-sub">${tr('Masuk dengan akun sekolahmu.', 'Sign in with your school account.')}</p>
         <form id="authForm" novalidate>
           <div class="field">
             <label>${tr('Username / Email', 'Username / Email')}</label>
             <input type="text" class="input" id="fEmail" name="username" placeholder="${tr('budi.santoso  •  guru@sekolah.sch.id', 'budi.santoso  •  teacher@school.edu')}" required autocomplete="username" autocapitalize="off" spellcheck="false">
           </div>
           <div class="field">
-            <label>${tr('NIS / Kata sandi', 'NIS / Password')}</label>
+            <label>${tr('Kata sandi', 'Password')}</label>
             <div class="input-group">
-              <input type="password" class="input" id="fPass" name="password" placeholder="${tr('NIS atau kata sandimu', 'Your NIS or password')}" required autocomplete="current-password">
+              <input type="password" class="input" id="fPass" name="password" placeholder="${tr('Kata sandimu', 'Your password')}" required autocomplete="current-password">
               <button type="button" class="suffix-btn" id="togglePass"><ion-icon name="eye-outline"></ion-icon></button>
             </div>
           </div>

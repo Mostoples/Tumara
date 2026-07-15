@@ -18,7 +18,7 @@
    cache lama pada semua perangkat.
    ============================================================ */
 
-const CACHE_VERSION = 'v10';
+const CACHE_VERSION = 'v21';
 const CACHE = `tumara-${CACHE_VERSION}`;
 
 // Kerangka aplikasi (app shell) yang dipracache agar bisa dibuka offline.

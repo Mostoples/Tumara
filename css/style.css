@@ -481,7 +481,7 @@ ion-icon { pointer-events: none; flex-shrink: 0; }
 [data-theme="dark"] .badge-amber { color: #fbbf24; }
 .badge-red { background: var(--danger-soft); color: var(--danger); }
 .badge-blue { background: var(--info-soft); color: var(--info); }
-.badge-gray { background: var(--surface-2); color: var(--text-3); }
+.badge-gray { background: var(--surface-2); color: var(--text-2); }
 
 .tabs {
   position: relative; /* agar .tab.offsetLeft relatif terhadap bar untuk auto-center */

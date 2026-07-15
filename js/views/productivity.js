@@ -6,6 +6,8 @@
 const Prod = {
   tab: 'tugas',
   taskFilter: 'aktif',
+  detailTaskId: null,   // tugas yang sedang dibuka di halaman detail (sisi siswa)
+  _TASK_DKEY: 'tumara_siswa_task_detail',   // agar detail tugas tahan refresh
   noteQuery: '',
   selectedDay: new Date().getDay(), // 0=Minggu
 
@@ -20,7 +22,7 @@ const Prod = {
       </div>
       <div id="prodBody"></div>`;
 
-    $$('.tab', el).forEach(t => t.onclick = () => { this.tab = t.dataset.tab; App.saveTab(this.tab); this.render(el); });
+    $$('.tab', el).forEach(t => t.onclick = () => { this.tab = t.dataset.tab; this.detailTaskId = null; localStorage.removeItem(this._TASK_DKEY); App.saveTab(this.tab); this.render(el); });
 
     const body = $('#prodBody', el);
     if (this.tab === 'tugas') await this.renderTasks(body);
@@ -204,6 +206,15 @@ const Prod = {
     const subByTask = {};
     mySubs.forEach(s => { subByTask[s.taskId] = s; });
 
+    // Halaman DETAIL tugas (bukan modal). Pulihkan dari localStorage agar
+    // refresh tetap di detail, bukan balik ke daftar.
+    if (!this.detailTaskId) this.detailTaskId = localStorage.getItem(this._TASK_DKEY) || null;
+    if (this.detailTaskId) {
+      const dt = tasks.find(x => x.id === this.detailTaskId);
+      if (dt) return this._renderTaskDetail(el, dt, subByTask[dt.id] || null, isDone(dt));
+      this.detailTaskId = null; localStorage.removeItem(this._TASK_DKEY);   // tugas sudah tak ada
+    }
+
     let shown = tasks;
     if (this.taskFilter === 'aktif') shown = tasks.filter(t => !isDone(t));
     else if (this.taskFilter === 'selesai') shown = tasks.filter(t => isDone(t));
@@ -226,13 +237,17 @@ const Prod = {
             <div class="list-item">
               <button class="task-check ${isDone(t) ? 'done' : ''}" data-toggle="${t.id}"><ion-icon name="checkmark"></ion-icon></button>
               <div style="flex:1;min-width:0;">
-                <div style="font-weight:700;font-size:.92rem;" class="${isDone(t) ? 'task-title-done' : ''}">${esc(t.judul)}</div>
-                <div style="display:flex;gap:8px;align-items:center;margin-top:4px;flex-wrap:wrap;">
-                  ${t.mapel ? `<span class="badge badge-purple">${esc(t.mapel)}</span>` : ''}
-                  ${t.tenggat && !isDone(t) ? deadlineBadge(t.tenggat) : t.tenggat ? `<span class="badge badge-gray">${fmtDate(t.tenggat, { short: true })}</span>` : ''}
-                  ${prioBadge(t.prioritas)}
-                  ${t.guruNama ? `<span class="badge badge-gray"><ion-icon name="person-outline"></ion-icon> ${esc(t.guruNama)}</span>` : ''}
-                  ${t.lampiran ? `<a href="${esc(t.lampiran)}" target="_blank" rel="noopener" class="badge badge-gray"><ion-icon name="image-outline"></ion-icon> ${tr('Lihat lampiran', 'View attachment')}</a>` : ''}
+                <div data-detail="${t.id}" style="cursor:pointer;">
+                  <div style="font-weight:700;font-size:.92rem;" class="${isDone(t) ? 'task-title-done' : ''}">${esc(t.judul)}</div>
+                  <div style="display:flex;gap:8px;align-items:center;margin-top:4px;flex-wrap:wrap;">
+                    ${t.mapel ? `<span class="badge badge-purple">${esc(t.mapel)}</span>` : ''}
+                    ${t.tenggat && !isDone(t) ? deadlineBadge(t.tenggat) : t.tenggat ? `<span class="badge badge-gray">${fmtDate(t.tenggat, { short: true })}</span>` : ''}
+                    ${prioBadge(t.prioritas)}
+                    ${t.guruNama ? `<span class="badge badge-gray"><ion-icon name="person-outline"></ion-icon> ${esc(t.guruNama)}</span>` : ''}
+                    ${taskAttachments(t).length ? `<span class="badge badge-gray"><ion-icon name="attach-outline"></ion-icon> ${tr('Lampiran', 'Attachment')}</span>` : ''}
+                    ${sub ? `<span class="badge badge-green"><ion-icon name="checkmark-done-outline"></ion-icon> ${tr('Terkumpul', 'Submitted')}</span>` : ''}
+                  </div>
+                  <div style="font-size:.72rem;color:var(--brand);margin-top:5px;font-weight:600;"><ion-icon name="eye-outline" style="vertical-align:-2px;"></ion-icon> ${tr('Ketuk untuk detail', 'Tap for detail')}</div>
                 </div>
                 <div style="margin-top:8px;">
                   <button class="btn btn-sm ${sub ? 'btn-ghost' : 'btn-primary'}" data-kumpul="${t.id}">
@@ -262,73 +277,157 @@ const Prod = {
       const t = tasks.find(x => x.id === b.dataset.kumpul);
       this.kumpulModal(t, subByTask[t.id] || null);
     });
+    $$('[data-detail]', el).forEach(b => b.onclick = () => { this.detailTaskId = b.dataset.detail; localStorage.setItem(this._TASK_DKEY, this.detailTaskId); App.refresh(); });
+    $$('[data-viewsrc]', el).forEach(im => im.onclick = () => openImageViewer(im.dataset.viewsrc));
   },
 
-  // Modal siswa: kumpulkan/ubah pengumpulan tugas (foto ATAU PDF → Supabase).
+  // Halaman siswa: detail tugas (deskripsi, lampiran zoomable, status kumpul,
+  // toggle selesai). Dibuka dengan mengetuk item; keluar via tombol Kembali.
+  _renderTaskDetail(el, t, sub, done) {
+    const atts = taskAttachments(t);
+    const subFiles = submissionFiles(sub);
+    const infoBadges = [
+      t.mapel ? `<span class="badge badge-purple">${esc(t.mapel)}</span>` : '',
+      t.tenggat && !done ? deadlineBadge(t.tenggat) : (t.tenggat ? `<span class="badge badge-gray">${fmtDate(t.tenggat, { short: true })}</span>` : ''),
+      prioBadge(t.prioritas),
+      t.guruNama ? `<span class="badge badge-gray"><ion-icon name="person-outline"></ion-icon> ${esc(t.guruNama)}</span>` : '',
+    ].join('');
+
+    el.innerHTML = `
+      <div style="margin-bottom:14px;">
+        <button class="btn btn-sm" id="tBackTask"><ion-icon name="arrow-back-outline"></ion-icon> ${tr('Kembali', 'Back')}</button>
+      </div>
+
+      <div style="font-weight:800;font-size:1.2rem;margin-bottom:6px;">${esc(t.judul)}</div>
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:14px;">${infoBadges}</div>
+
+      ${t.deskripsi ? `<div style="white-space:pre-wrap;font-size:.92rem;color:var(--text-2);line-height:1.6;margin-bottom:18px;">${esc(t.deskripsi)}</div>` : ''}
+
+      ${atts.length ? `
+        <div style="font-size:.78rem;color:var(--text-3);margin-bottom:6px;font-weight:600;">${tr('Lampiran dari guru', 'Attachment from teacher')} (${atts.length})</div>
+        <div style="display:flex;flex-direction:column;gap:10px;margin-bottom:20px;">
+          ${atts.map(a => a.isPdf
+            ? `<a href="${esc(a.url)}" target="_blank" rel="noopener" class="btn btn-ghost btn-sm btn-block"><ion-icon name="document-text-outline"></ion-icon> ${esc(a.name || 'PDF')}</a>`
+            : `<img src="${esc(a.url)}" data-viewsrc="${esc(a.url)}" style="max-height:220px;max-width:100%;width:auto;height:auto;align-self:flex-start;object-fit:contain;border-radius:10px;border:1px solid var(--border);cursor:zoom-in;display:block;">`).join('')}
+        </div>` : ''}
+
+      <div style="border:1px solid var(--border);border-radius:12px;padding:14px;margin-bottom:16px;">
+        <div style="font-weight:700;font-size:.95rem;margin-bottom:10px;"><ion-icon name="cloud-upload-outline" style="vertical-align:-2px;"></ion-icon> ${tr('Pengumpulanmu', 'Your submission')}</div>
+        ${sub ? `
+          <div style="display:flex;align-items:center;gap:8px;font-size:.82rem;color:var(--text-2);margin-bottom:10px;">
+            <span class="badge badge-green"><ion-icon name="checkmark-done-outline"></ion-icon> ${tr('Terkumpul', 'Submitted')}</span>
+            <span style="color:var(--text-3);">${tr(`${subFiles.length} file`, `${subFiles.length} file(s)`)}${sub.submittedAt ? ' · ' + fmtDate(sub.submittedAt, { short: true }) : ''}</span>
+          </div>
+          <div style="display:flex;flex-direction:column;gap:8px;margin-bottom:10px;">
+            ${subFiles.map(f => f.isPdf
+              ? `<a href="${esc(f.url)}" target="_blank" rel="noopener" class="btn btn-ghost btn-sm btn-block"><ion-icon name="document-text-outline"></ion-icon> ${esc(f.name || 'PDF')}</a>`
+              : `<img src="${esc(f.url)}" data-viewsrc="${esc(f.url)}" style="width:100%;max-height:260px;object-fit:contain;border-radius:8px;background:var(--bg-2);cursor:zoom-in;display:block;">`).join('')}
+          </div>
+          <button class="btn btn-sm btn-block" id="dKumpul"><ion-icon name="create-outline"></ion-icon> ${tr('Ubah pengumpulan', 'Change submission')}</button>
+        ` : `
+          <div style="font-size:.82rem;color:var(--text-3);margin-bottom:10px;">${tr('Kamu belum mengumpulkan tugas ini.', "You haven't submitted this task yet.")}</div>
+          <button class="btn btn-sm btn-primary btn-block" id="dKumpul"><ion-icon name="cloud-upload-outline"></ion-icon> ${tr('Kumpulkan', 'Submit')}</button>`}
+      </div>
+
+      <button class="btn btn-block ${done ? 'btn-ghost' : ''}" id="dDone">
+        <ion-icon name="${done ? 'checkmark-circle' : 'ellipse-outline'}"></ion-icon>
+        ${done ? tr('Selesai — ketuk untuk batalkan', 'Done — tap to undo') : tr('Tandai selesai', 'Mark as done')}
+      </button>`;
+
+    $('#tBackTask', el).onclick = () => { this.detailTaskId = null; localStorage.removeItem(this._TASK_DKEY); App.refresh(); };
+    $$('[data-viewsrc]', el).forEach(im => im.onclick = () => openImageViewer(im.dataset.viewsrc));
+    $('#dKumpul', el).onclick = () => this.kumpulModal(t, sub);
+    $('#dDone', el).onclick = async () => {
+      const set = new Set(DB.user?.tugasSelesai || []);
+      if (set.has(t.id)) set.delete(t.id);
+      else { set.add(t.id); toast(tr('Tugas selesai — mantap! 🎉', 'Task done — nice work! 🎉')); }
+      await DB.updateUser({ tugasSelesai: [...set] });
+      App.refresh();
+    };
+  },
+
+  // Modal siswa: kumpulkan/ubah pengumpulan tugas — BANYAK file (foto berhalaman
+  // dan/atau PDF) → Drive. Satu dokumen per (tugas, siswa); id tetap agar ubah = timpa.
   kumpulModal(task, sub) {
     if (!Storage?.ready?.()) return toast(tr('Penyimpanan belum siap. Coba muat ulang halaman.', 'Storage not ready. Please reload the page.'), 'error');
-    // Satu dokumen per (tugas, siswa) → id tetap agar ubah = timpa, bukan ganda.
     const subId = `${task.id}_${DB.user.id}`;
-    let file = sub || null;   // { url, name, type, isPdf } bila sudah pernah kumpul
+    let files = submissionFiles(sub).slice();            // {url,name,type,isPdf}[]
+    const origUrls = new Set(files.map(f => f.url));      // untuk dibersihkan saat SIMPAN
     openModal({
       title: tr('Kumpulkan Tugas', 'Submit Task'),
       body: `
         <div style="font-weight:700;margin-bottom:4px;">${esc(task.judul)}</div>
-        <div style="font-size:.8rem;color:var(--text-3);margin-bottom:14px;">${tr('Unggah foto (galeri/kamera) atau file PDF. Mengumpulkan lagi akan menggantikan yang lama.', 'Upload a photo (gallery/camera) or a PDF. Submitting again replaces the previous one.')}</div>
+        <div style="font-size:.8rem;color:var(--text-3);margin-bottom:14px;">${tr('Unggah foto (bisa banyak halaman) dan/atau PDF. Tambahkan sebanyak yang perlu.', 'Upload photos (multiple pages allowed) and/or PDFs. Add as many as you need.')}</div>
         <div style="display:flex;gap:8px;flex-wrap:wrap;">
-          <label class="btn btn-ghost btn-sm" style="cursor:pointer;"><ion-icon name="image-outline"></ion-icon> ${tr('Foto', 'Photo')}
-            <input type="file" accept="image/*" id="kFoto" hidden></label>
+          <label class="btn btn-ghost btn-sm" style="cursor:pointer;"><ion-icon name="image-outline"></ion-icon> ${tr('Foto', 'Photos')}
+            <input type="file" accept="image/*" multiple id="kFoto" hidden></label>
           <label class="btn btn-ghost btn-sm" style="cursor:pointer;"><ion-icon name="camera-outline"></ion-icon> ${tr('Kamera', 'Camera')}
             <input type="file" accept="image/*" capture="environment" id="kKamera" hidden></label>
           <label class="btn btn-ghost btn-sm" style="cursor:pointer;"><ion-icon name="document-text-outline"></ion-icon> PDF
-            <input type="file" accept="application/pdf" id="kPdf" hidden></label>
+            <input type="file" accept="application/pdf" multiple id="kPdf" hidden></label>
         </div>
-        <div id="kPrev" style="margin-top:12px;"></div>
-        <button class="btn btn-primary btn-block" id="kSave" style="margin-top:14px;" ${file ? '' : 'disabled'}><ion-icon name="checkmark"></ion-icon> ${tr('Simpan Pengumpulan', 'Save Submission')}</button>
+        <div id="kStatus" style="font-size:.78rem;color:var(--text-3);margin-top:8px;"></div>
+        <div id="kList" style="margin-top:8px;display:flex;flex-direction:column;gap:8px;"></div>
+        <button class="btn btn-primary btn-block" id="kSave" style="margin-top:14px;"><ion-icon name="checkmark"></ion-icon> ${tr('Simpan Pengumpulan', 'Save Submission')}</button>
         ${sub ? `<button class="btn btn-ghost btn-block danger" id="kHapus" style="margin-top:8px;"><ion-icon name="trash-outline"></ion-icon> ${tr('Batalkan pengumpulan', 'Withdraw submission')}</button>` : ''}`,
       onMount: m => {
-        const prev = $('#kPrev', m);
+        const listEl = $('#kList', m);
+        const statusEl = $('#kStatus', m);
         const save = $('#kSave', m);
-        const renderPrev = () => {
-          if (!file) { prev.innerHTML = ''; return; }
-          prev.innerHTML = file.isPdf
-            ? `<a href="${esc(file.url)}" target="_blank" rel="noopener" style="display:inline-flex;align-items:center;gap:8px;font-size:.85rem;"><ion-icon name="document-text-outline" style="font-size:1.4rem;color:var(--prod);"></ion-icon> ${esc(file.name || 'PDF')}</a>`
-            : `<img src="${esc(file.url)}" style="max-height:140px;border-radius:8px;">`;
+        const syncSave = () => { save.disabled = !files.length; };
+        const renderList = () => {
+          listEl.innerHTML = files.map((f, i) => `
+            <div style="display:flex;align-items:center;gap:8px;border:1px solid var(--border);border-radius:10px;padding:6px 8px;">
+              ${f.isPdf
+                ? `<ion-icon name="document-text-outline" style="font-size:1.5rem;color:var(--prod);flex-shrink:0;"></ion-icon>`
+                : `<img src="${esc(f.url)}" data-viewsrc="${esc(f.url)}" style="width:42px;height:42px;object-fit:cover;border-radius:6px;cursor:zoom-in;flex-shrink:0;">`}
+              <span style="flex:1;min-width:0;font-size:.8rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(f.name || (f.isPdf ? 'PDF' : 'Foto'))}</span>
+              <button type="button" class="mini-icon-btn danger" data-rm="${i}"><ion-icon name="close"></ion-icon></button>
+            </div>`).join('');
+          listEl.querySelectorAll('[data-viewsrc]').forEach(im => im.onclick = () => openImageViewer(im.dataset.viewsrc));
+          listEl.querySelectorAll('[data-rm]').forEach(b => b.onclick = () => {
+            const idx = +b.dataset.rm, f = files[idx];
+            if (f && !origUrls.has(f.url)) Storage.deleteByUrl(f.url);   // buang unggahan sementara
+            files.splice(idx, 1);
+            renderList(); syncSave();
+          });
+          syncSave();
         };
-        renderPrev();
+        renderList();
+
         const onPick = async e => {
-          const f = e.target.files[0];
-          if (!f) return;
-          const oldUrl = file?.url;
-          prev.innerHTML = `<span style="display:inline-flex;align-items:center;gap:6px;font-size:.82rem;color:var(--text-3);">
-            <ion-icon name="cloud-upload-outline"></ion-icon> ${tr('Mengunggah…', 'Uploading…')}</span>`;
+          const picked = [...e.target.files];
+          e.target.value = '';
+          if (!picked.length) return;
           save.disabled = true;
-          try {
-            file = await Storage.uploadFile(f, 'pengumpulan');
-            renderPrev();
-            save.disabled = false;
-            // File lama ditimpa hanya setelah upload baru sukses.
-            if (oldUrl && oldUrl !== file.url) Storage.deleteByUrl(oldUrl);
-          } catch (err) {
-            file = sub || null;
-            renderPrev();
-            save.disabled = !file;
-            toast(tr('Gagal mengunggah: ', 'Upload failed: ') + (err.message || ''), 'error');
+          let n = 0;
+          for (const f of picked) {
+            statusEl.textContent = tr(`Mengunggah ${n + 1}/${picked.length}…`, `Uploading ${n + 1}/${picked.length}…`);
+            try { files.push(await Storage.uploadFile(f, 'pengumpulan')); }
+            catch (err) { toast(tr('Gagal mengunggah: ', 'Upload failed: ') + (err.message || ''), 'error'); }
+            n++; renderList();
           }
+          statusEl.textContent = '';
+          syncSave();
         };
         $('#kFoto', m).onchange = onPick;
         $('#kKamera', m).onchange = onPick;
         $('#kPdf', m).onchange = onPick;
         save.onclick = async () => {
-          if (!file) return;
+          if (!files.length) return toast(tr('Tambahkan minimal satu file.', 'Add at least one file.'), 'warning');
           save.disabled = true;
           try {
             await DB.gUpdate('class_submissions', subId, {
               taskId: task.id, classId: task.classId, studentId: DB.user.id,
               studentNama: DB.user.nama || DB.user.username || '',
-              url: file.url, fileName: file.name || '', fileType: file.type || '', isPdf: !!file.isPdf,
-              submittedAt: new Date().toISOString(),
+              files, url: '', submittedAt: new Date().toISOString(),
             });
+            // Bersihkan file lama yang dibuang.
+            const finalUrls = new Set(files.map(f => f.url));
+            origUrls.forEach(u => { if (!finalUrls.has(u)) Storage.deleteByUrl(u); });
+            // Mengumpulkan otomatis menandai tugas selesai (tetap bisa dibatalkan manual).
+            const set = new Set(DB.user?.tugasSelesai || []);
+            if (!set.has(task.id)) { set.add(task.id); await DB.updateUser({ tugasSelesai: [...set] }); }
             closeModal();
             toast(tr('Tugas terkumpul ✅', 'Task submitted ✅'));
             App.refresh();
@@ -339,7 +438,7 @@ const Prod = {
           if (!await confirmDialog(tr('Batalkan pengumpulan tugas ini?', 'Withdraw this submission?'), { danger: true, okText: tr('Batalkan', 'Withdraw') })) return;
           try {
             await DB.gRemove('class_submissions', subId);
-            if (sub?.url) Storage.deleteByUrl(sub.url);
+            submissionFiles(sub).forEach(f => f.url && Storage.deleteByUrl(f.url));
             closeModal();
             toast(tr('Pengumpulan dibatalkan.', 'Submission withdrawn.'));
             App.refresh();

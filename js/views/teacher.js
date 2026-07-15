@@ -8,6 +8,7 @@
 const Teacher = {
   TABS: ['beranda', 'kelas', 'absensi', 'nilai', 'jurnal', 'jadwal', 'tugaskelas', 'jadwalkelas', 'ibadah', 'kesehatan'],
   _TAB_KEY: 'tumara_guru_tab',
+  _DETAIL_KEY: 'tumara_guru_tugas_detail',   // konteks halaman detail tugas (agar tahan refresh)
   // Tab aktif dipulihkan dari localStorage agar refresh tidak balik ke tab pertama.
   get tab() {
     const t = localStorage.getItem(this._TAB_KEY);
@@ -16,7 +17,13 @@ const Teacher = {
   set tab(v) {
     if (this.TABS.includes(v)) localStorage.setItem(this._TAB_KEY, v);
   },
+  // Simpan konteks navigasi (tab + kelas terpilih + detail tugas) ke localStorage
+  // agar refresh tidak melempar balik ke daftar/pemilih kelas.
+  _saveDetail() {
+    localStorage.setItem(this._DETAIL_KEY, JSON.stringify({ tab: this.tab, c: this.classId || '', t: this.detailTaskId || '' }));
+  },
   classId: null,          // kelas aktif (absensi/nilai/jurnal)
+  detailTaskId: null,     // tugaskelas: id tugas yang sedang dibuka di halaman detail
   attDate: todayStr(),
   attPertemuan: 1,
   hadirBulan: todayStr().slice(0, 7),   // bulan (YYYY-MM) untuk PDF daftar hadir
@@ -47,7 +54,19 @@ const Teacher = {
     // Setiap BERPINDAH tab, pilihan kelas direset agar tab yang gated
     // (absensi/nilai/jurnal/tugaskelas/ibadah/kesehatan) selalu dimulai dari
     // layar "pilih kelas". Render ulang di dalam tab yang sama tidak mereset.
-    if (this._lastTab !== this.tab) {
+    if (!this._booted) {
+      // Muat awal / REFRESH halaman: pulihkan kelas terpilih & detail tugas
+      // dari localStorage agar refresh tetap di posisi yang sama.
+      this._booted = true;
+      this._lastTab = this.tab;
+      try {
+        const d = JSON.parse(localStorage.getItem(this._DETAIL_KEY) || 'null');
+        if (d && d.tab === this.tab) {
+          this.classId = d.c || null;
+          this.detailTaskId = (this.tab === 'tugaskelas') ? (d.t || null) : null;
+        }
+      } catch (_) { /* abaikan */ }
+    } else if (this._lastTab !== this.tab) {
       this._lastTab = this.tab;
       // Kecuali bila perpindahan tab dipicu dari menu di halaman detail kelas
       // (lihat _bindKelasDetail) — kelas itu tetap terpilih di tab tujuan, dan
@@ -56,6 +75,7 @@ const Teacher = {
       this.classId = this._keepClassId || null;
       this._fromKelas = this._keepClassId || null;
       this._keepClassId = null;
+      this.detailTaskId = null;   // keluar dari halaman detail tugas saat ganti tab
     }
 
     // Hentikan polling ibadah/kesehatan jika pindah ke tab lain
@@ -83,6 +103,7 @@ const Teacher = {
     else if (this.tab === 'jadwalkelas') await this.renderJadwalKelas(body);
     else if (this.tab === 'kesehatan') await this.renderKesehatan(body);
     else await this.renderIbadah(body);
+    this._saveDetail();   // persist tab/kelas/detail agar tahan refresh
   },
 
   // Kelas kini data induk sekolah (school_classes) yang dikelola admin.
@@ -1651,6 +1672,13 @@ const Teacher = {
     const subCount = {};
     subs.forEach(s => { subCount[s.taskId] = (subCount[s.taskId] || 0) + 1; });
 
+    // Halaman DETAIL tugas (bukan modal) — dibuka dengan mengetuk item tugas.
+    if (this.detailTaskId) {
+      const dt = tasks.find(x => x.id === this.detailTaskId);
+      if (dt) return this._renderTugasDetail(el, activeCls, dt, subs.filter(s => s.taskId === dt.id));
+      this.detailTaskId = null; this._saveDetail();   // tugas sudah tidak ada → jatuh ke daftar
+    }
+
     el.innerHTML = `
       ${this._classBar(activeCls)}
       <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end;margin-bottom:12px;">
@@ -1660,24 +1688,25 @@ const Teacher = {
 
       ${tasks.length ? `
         <div style="display:flex;flex-direction:column;gap:10px;">
-          ${tasks.map(t => `
+          ${tasks.map(t => { const nAtt = taskAttachments(t).length; return `
             <div class="list-item">
               <div class="item-icon" style="background:var(--prod-soft);color:var(--prod);">📌</div>
-              <div style="flex:1;min-width:0;">
+              <div data-detail="${t.id}" style="flex:1;min-width:0;cursor:pointer;">
                 <div style="font-weight:700;font-size:.92rem;">${esc(t.judul)}</div>
                 <div style="display:flex;gap:8px;align-items:center;margin-top:4px;flex-wrap:wrap;">
                   ${t.mapel ? `<span class="badge badge-purple">${esc(t.mapel)}</span>` : ''}
                   ${t.tenggat ? `<span class="badge badge-gray"><ion-icon name="calendar-outline"></ion-icon> ${fmtDate(t.tenggat, { short: true })}</span>` : ''}
                   ${prioBadge(t.prioritas)}
-                  ${t.lampiran ? `<a href="${esc(t.lampiran)}" target="_blank" rel="noopener" class="badge badge-gray"><ion-icon name="image-outline"></ion-icon> ${tr('Lampiran', 'Attachment')}</a>` : ''}
-                  <button class="badge badge-gray" data-subs="${t.id}" style="border:none;cursor:pointer;"><ion-icon name="documents-outline"></ion-icon> ${tr('Pengumpulan', 'Submissions')} (${subCount[t.id] || 0})</button>
+                  ${nAtt ? `<span class="badge badge-gray"><ion-icon name="attach-outline"></ion-icon> ${tr('Lampiran', 'Attachment')} (${nAtt})</span>` : ''}
+                  <span class="badge badge-gray"><ion-icon name="documents-outline"></ion-icon> ${tr('Pengumpulan', 'Submissions')} (${subCount[t.id] || 0})</span>
                   ${t.guruNama ? `<span style="font-size:.72rem;color:var(--text-3);">${esc(t.guruNama)}</span>` : ''}
                 </div>
+                <div style="font-size:.72rem;color:var(--prod);margin-top:5px;font-weight:600;"><ion-icon name="eye-outline" style="vertical-align:-2px;"></ion-icon> ${tr('Ketuk untuk lihat detail & pengumpulan', 'Tap to view detail & submissions')}</div>
               </div>
               ${t.guruId === DB.user.id ? `
                 <button class="mini-icon-btn" data-edit="${t.id}"><ion-icon name="create-outline"></ion-icon></button>
                 <button class="mini-icon-btn danger" data-del="${t.id}"><ion-icon name="trash-outline"></ion-icon></button>` : ''}
-            </div>`).join('')}
+            </div>`; }).join('')}
         </div>` : `
         <div class="card empty-state"><ion-icon name="clipboard-outline"></ion-icon>
           <div class="es-title">${tr('Belum ada tugas untuk kelas ini', 'No tasks for this class yet')}</div>
@@ -1687,52 +1716,111 @@ const Teacher = {
     this._bindClassBar(el);
     $('#addTugas', el).onclick = () => this._tugasKelasModal();
     $$('[data-edit]', el).forEach(b => b.onclick = () => this._tugasKelasModal(tasks.find(t => t.id === b.dataset.edit)));
-    $$('[data-subs]', el).forEach(b => b.onclick = () => {
-      const t = tasks.find(x => x.id === b.dataset.subs);
-      this._pengumpulanModal(t, subs.filter(s => s.taskId === t.id));
+    $$('[data-detail]', el).forEach(b => b.onclick = () => {
+      this.detailTaskId = b.dataset.detail;   // buka halaman detail
+      this._saveDetail();
+      this.render(this._el);
     });
     $$('[data-del]', el).forEach(b => b.onclick = async () => {
       if (!await confirmDialog(tr('Hapus tugas ini dari kelas?', 'Delete this task from the class?'), { danger: true, okText: tr('Hapus', 'Delete') })) return;
       const t = tasks.find(x => x.id === b.dataset.del);
       await DB.gRemove('class_tasks', b.dataset.del);
-      if (t?.lampiran) Storage.deleteByUrl(t.lampiran);   // bersihkan file lampiran (best-effort)
+      taskAttachments(t).forEach(a => a.url && Storage.deleteByUrl(a.url));   // bersihkan file lampiran (best-effort)
       toast(tr('Tugas dihapus.', 'Task deleted.'));
       this.render(this._el);
     });
   },
 
-  // Modal guru: daftar pengumpulan siswa untuk satu tugas (read-only).
-  _pengumpulanModal(task, subs) {
+  // Halaman guru: detail tugas + daftar pengumpulan siswa dengan preview foto.
+  // Dirender sebagai HALAMAN (bukan modal) di dalam tab Tugas Kelas; keluar
+  // lewat tombol "Kembali" yang mengosongkan detailTaskId.
+  _renderTugasDetail(el, cls, t, subs) {
     const rows = subs.slice().sort((a, b) => (a.studentNama || '').localeCompare(b.studentNama || ''));
-    openModal({
-      title: tr('Pengumpulan', 'Submissions') + ` — ${esc(task.judul)}`,
-      body: rows.length ? `
-        <div style="font-size:.8rem;color:var(--text-3);margin-bottom:10px;">${tr(`${rows.length} siswa mengumpulkan.`, `${rows.length} student(s) submitted.`)}</div>
-        <div style="display:flex;flex-direction:column;gap:8px;">
-          ${rows.map(s => `
-            <a href="${esc(s.url)}" target="_blank" rel="noopener" class="list-item" style="text-decoration:none;color:inherit;">
-              <div class="item-icon" style="background:var(--prod-soft);color:var(--prod);">
-                <ion-icon name="${s.isPdf ? 'document-text-outline' : 'image-outline'}"></ion-icon>
+    const owner = t.guruId === DB.user.id;
+    const atts = taskAttachments(t);
+    const infoBadges = [
+      t.mapel ? `<span class="badge badge-purple">${esc(t.mapel)}</span>` : '',
+      t.tenggat ? `<span class="badge badge-gray"><ion-icon name="calendar-outline"></ion-icon> ${fmtDate(t.tenggat, { short: true })}</span>` : '',
+      prioBadge(t.prioritas),
+      t.guruNama ? `<span class="badge badge-gray"><ion-icon name="person-outline"></ion-icon> ${esc(t.guruNama)}</span>` : '',
+    ].join('');
+
+    el.innerHTML = `
+      <div class="class-bar">
+        <button class="btn btn-sm" id="tBackTugas"><ion-icon name="arrow-back-outline"></ion-icon> ${tr('Kembali', 'Back')}</button>
+        <span class="class-bar-name"><ion-icon name="school"></ion-icon> ${esc(cls?.nama || '')}</span>
+      </div>
+
+      <div style="font-weight:800;font-size:1.2rem;margin:8px 0 6px;">${esc(t.judul)}</div>
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:14px;">${infoBadges}</div>
+
+      ${t.deskripsi ? `<div style="white-space:pre-wrap;font-size:.92rem;color:var(--text-2);line-height:1.6;margin-bottom:16px;">${esc(t.deskripsi)}</div>` : ''}
+
+      ${owner ? `
+        <div style="display:flex;gap:8px;margin-bottom:18px;">
+          <button class="btn btn-sm" id="dtEdit"><ion-icon name="create-outline"></ion-icon> ${tr('Ubah', 'Edit')}</button>
+          <button class="btn btn-sm danger" id="dtDel"><ion-icon name="trash-outline"></ion-icon> ${tr('Hapus', 'Delete')}</button>
+        </div>` : ''}
+
+      ${atts.length ? `
+        <div style="font-size:.78rem;color:var(--text-3);margin-bottom:6px;font-weight:600;">${tr('Lampiran dari guru', 'Attachment from teacher')} (${atts.length})</div>
+        <div style="display:flex;flex-direction:column;gap:10px;margin-bottom:20px;">
+          ${atts.map(a => a.isPdf
+            ? `<a href="${esc(a.url)}" target="_blank" rel="noopener" class="btn btn-ghost btn-sm btn-block"><ion-icon name="document-text-outline"></ion-icon> ${esc(a.name || 'PDF')}</a>`
+            : `<img src="${esc(a.url)}" data-viewsrc="${esc(a.url)}" loading="lazy" style="max-height:220px;max-width:100%;width:auto;height:auto;align-self:flex-start;object-fit:contain;border-radius:10px;border:1px solid var(--border);cursor:zoom-in;display:block;">`).join('')}
+        </div>` : ''}
+
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
+        <div style="font-weight:700;font-size:1rem;"><ion-icon name="documents-outline" style="vertical-align:-2px;"></ion-icon> ${tr('Pengumpulan', 'Submissions')}</div>
+        <span class="badge badge-gray">${rows.length}</span>
+      </div>
+
+      ${rows.length ? `
+        <div style="display:flex;flex-direction:column;gap:12px;">
+          ${rows.map(s => { const fs = submissionFiles(s); return `
+            <div style="border:1px solid var(--border);border-radius:12px;padding:10px;">
+              <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">
+                <div style="width:30px;height:30px;border-radius:50%;background:var(--prod-soft);color:var(--prod);display:flex;align-items:center;justify-content:center;font-weight:800;font-size:.82rem;flex-shrink:0;">${esc((s.studentNama || 'S').trim().charAt(0).toUpperCase())}</div>
+                <div style="flex:1;min-width:0;">
+                  <div style="font-weight:700;font-size:.9rem;">${esc(s.studentNama || tr('Siswa', 'Student'))}</div>
+                  <div style="font-size:.72rem;color:var(--text-3);">${tr(`${fs.length} file`, `${fs.length} file(s)`)}${s.submittedAt ? ' · ' + fmtDate(s.submittedAt, { short: true }) : ''}</div>
+                </div>
               </div>
-              <div style="flex:1;min-width:0;">
-                <div style="font-weight:700;font-size:.9rem;">${esc(s.studentNama || tr('Siswa', 'Student'))}</div>
-                <div style="font-size:.74rem;color:var(--text-3);">${s.isPdf ? 'PDF' : tr('Foto', 'Photo')}${s.submittedAt ? ' · ' + fmtDate(s.submittedAt, { short: true }) : ''}</div>
+              <div style="display:flex;flex-direction:column;gap:8px;">
+                ${fs.map(f => f.isPdf
+                  ? `<a href="${esc(f.url)}" target="_blank" rel="noopener" class="btn btn-ghost btn-sm btn-block"><ion-icon name="document-text-outline"></ion-icon> ${esc(f.name || 'PDF')}</a>`
+                  : `<img src="${esc(f.url)}" data-viewsrc="${esc(f.url)}" loading="lazy" style="width:100%;max-height:320px;object-fit:contain;border-radius:8px;background:var(--bg-2);cursor:zoom-in;display:block;">`).join('')}
               </div>
-              <ion-icon name="open-outline" style="color:var(--text-3);"></ion-icon>
-            </a>`).join('')}
+            </div>`; }).join('')}
         </div>` : `
         <div class="card empty-state"><ion-icon name="documents-outline"></ion-icon>
           <div class="es-title">${tr('Belum ada yang mengumpulkan', 'No submissions yet')}</div>
-        </div>`
-    });
+          <div class="es-sub">${tr('Pengumpulan siswa akan muncul di sini.', 'Student submissions will appear here.')}</div>
+        </div>`}`;
+
+    $('#tBackTugas', el).onclick = () => { this.detailTaskId = null; this._saveDetail(); this.render(this._el); };
+    $$('[data-viewsrc]', el).forEach(im => im.onclick = () => openImageViewer(im.dataset.viewsrc));
+    if (owner) {
+      $('#dtEdit', el).onclick = () => this._tugasKelasModal(t);
+      $('#dtDel', el).onclick = async () => {
+        if (!await confirmDialog(tr('Hapus tugas ini dari kelas?', 'Delete this task from the class?'), { danger: true, okText: tr('Hapus', 'Delete') })) return;
+        await DB.gRemove('class_tasks', t.id);
+        atts.forEach(a => a.url && Storage.deleteByUrl(a.url));
+        toast(tr('Tugas dihapus.', 'Task deleted.'));
+        this.detailTaskId = null; this._saveDetail();
+        this.render(this._el);
+      };
+    }
   },
 
   _tugasKelasModal(task = null) {
-    let lampiran = task?.lampiran || '';   // URL lampiran foto (Supabase)
+    // Lampiran = array file {url,name,type,isPdf} (foto/PDF). Kompat data lama.
+    let attachments = taskAttachments(task).slice();
     openModal({
       title: task ? tr('Ubah Tugas', 'Edit Task') : tr('Kirim Tugas ke Kelas', 'Send Task to Class'),
       body: `
         <div class="field"><label>${tr('Judul tugas', 'Task title')}</label><input type="text" class="input" id="mJudul" placeholder="${tr('mis. Kerjakan LKS hal. 20', 'e.g. Worksheet page 20')}" value="${esc(task?.judul || '')}"></div>
+        <div class="field"><label>${tr('Deskripsi', 'Description')} <span style="font-weight:500;color:var(--text-3)">${tr('(opsional)', '(optional)')}</span></label><textarea class="textarea" id="mDeskripsi" placeholder="${tr('Instruksi atau keterangan tugas…', 'Task instructions or notes…')}">${esc(task?.deskripsi || '')}</textarea></div>
         <div class="grid grid-2 keep-2" style="gap:12px;">
           <div class="field"><label>${tr('Mata pelajaran', 'Subject')}</label><input type="text" class="input" id="mMapel" value="${esc(task?.mapel || DB.user.mapel || '')}"></div>
           <div class="field"><label>${tr('Tenggat', 'Due date')}</label><input type="date" class="input" id="mTenggat" value="${esc(task?.tenggat || '')}"></div>
@@ -1747,44 +1835,70 @@ const Teacher = {
           <div style="font-size:.75rem;color:var(--text-3);margin-top:5px;">${tr('P1 tampil paling atas di app siswa, supaya yang krusial tidak terlewat.', 'P1 appears at the top in the student app, so critical work is not missed.')}</div>
         </div>
         <div class="field">
-          <label>${tr('Lampiran foto', 'Photo attachment')} <span style="font-weight:500;color:var(--text-3)">${tr('(opsional — soal/instruksi)', '(optional — question/instructions)')}</span></label>
+          <label>${tr('Lampiran', 'Attachment')} <span style="font-weight:500;color:var(--text-3)">${tr('(opsional — foto/PDF soal, boleh banyak)', '(optional — photo/PDF, multiple allowed)')}</span></label>
           <div style="display:flex;gap:8px;flex-wrap:wrap;">
             <label class="btn btn-ghost btn-sm" style="cursor:pointer;"><ion-icon name="image-outline"></ion-icon> ${tr('Galeri', 'Gallery')}
-              <input type="file" accept="image/*" id="mLampGaleri" hidden></label>
+              <input type="file" accept="image/*" multiple id="mLampGaleri" hidden></label>
             <label class="btn btn-ghost btn-sm" style="cursor:pointer;"><ion-icon name="camera-outline"></ion-icon> ${tr('Kamera', 'Camera')}
               <input type="file" accept="image/*" capture="environment" id="mLampKamera" hidden></label>
+            <label class="btn btn-ghost btn-sm" style="cursor:pointer;"><ion-icon name="document-text-outline"></ion-icon> PDF
+              <input type="file" accept="application/pdf" multiple id="mLampPdf" hidden></label>
           </div>
-          <div id="lampPrev" style="margin-top:8px;">${lampiran ? `<img src="${esc(lampiran)}" style="max-height:90px;border-radius:8px;">` : ''}</div>
+          <div id="lampStatus" style="font-size:.78rem;color:var(--text-3);margin-top:6px;"></div>
+          <div id="lampList" style="margin-top:8px;display:flex;flex-direction:column;gap:8px;"></div>
         </div>
         <button class="btn btn-primary btn-block" id="mSave"><ion-icon name="paper-plane-outline"></ion-icon> ${task ? tr('Simpan', 'Save') : tr('Kirim', 'Send')}</button>`,
       onMount: m => {
+        const origUrls = new Set(attachments.map(a => a.url));   // untuk dibersihkan saat SIMPAN
+        const listEl = $('#lampList', m);
+        const statusEl = $('#lampStatus', m);
+        const renderList = () => {
+          listEl.innerHTML = attachments.map((a, i) => `
+            <div style="display:flex;align-items:center;gap:8px;border:1px solid var(--border);border-radius:10px;padding:6px 8px;">
+              ${a.isPdf
+                ? `<ion-icon name="document-text-outline" style="font-size:1.5rem;color:var(--prod);flex-shrink:0;"></ion-icon>`
+                : `<img src="${esc(a.url)}" data-viewsrc="${esc(a.url)}" style="width:42px;height:42px;object-fit:cover;border-radius:6px;cursor:zoom-in;flex-shrink:0;">`}
+              <span style="flex:1;min-width:0;font-size:.8rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(a.name || (a.isPdf ? 'PDF' : 'Foto'))}</span>
+              <button type="button" class="mini-icon-btn danger" data-rm="${i}"><ion-icon name="close"></ion-icon></button>
+            </div>`).join('');
+          listEl.querySelectorAll('[data-viewsrc]').forEach(im => im.onclick = () => openImageViewer(im.dataset.viewsrc));
+          listEl.querySelectorAll('[data-rm]').forEach(b => b.onclick = () => {
+            const idx = +b.dataset.rm, a = attachments[idx];
+            if (a && !origUrls.has(a.url)) Storage.deleteByUrl(a.url);   // buang unggahan sementara
+            attachments.splice(idx, 1);
+            renderList();
+          });
+        };
+        renderList();
+
         const onPick = async e => {
-          const f = e.target.files[0];
-          if (!f) return;
-          const prev = $('#lampPrev', m);
-          const oldUrl = lampiran;
-          prev.innerHTML = `<span style="display:inline-flex;align-items:center;gap:6px;font-size:.82rem;color:var(--text-3);">
-            <ion-icon name="cloud-upload-outline"></ion-icon> ${tr('Mengunggah…', 'Uploading…')}</span>`;
-          try {
-            lampiran = await Storage.uploadFoto(f, 'tugas');
-            prev.innerHTML = `<img src="${lampiran}" style="max-height:90px;border-radius:8px;">`;
-            if (oldUrl) Storage.deleteByUrl(oldUrl);
-          } catch (err) {
-            lampiran = oldUrl;
-            prev.innerHTML = oldUrl ? `<img src="${oldUrl}" style="max-height:90px;border-radius:8px;">` : '';
-            toast(tr('Gagal mengunggah: ', 'Upload failed: ') + (err.message || ''), 'error');
+          const picked = [...e.target.files];
+          e.target.value = '';   // reset agar file yang sama bisa dipilih lagi
+          if (!picked.length) return;
+          let n = 0;
+          for (const f of picked) {
+            statusEl.textContent = tr(`Mengunggah ${n + 1}/${picked.length}…`, `Uploading ${n + 1}/${picked.length}…`);
+            try { attachments.push(await Storage.uploadFile(f, 'tugas')); }
+            catch (err) { toast(tr('Gagal mengunggah: ', 'Upload failed: ') + (err.message || ''), 'error'); }
+            n++; renderList();
           }
+          statusEl.textContent = '';
         };
         $('#mLampGaleri', m).onchange = onPick;
         $('#mLampKamera', m).onchange = onPick;
+        $('#mLampPdf', m).onchange = onPick;
         $('#mSave', m).onclick = async () => {
           const judul = $('#mJudul', m).value.trim();
           if (!judul) return toast(tr('Isi judul tugas.', 'Enter a task title.'), 'warning');
-          const data = { judul, mapel: $('#mMapel', m).value.trim(), tenggat: $('#mTenggat', m).value, prioritas: $('#mPrioritas', m).value, lampiran };
+          // `lampiran: ''` menonaktifkan field lama; sumber kebenaran = attachments.
+          const data = { judul, deskripsi: $('#mDeskripsi', m).value.trim(), mapel: $('#mMapel', m).value.trim(), tenggat: $('#mTenggat', m).value, prioritas: $('#mPrioritas', m).value, attachments, lampiran: '' };
           const btn = $('#mSave', m); btn.disabled = true;
           try {
             if (task) await DB.gUpdate('class_tasks', task.id, data);
             else await DB.gAdd('class_tasks', { classId: this.classId, guruId: DB.user.id, guruNama: DB.user.nama, dibuatPada: new Date().toISOString(), ...data });
+            // Bersihkan file lampiran asli yang dihapus.
+            const finalUrls = new Set(attachments.map(a => a.url));
+            origUrls.forEach(u => { if (!finalUrls.has(u)) Storage.deleteByUrl(u); });
             closeModal();
             toast(task ? tr('Tugas diperbarui.', 'Task updated.') : tr('Tugas terkirim ke siswa 📤', 'Task sent to students 📤'));
             this.render(this._el);

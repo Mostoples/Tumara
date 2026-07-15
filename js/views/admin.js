@@ -9,6 +9,7 @@ const AdminView = {
   filter: 'all', // 'all' | 'admin' | 'guru' | 'siswa'
   view: 'accounts', // 'accounts' | 'classes'
   activeClassId: null,
+  _NAV_KEY: 'tumara_admin_nav',   // simpan view + kelas terpilih agar tahan refresh
   _el: null,
 
   // Pengalih antara halaman Akun & halaman Kelas/Siswa (data induk sekolah).
@@ -25,6 +26,15 @@ const AdminView = {
 
   async render(el) {
     this._el = el;
+    // Pulihkan posisi (view + kelas terpilih) dari localStorage saat muat awal/refresh.
+    if (!this._booted) {
+      this._booted = true;
+      try {
+        const d = JSON.parse(localStorage.getItem(this._NAV_KEY) || 'null');
+        if (d) { if (d.view === 'classes' || d.view === 'accounts') this.view = d.view; this.activeClassId = d.cls || null; }
+      } catch (_) { /* abaikan */ }
+    }
+    localStorage.setItem(this._NAV_KEY, JSON.stringify({ view: this.view, cls: this.activeClassId || '' }));
     if (this.view === 'classes') return this.renderClasses(el);
     return this.renderAccounts(el);
   },

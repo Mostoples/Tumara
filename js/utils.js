@@ -202,6 +202,95 @@ function closeModal() {
   document.body.style.overflow = '';
 }
 
+/* Normalisasi daftar file — mendukung data LAMA (satu file) & BARU (array).
+   Lampiran tugas guru: field baru `attachments` (array), lama `lampiran` (URL foto).
+   Pengumpulan siswa: field baru `files` (array), lama `url`/`isPdf` (satu file). */
+function taskAttachments(t) {
+  if (Array.isArray(t && t.attachments)) return t.attachments;
+  if (t && t.lampiran) return [{ url: t.lampiran, name: 'Foto', type: 'image/jpeg', isPdf: false }];
+  return [];
+}
+function submissionFiles(s) {
+  if (!s) return [];
+  if (Array.isArray(s.files)) return s.files;
+  if (s.url) return [{ url: s.url, name: s.fileName || '', type: s.fileType || '', isPdf: !!s.isPdf }];
+  return [];
+}
+
+/* Penampil gambar layar penuh yang bisa di-zoom (lightbox).
+   Dipakai untuk melihat lampiran/pengumpulan foto tanpa pindah halaman.
+   Zoom: tombol +/−, scroll (wheel), cubit (pinch), dobel-ketuk. Geser
+   (drag/pan) saat sudah di-zoom. Ditutup lewat ×, klik latar, atau Escape.
+   Mandiri dari openModal → bisa muncul di atas modal lain (z-index tinggi). */
+function openImageViewer(url) {
+  if (!url) return;
+  const old = document.getElementById('imgViewerRoot');
+  if (old) old.remove();
+
+  const ov = document.createElement('div');
+  ov.id = 'imgViewerRoot';
+  ov.style.cssText = 'position:fixed;inset:0;z-index:100000;background:rgba(0,0,0,.92);display:flex;align-items:center;justify-content:center;overflow:hidden;touch-action:none;';
+  ov.innerHTML = `
+    <img src="${esc(url)}" draggable="false" style="max-width:100%;max-height:100%;transform-origin:center center;user-select:none;-webkit-user-drag:none;will-change:transform;">
+    <div style="position:absolute;top:14px;right:14px;display:flex;gap:8px;">
+      <button class="iv-btn" data-iv="reset"><ion-icon name="scan-outline"></ion-icon></button>
+      <button class="iv-btn" data-iv="close"><ion-icon name="close"></ion-icon></button>
+    </div>
+    <div style="position:absolute;bottom:18px;left:50%;transform:translateX(-50%);display:flex;gap:12px;">
+      <button class="iv-btn" data-iv="out"><ion-icon name="remove-outline"></ion-icon></button>
+      <button class="iv-btn" data-iv="in"><ion-icon name="add-outline"></ion-icon></button>
+    </div>`;
+  document.body.appendChild(ov);
+  document.body.style.overflow = 'hidden';
+  ov.querySelectorAll('.iv-btn').forEach(b => {
+    b.style.cssText = 'width:42px;height:42px;border-radius:50%;border:none;background:rgba(255,255,255,.16);color:#fff;font-size:1.3rem;display:flex;align-items:center;justify-content:center;cursor:pointer;';
+  });
+
+  const img = ov.querySelector('img');
+  let scale = 1, tx = 0, ty = 0;
+  const MIN = 1, MAX = 6;
+  const apply = () => { img.style.transform = `translate(${tx}px,${ty}px) scale(${scale})`; img.style.cursor = scale > 1 ? 'grab' : 'default'; };
+  const setScale = s => { scale = Math.max(MIN, Math.min(MAX, s)); if (scale === 1) { tx = 0; ty = 0; } apply(); };
+
+  const onKey = e => { if (e.key === 'Escape') close(); };
+  const close = () => { ov.remove(); document.body.style.overflow = ''; document.removeEventListener('keydown', onKey); };
+  document.addEventListener('keydown', onKey);
+
+  ov.querySelector('[data-iv="close"]').onclick = close;
+  ov.querySelector('[data-iv="reset"]').onclick = () => setScale(1);
+  ov.querySelector('[data-iv="in"]').onclick = () => setScale(scale + 0.5);
+  ov.querySelector('[data-iv="out"]').onclick = () => setScale(scale - 0.5);
+  ov.addEventListener('click', e => { if (e.target === ov) close(); });
+  img.addEventListener('dblclick', () => setScale(scale > 1 ? 1 : 2.5));
+  ov.addEventListener('wheel', e => { e.preventDefault(); setScale(scale + (e.deltaY < 0 ? 0.3 : -0.3)); }, { passive: false });
+
+  // Geser (1 jari/mouse) & cubit (2 jari) via Pointer Events.
+  const pts = new Map();
+  let startDist = 0, startScale = 1, lastX = 0, lastY = 0, dragging = false;
+  img.addEventListener('pointerdown', e => {
+    img.setPointerCapture(e.pointerId);
+    pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (pts.size === 1) { dragging = true; lastX = e.clientX; lastY = e.clientY; }
+    else if (pts.size === 2) { const [a, b] = [...pts.values()]; startDist = Math.hypot(a.x - b.x, a.y - b.y); startScale = scale; dragging = false; }
+  });
+  img.addEventListener('pointermove', e => {
+    if (!pts.has(e.pointerId)) return;
+    pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (pts.size === 2) {
+      const [a, b] = [...pts.values()];
+      const dist = Math.hypot(a.x - b.x, a.y - b.y);
+      if (startDist) setScale(startScale * (dist / startDist));
+    } else if (dragging && scale > 1) {
+      tx += e.clientX - lastX; ty += e.clientY - lastY; lastX = e.clientX; lastY = e.clientY; apply();
+    }
+  });
+  const up = e => { pts.delete(e.pointerId); if (pts.size < 2) startDist = 0; if (pts.size === 0) dragging = false; };
+  img.addEventListener('pointerup', up);
+  img.addEventListener('pointercancel', up);
+
+  apply();
+}
+
 function confirmDialog(message, { title, okText, danger = false } = {}) {
   title = title || tr('Konfirmasi', 'Confirmation');
   okText = okText || tr('Ya, lanjutkan', 'Yes, continue');

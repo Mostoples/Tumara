@@ -9,6 +9,7 @@ const Ency = {
   tab: 'semua',    // semua | health | prod | fin | simpan
   query: '',
   selected: null,  // id artikel yang sedang dibuka
+  _SEL_KEY: 'tumara_ency_article',   // agar artikel yang dibuka tahan refresh
 
   KATEGORI: {
     health: { get label() { return tr('Kesehatan', 'Health'); },        color: 'var(--health)', soft: 'var(--health-soft)', badge: 'badge-green'  },
@@ -330,6 +331,8 @@ const Ency = {
   /* ---------- render ---------- */
 
   render(el) {
+    // Pulihkan artikel yang dibuka dari localStorage agar refresh tetap di detail.
+    if (!this.selected) this.selected = localStorage.getItem(this._SEL_KEY) || null;
     if (this.selected) this.renderDetail(el);
     else this.renderList(el);
   },
@@ -411,6 +414,7 @@ const Ency = {
     });
     $$('[data-open]', el).forEach(c => c.onclick = () => {
       this.selected = c.dataset.open;
+      localStorage.setItem(this._SEL_KEY, this.selected);
       this.render(el);
       window.scrollTo({ top: 0 });
     });
@@ -418,7 +422,7 @@ const Ency = {
 
   renderDetail(el) {
     const a = this.ARTIKEL.find(x => x.id === this.selected);
-    if (!a) { this.selected = null; return this.renderList(el); }
+    if (!a) { this.selected = null; localStorage.removeItem(this._SEL_KEY); return this.renderList(el); }
     const kat = this.KATEGORI[a.kategori];
     const saved = this._bookmarks().includes(a.id);
     const terkait = this.ARTIKEL.filter(x => x.kategori === a.kategori && x.id !== a.id).slice(0, 3);
@@ -476,10 +480,11 @@ const Ency = {
         </div>` : ''}`;
 
     /* interaksi */
-    $('#encyBack', el).onclick = () => { this.selected = null; this.render(el); window.scrollTo({ top: 0 }); };
+    $('#encyBack', el).onclick = () => { this.selected = null; localStorage.removeItem(this._SEL_KEY); this.render(el); window.scrollTo({ top: 0 }); };
     $('#encyBm', el).onclick = async () => { await this._toggleBookmark(a.id); this.renderDetail(el); };
     $$('[data-open]', el).forEach(c => c.onclick = () => {
       this.selected = c.dataset.open;
+      localStorage.setItem(this._SEL_KEY, this.selected);
       this.render(el);
       window.scrollTo({ top: 0 });
     });

@@ -120,6 +120,25 @@ const AdminView = {
     return u.username || usernameOf(u.nama || '') || '-';
   },
 
+  /* Mapel guru: satu guru bisa mengampu beberapa mapel (users/{uid}.mapelAmpu).
+     Field lama `mapel` (satu teks) tetap ada & berisi mapel pertama, karena app
+     siswa masih membacanya — jadi akun guru lama tetap terbaca di sini. */
+  _mapelList(u) {
+    if (Array.isArray(u?.mapelAmpu) && u.mapelAmpu.length) return u.mapelAmpu.filter(Boolean);
+    return u?.mapel ? [u.mapel] : [];
+  },
+  _mapelTeks(u) { return this._mapelList(u).join(', '); },
+
+  // "Matematika, Fisika" → ['Matematika', 'Fisika'] (tanpa kembar, tanpa kosong).
+  _parseMapel(teks) {
+    const out = [];
+    String(teks || '').split(',').forEach(x => {
+      const v = x.trim();
+      if (v && !out.some(y => y.toLowerCase() === v.toLowerCase())) out.push(v);
+    });
+    return out;
+  },
+
   // Menyaring akun sesuai kotak pencarian + chip peran (dari data di memori).
   _filterUsers() {
     const q = this.query.trim().toLowerCase();
@@ -128,7 +147,7 @@ const AdminView = {
       if (!q) return true;
       return (u.nama || '').toLowerCase().includes(q) || (u.email || '').toLowerCase().includes(q)
         || (u.nis || '').toLowerCase().includes(q)
-        || (u.kelas || '').toLowerCase().includes(q) || (u.mapel || '').toLowerCase().includes(q);
+        || (u.kelas || '').toLowerCase().includes(q) || this._mapelTeks(u).toLowerCase().includes(q);
     });
     const order = { admin: 0, guru: 1, siswa: 2 };
     return shown.sort((a, b) => {
@@ -173,7 +192,7 @@ const AdminView = {
                 </div></td>
                 <td data-label="${tr('Masuk dengan', 'Signs in with')}" style="color:var(--text-3);">${esc(this._loginId(u))}</td>
                 <td data-label="${tr('Peran', 'Role')}">${roleBadge(u.role || 'siswa')}</td>
-                <td data-label="${tr('Detail', 'Detail')}" style="color:var(--text-3);font-size:.82rem;">${esc(u.mapel || u.kelas || u.sekolah || '-')}</td>
+                <td data-label="${tr('Detail', 'Detail')}" style="color:var(--text-3);font-size:.82rem;">${esc(this._mapelTeks(u) || u.kelas || u.sekolah || '-')}</td>
                 <td data-label="${tr('Aksi', 'Actions')}" style="text-align:right;white-space:nowrap;">
                   <button class="mini-icon-btn" data-edit="${u.id}" title="${tr('Ubah', 'Edit')}"><ion-icon name="create-outline"></ion-icon></button>
                   <button class="mini-icon-btn danger" data-del="${u.id}" title="${(u.role || 'siswa') === 'admin' ? tr('Akun admin tidak bisa dihapus', 'Admin accounts cannot be deleted') : tr('Hapus', 'Delete')}" ${u.id === DB.user.id || (u.role || 'siswa') === 'admin' ? 'disabled' : ''}><ion-icon name="trash-outline"></ion-icon></button>
@@ -670,7 +689,12 @@ const AdminView = {
     // Data tambahan per peran; digambar ulang tiap peran berganti.
     const roleFields = r => r === 'guru' ? `
         <div class="grid grid-2 keep-2" style="gap:12px;">
-          <div class="field"><label>${tr('Mata pelajaran', 'Subject')}</label><input type="text" class="input" id="mMapel" placeholder="${tr('mis. Matematika', 'e.g. Math')}" value="${esc(user?.mapel || '')}"></div>
+          <div class="field">
+            <label>${tr('Mata pelajaran', 'Subjects')}</label>
+            <input type="text" class="input" id="mMapel" placeholder="${tr('mis. Matematika, Fisika', 'e.g. Math, Physics')}" value="${esc(this._mapelTeks(user))}">
+            <div class="hint">${tr('Boleh lebih dari satu — pisahkan dengan koma. Guru juga bisa mengubahnya sendiri.',
+                                   'More than one is allowed — separate with commas. Teachers can edit this themselves too.')}</div>
+          </div>
           <div class="field"><label>NIP/NIK <span style="font-weight:500;color:var(--text-3)">${tr('(opsional)', '(optional)')}</span></label><input type="text" class="input" id="mNip" value="${esc(user?.nip || '')}"></div>
         </div>
         <div class="field"><label>${tr('Asal sekolah', 'School')} <span style="font-weight:500;color:var(--text-3)">${tr('(opsional)', '(optional)')}</span></label><input type="text" class="input" id="mSekolah" value="${esc(user?.sekolah || '')}"></div>`
@@ -741,7 +765,15 @@ const AdminView = {
           if (nama.length < 2) return toast(tr('Isi nama lengkap.', 'Enter a full name.'), 'warning');
 
           const extra = {};
-          if (role === 'guru') { extra.mapel = $('#mMapel', m)?.value.trim() || ''; extra.nip = $('#mNip', m)?.value.trim() || ''; extra.sekolah = $('#mSekolah', m)?.value.trim() || ''; }
+          if (role === 'guru') {
+            // Guru bisa mengampu beberapa mapel. Disimpan sebagai daftar (mapelAmpu);
+            // `mapel` tetap diisi mapel pertama karena app siswa masih membacanya.
+            const mapelAmpu = this._parseMapel($('#mMapel', m)?.value);
+            extra.mapelAmpu = mapelAmpu;
+            extra.mapel = mapelAmpu[0] || '';
+            extra.nip = $('#mNip', m)?.value.trim() || '';
+            extra.sekolah = $('#mSekolah', m)?.value.trim() || '';
+          }
           else if (role === 'siswa') { extra.kelas = $('#mKelas', m)?.value.trim() || ''; }
 
           const btn = $('#mSave', m); btn.disabled = true;

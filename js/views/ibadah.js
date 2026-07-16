@@ -15,23 +15,12 @@ const Ibadah = {
   _dayWatchInstalled: false,// penanda agar watcher hanya dipasang sekali
   _dayHostEl: null,         // elemen #view untuk render ulang saat hari berganti
 
-  // 5 sholat fardhu (selalu ada)
-  FARDHU: [
-    { key: 'subuh',   id: 'Subuh',   en: 'Fajr',    emoji: '🌅' },
-    { key: 'dzuhur',  id: 'Dzuhur',  en: 'Dhuhr',   emoji: '☀️' },
-    { key: 'ashar',   id: 'Ashar',   en: 'Asr',     emoji: '🌤️' },
-    { key: 'maghrib', id: 'Maghrib', en: 'Maghrib', emoji: '🌇' },
-    { key: 'isya',    id: 'Isya',    en: 'Isha',    emoji: '🌙' }
-  ],
-
-  // amalan harian bawaan (bisa dicentang)
-  AMALAN: [
-    { key: 'dzikirPagi',  id: 'Dzikir pagi',   en: 'Morning dhikr',   emoji: '🌄' },
-    { key: 'dzikirPetang',id: 'Dzikir petang', en: 'Evening dhikr',   emoji: '🌆' },
-    { key: 'tilawah',     id: 'Tilawah Qur\'an', en: 'Qur\'an recitation', emoji: '📖' },
-    { key: 'sedekah',     id: 'Sedekah',       en: 'Charity',         emoji: '🤲' },
-    { key: 'dhuha',       id: 'Sholat Dhuha',  en: 'Dhuha prayer',    emoji: '🕗' },
-    { key: 'tahajud',     id: 'Sholat Tahajud',en: 'Tahajjud prayer', emoji: '🌌' }
+  /* Ibadah yang dicatat & DIPANTAU GURU: hanya Sholat Dhuha & Dzuhur —
+     dua ibadah yang dikerjakan di sekolah. Kunci datanya ('dhuha', 'dzuhur')
+     sengaja tidak diubah, jadi centang lama siswa tetap terbaca. */
+  SEKOLAH: [
+    { key: 'dhuha',  id: 'Sholat Dhuha',  en: 'Dhuha prayer', emoji: '🕗' },
+    { key: 'dzuhur', id: 'Sholat Dzuhur', en: 'Dhuhr prayer', emoji: '☀️' }
   ],
 
   async render(el) {
@@ -802,41 +791,26 @@ const Ibadah = {
   async renderToday(el) {
     const rec = await this._today();
     const done = rec.done || {};
-    const custom = DB.user?.ibadahCustom || [];
 
-    const items = [
-      ...this.FARDHU.map(f => ({ ...f, group: 'fardhu' })),
-      ...this.AMALAN.map(a => ({ ...a, group: 'amalan' })),
-      ...custom.map(c => ({ key: 'c_' + c.id, id: c.label, en: c.label, emoji: '⭐', group: 'custom', rawId: c.id }))
-    ];
+    const items = this.SEKOLAH;
     const total = items.length;
     const selesai = items.filter(i => done[i.key]).length;
     const pct = total ? Math.round(selesai / total * 100) : 0;
 
-    const fardhuDone = this.FARDHU.filter(f => done[f.key]).length;
-
-    // Tile amalan/sholat (grid). Item custom dibungkus wrapper agar tombol
-    // hapus menjadi sibling — bukan <button> bersarang (HTML tidak valid).
-    const deedTile = (i) => {
-      const inner = `
+    const tile = i => `
+      <button class="fardhu-tile ${done[i.key] ? 'done' : ''}" data-toggle="${esc(i.key)}">
         <span class="ft-emoji">${i.emoji}</span>
         <span class="ft-name">${esc(tr(i.id, i.en))}</span>
-        <ion-icon class="ft-badge" name="${done[i.key] ? 'checkmark-circle' : 'ellipse-outline'}"></ion-icon>`;
-      const tile = `<button class="fardhu-tile ${done[i.key] ? 'done' : ''}" data-toggle="${esc(i.key)}">${inner}</button>`;
-      if (i.group !== 'custom') return tile;
-      return `<div class="deed-cell">
-        ${tile}
-        <button class="ft-del" data-delc="${esc(i.rawId)}" title="${tr('Hapus', 'Delete')}"><ion-icon name="close"></ion-icon></button>
-      </div>`;
-    };
+        <ion-icon class="ft-badge" name="${done[i.key] ? 'checkmark-circle' : 'ellipse-outline'}"></ion-icon>
+      </button>`;
 
     el.innerHTML = `
       <div class="card" style="background:linear-gradient(135deg,#0e7490,#0891b2);color:#fff;">
         <div style="display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap;">
           <div>
-            <div style="font-size:.8rem;font-weight:700;opacity:.85;text-transform:uppercase;letter-spacing:.04em;">${tr('Amalan Hari Ini', "Today's Deeds")}</div>
+            <div style="font-size:.8rem;font-weight:700;opacity:.85;text-transform:uppercase;letter-spacing:.04em;">${tr('Ibadah Hari Ini', "Today's Worship")}</div>
             <div style="font-size:1.5rem;font-weight:800;margin-top:2px;">${selesai} / ${total} ${tr('selesai', 'done')}</div>
-            <div style="font-size:.85rem;opacity:.9;margin-top:4px;">${tr(`Sholat fardhu: ${fardhuDone}/5 🕌`, `Fardh prayers: ${fardhuDone}/5 🕌`)}</div>
+            <div style="font-size:.85rem;opacity:.9;margin-top:4px;">${fmtDate(todayStr(), { weekday: true })}</div>
           </div>
           <div class="score-ring" style="width:100px;height:100px;">
             ${ringSVG(pct, { size: 100, stroke: 9, color: '#fff', track: 'rgba(255,255,255,.25)' })}
@@ -845,23 +819,18 @@ const Ibadah = {
         </div>
       </div>
 
-      <div class="section-head" style="margin-top:20px;"><h2>🕌 ${tr('Sholat Fardhu', 'Fardh Prayers')}</h2></div>
-      <div class="fardhu-grid">
-        ${this.FARDHU.map(f => deedTile({ ...f, group: 'fardhu' })).join('')}
-      </div>
-
       <div class="section-head" style="margin-top:20px;">
-        <h2>✨ ${tr('Amalan Sunnah', 'Sunnah Deeds')}</h2>
-        <button class="btn btn-sm" id="addCustom"><ion-icon name="add"></ion-icon> ${tr('Amalan', 'Deed')}</button>
+        <h2>🕌 ${tr('Sholat Dhuha & Dzuhur', 'Dhuha & Dhuhr Prayers')}</h2>
+        <span class="badge badge-green">${tr('Dipantau guru', 'Monitored by teacher')}</span>
       </div>
       <div class="fardhu-grid">
-        ${this.AMALAN.map(a => deedTile({ ...a, group: 'amalan' })).join('')}
-        ${custom.map(c => deedTile({ key: 'c_' + c.id, id: c.label, en: c.label, emoji: '⭐', group: 'custom', rawId: c.id })).join('')}
+        ${items.map(tile).join('')}
       </div>
 
       <div class="disclaimer" style="margin-top:20px;">
         <ion-icon name="bulb-outline"></ion-icon>
-        <span>${tr('Centang amalan yang sudah kamu kerjakan. Konsistensi kecil setiap hari lebih dicintai daripada banyak tapi sesekali. 🌱', 'Check off the deeds you\'ve completed. Small consistency every day is more beloved than a lot done occasionally. 🌱')}</span>
+        <span>${tr('Centang setelah kamu mengerjakannya. Guru melihat rekap harian & bulanannya, jadi isi dengan jujur ya. 🌱',
+                   'Check them off once you have prayed. Your teacher sees the daily and monthly recap, so be honest. 🌱')}</span>
       </div>`;
 
     $$('[data-toggle]', el).forEach(b => b.onclick = async () => {
@@ -870,33 +839,6 @@ const Ibadah = {
       await this._saveToday(nd);
       App.refresh();
     });
-    $$('[data-delc]', el).forEach(b => b.onclick = async () => {
-      const id = b.dataset.delc;
-      await DB.updateUser({ ibadahCustom: (DB.user.ibadahCustom || []).filter(c => c.id !== id) });
-      App.refresh();
-    });
-    $('#addCustom', el).onclick = () => {
-      openModal({
-        title: tr('Tambah Amalan', 'Add Deed'),
-        body: `
-          <div class="field">
-            <label>${tr('Nama amalan', 'Deed name')}</label>
-            <input type="text" class="input" id="mLabel" placeholder="${tr('mis. Qobliyah Subuh', 'e.g. Fajr Sunnah')}">
-          </div>
-          <button class="btn btn-primary btn-block" id="mSave"><ion-icon name="checkmark"></ion-icon> ${tr('Tambah', 'Add')}</button>`,
-        onMount: m => {
-          $('#mSave', m).onclick = async () => {
-            const label = $('#mLabel', m).value.trim();
-            if (!label) return toast(tr('Isi nama amalan.', 'Enter a deed name.'), 'warning');
-            const list = (DB.user.ibadahCustom || []).concat({ id: uid(), label });
-            await DB.updateUser({ ibadahCustom: list });
-            closeModal();
-            toast(tr('Amalan ditambahkan ⭐', 'Deed added ⭐'));
-            App.refresh();
-          };
-        }
-      });
-    };
   },
 
   /* ============ TAB: AL-QUR'AN ============ */

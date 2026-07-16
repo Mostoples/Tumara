@@ -47,6 +47,7 @@
         <a class="nav-link" data-route="jadwal"><ion-icon name="calendar-outline"></ion-icon><span data-en="Schedule">Jadwal Mengajar</span></a>
         <a class="nav-link" data-route="tugaskelas"><ion-icon name="paper-plane-outline"></ion-icon><span data-en="Class Tasks">Tugas Kelas</span></a>
         <a class="nav-link" data-route="jadwalkelas"><ion-icon name="school-outline"></ion-icon><span data-en="Class Schedule">Jadwal Kelas</span></a>
+        <a class="nav-link" data-route="waliabsen"><ion-icon name="albums-outline"></ion-icon><span data-en="Class Attendance">Rekap Absensi Kelas</span></a>
         <a class="nav-link" data-route="ibadah"><ion-icon name="moon-outline"></ion-icon><span data-en="Student Worship">Ibadah Siswa</span></a>
         <a class="nav-link" data-route="kesehatan"><ion-icon name="heart-outline"></ion-icon><span data-en="Student Health">Kesehatan Siswa</span></a>
       </nav>
@@ -142,8 +143,8 @@
       // Sembunyikan nav-nya bila bukan wali; jika sedang di tab itu, pindahkan.
       const refreshGuruNav = () => {
         const isWali = !!(DB.user && DB.user.waliKelasId);
-        document.querySelectorAll('[data-route="jadwalkelas"]').forEach(a => { a.style.display = isWali ? '' : 'none'; });
-        if (!isWali && Teacher.tab === 'jadwalkelas') Teacher.tab = 'kelas';
+        document.querySelectorAll('[data-route="jadwalkelas"],[data-route="waliabsen"]').forEach(a => { a.style.display = isWali ? '' : 'none'; });
+        if (!isWali && (Teacher.tab === 'jadwalkelas' || Teacher.tab === 'waliabsen')) Teacher.tab = 'kelas';
       };
 
       // Navigation logic
@@ -166,6 +167,7 @@
           jadwal:     [tr('Jadwal Mengajar', 'Teaching Schedule'),  tr('Jam mengajar mingguan', 'Weekly teaching hours')],
           tugaskelas: [tr('Tugas Kelas', 'Class Tasks'),           tr('Kirim tugas ke siswa per kelas', 'Send tasks to students per class')],
           jadwalkelas:[tr('Jadwal Kelas', 'Class Schedule'),       tr('Wali kelas mengirim jadwal ke siswa', 'Homeroom teacher sends schedule to students')],
+          waliabsen:[tr('Rekap Absensi Kelas', 'Class Attendance'), tr('Absensi semua mapel di kelas wali', 'Attendance of all subjects in your homeroom class')],
           ibadah:   [tr('Ibadah Siswa', 'Student Worship'),      tr('Pantauan amalan ibadah harian siswa', 'Monitoring student daily worship')],
           kesehatan:[tr('Kesehatan Siswa', 'Student Health'),    tr('Pantauan kesehatan harian siswa', 'Monitoring student daily health')]
         };

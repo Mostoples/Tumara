@@ -102,6 +102,18 @@ service cloud.firestore {
         && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.waliKelasId == classId;
     }
 
+    // Absensi per-mapel (id = "{classId}_{tanggal}_{guruId}_{mapelSlug}_{pertemuan}").
+    // Global agar wali kelas (juga seorang guru) bisa merekap absensi SEMUA guru
+    // di kelasnya. Guru hanya boleh menulis/menghapus absensi atas namanya sendiri
+    // (guruId dikunci ke uid). Siswa tidak boleh membaca absensi.
+    match /class_attendance/{id} {
+      allow read: if isGuru() || isAdmin();
+      allow create, update: if isAdmin()
+        || (isGuru() && request.resource.data.guruId == request.auth.uid);
+      allow delete: if isAdmin()
+        || (isGuru() && resource.data.guruId == request.auth.uid);
+    }
+
     // Pengumpulan tugas siswa (id = "{taskId}_{studentId}"). Yang disimpan di
     // sini hanya METADATA + URL file; file-nya (foto/PDF) ada di Supabase.
     // Guru boleh membaca semua (memantau kelasnya); siswa hanya miliknya.

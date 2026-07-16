@@ -246,6 +246,16 @@ const DB = (() => {
       this._gwrite(coll, arr);
       return arr[i];
     },
+    // Timpa penuh (BUKAN merge) — dipakai absensi agar `entries` tergantikan
+    // utuh tiap simpan, tidak menyisakan status siswa yang sudah dihapus.
+    async gSet(coll, id, data) {
+      const arr = this._gread(coll);
+      const i = arr.findIndex(x => x.id === id);
+      const rec = { id, ...data };
+      if (i === -1) arr.push(rec); else arr[i] = rec;
+      this._gwrite(coll, arr);
+      return rec;
+    },
     async gRemove(coll, id) {
       this._gwrite(coll, this._gread(coll).filter(x => x.id !== id));
     },
@@ -680,6 +690,15 @@ const DB = (() => {
       return { id, ...patch };
     },
 
+    // Timpa penuh (TANPA merge) — absensi harus mengganti `entries` utuh,
+    // sedangkan gUpdate memakai {merge:true} yang menggabung map bersarang.
+    async gSet(coll, id, data) {
+      const { F } = this.fb;
+      await F.setDoc(F.doc(this._gColRef(coll), id), this._clean(data));
+      this._gInvalidate(coll);
+      return { id, ...data };
+    },
+
     async gRemove(coll, id) {
       const { F } = this.fb;
       await F.deleteDoc(F.doc(this._gColRef(coll), id));
@@ -778,6 +797,7 @@ const DB = (() => {
     gAdd: (c, i) => adapter.gAdd(c, i),
     gAddMany: (c, items) => adapter.gAddMany(c, items),
     gUpdate: (c, id, p) => adapter.gUpdate(c, id, p),
+    gSet: (c, id, d) => adapter.gSet(c, id, d),
     gRemove: (c, id) => adapter.gRemove(c, id),
     gGet: (c, id) => adapter.gGet(c, id),
 

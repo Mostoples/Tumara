@@ -44,6 +44,17 @@ function usernameOf(nama) {
     .replace(/^\.+|\.+$/g, '');   // rapikan titik di ujung
 }
 
+// Slug aman untuk potongan id dokumen (mis. nama mapel → bagian doc id
+// class_attendance). Firestore id tak boleh mengandung '/', jadi semua
+// non-alfanumerik disatukan jadi '-'. Kosong → 'x' agar id tetap valid.
+function slug(teks) {
+  return String(teks ?? '')
+    .normalize('NFD').replace(/[̀-ͯ]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '') || 'x';
+}
+
 // Identitas login → email untuk Firebase Auth. Bila pengguna mengetik
 // email sungguhan (admin bootstrap), pakai apa adanya.
 function toAuthEmail(identitas) {

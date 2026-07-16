@@ -868,8 +868,28 @@ const Teacher = {
       $$('[data-open]', el).forEach(b => b.onclick = () => { this.attMapel = b.dataset.open; this.render(this._el); });
       $$('[data-export]', el).forEach(b => b.onclick = () => this._printRekapPertemuan(cls, students, { mapel: b.dataset.export, guruId: DB.user.id }));
       $('#mpAdd', el) && ($('#mpAdd', el).onclick = () => {
-        const m = (prompt(tr('Nama mapel:', 'Subject name:')) || '').trim();
-        if (m) { this.attMapel = m; this.render(this._el); }
+        openModal({
+          title: tr('Tambah Mapel', 'Add Subject'),
+          body: `
+            <div class="field">
+              <label>${tr('Nama mata pelajaran', 'Subject name')}</label>
+              <input type="text" class="input" id="mpNama" placeholder="${tr('mis. Matematika', 'e.g. Math')}" autocomplete="off">
+            </div>
+            <button class="btn btn-primary btn-block" id="mpSimpan"><ion-icon name="checkmark"></ion-icon> ${tr('Lanjut Absen', 'Continue to Attendance')}</button>`,
+          onMount: mo => {
+            const inp = $('#mpNama', mo);
+            inp && inp.focus();
+            const simpan = () => {
+              const nama = (inp.value || '').trim();
+              if (!nama) return toast(tr('Isi nama mapel dulu.', 'Enter a subject name first.'), 'warning');
+              closeModal();
+              this.attMapel = nama;
+              this.render(this._el);
+            };
+            $('#mpSimpan', mo).onclick = simpan;
+            inp.onkeydown = e => { if (e.key === 'Enter') simpan(); };
+          }
+        });
       });
       return;
     }

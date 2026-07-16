@@ -238,7 +238,9 @@ const Teacher = {
 
   // Baris "kelas aktif + tombol ganti kelas" di atas konten tiap tab.
   // Nama kelas aktif dicatat di sini karena dipakai juga untuk nama file ekspor CSV.
-  _classBar(cls) {
+  // opts.mapel=false → sembunyikan pemilih mapel di bilah (mis. halaman absensi
+  // yang sudah punya pemilih mapel sendiri lewat kartu mapel).
+  _classBar(cls, { mapel = true } = {}) {
     this._activeClsNama = cls?.nama || '';
     const back = this._backKelasBtn();
     // Tab yang dibuka dari menu di detail Kelas & Siswa sudah membawa kelasnya
@@ -254,7 +256,7 @@ const Teacher = {
         ${back}
         ${ganti}
         <span class="class-bar-name"><ion-icon name="school"></ion-icon> ${esc(cls?.nama || '')}</span>
-        ${this._mapelPilih()}
+        ${mapel ? this._mapelPilih() : ''}
       </div>`;
   },
 
@@ -831,7 +833,7 @@ const Teacher = {
           .mapel-nama{font-weight:800;font-size:1rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
           .mapel-sub{font-size:.78rem;color:var(--text-3);margin-top:2px;}
         </style>
-        ${this._classBar(cls)}
+        ${this._classBar(cls, { mapel: false })}
         <div class="hd-bar" style="margin:8px 0 16px;">
           <div class="field" style="margin:0;">
             <label>${tr('Bulan (untuk ekspor)', 'Month (for export)')}</label>

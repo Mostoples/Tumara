@@ -1,22 +1,24 @@
 /* ============================================================
-   KONFIGURASI FIREBASE — JALUR UJI COBA (TRIAL)
+   KONFIGURASI FIREBASE — JALUR UMUM
    ------------------------------------------------------------
-   Dipakai KHUSUS oleh register.html, pilih-pekerjaan.html, dan
-   coba-app.html — halaman untuk orang yang ingin mencoba
-   Tumara tanpa akun sekolah (Google / email &amp; kata sandi,
-   lalu pilih pekerjaan). Project Firebase-nya SENGAJA terpisah
-   dari project sekolah (tumara-id, di js/firebase-config.js) —
-   data uji coba tidak bercampur dengan data sekolah.
+   Dipakai KHUSUS oleh register.html, pilih-pekerjaan.html,
+   data-diri.html, dan umum-app.html — halaman untuk orang di
+   luar sekolah, tanpa akun/sangkut-paut sekolah (Google / email
+   & kata sandi, lalu pilih pekerjaan). Project Firebase-nya
+   SENGAJA terpisah dari project sekolah (tumara-id, di
+   js/firebase-config.js) — data pengguna umum tidak bercampur
+   dengan data sekolah.
 
    Pastikan di console.firebase.google.com (project: myosigid):
    1. Authentication → Sign-in method → aktifkan Google &amp;
       Email/Password.
    2. Cloud Firestore → buat database.
    3. Firestore Rules mengizinkan pengguna membaca/menulis
-      dokumennya sendiri di koleksi `trial_users`.
+      dokumennya sendiri di koleksi `trial_users` (nama koleksi
+      internal — lihat catatan di firestore-umum.rules).
    ============================================================ */
 
-const TRIAL_FIREBASE_CONFIG = {
+const UMUM_FIREBASE_CONFIG = {
   apiKey: "AIzaSyDiD46GuseAiitJr8ghJcAKrMfv2Xj-NDE",
   authDomain: "myosigid.firebaseapp.com",
   projectId: "myosigid",

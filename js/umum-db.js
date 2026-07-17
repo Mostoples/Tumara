@@ -1,16 +1,19 @@
 /* ============================================================
-   TUMARA — Lapisan Data jalur uji coba (trial-db.js)
+   TUMARA — Lapisan Data jalur Umum (umum-db.js)
    ------------------------------------------------------------
-   Versi DB.* yang dipakai coba-app.html (dashboard/health/
-   productivity/finance/ibadah/encyclopedia/profile — file view
-   yang SAMA dengan app.html, tidak diubah). Beda dari js/db.js:
-   • Menumpang di app & sesi Firebase yang SUDAH dibuat TrialAuth
+   Untuk orang di luar sekolah, tanpa akun/sangkut-paut sekolah.
+   Versi DB.* yang dipakai umum-app.html (dashboard/health/
+   tugas/catatan/kebiasaan/jadwal/fokus/finance/ibadah/profile —
+   file view yang SAMA dengan app.html, tidak diubah). Beda dari js/db.js:
+   • Menumpang di app & sesi Firebase yang SUDAH dibuat UmumAuth
      (project myosigid) — TIDAK bikin app Firebase baru, supaya
      sesi login dari register.html/pilih-pekerjaan.html terbawa.
    • Subkoleksi data di trial_users/{uid}/{coll} (paralel dengan
-     users/{uid}/{coll} di project sekolah tumara-id).
+     users/{uid}/{coll} di project sekolah tumara-id — nama koleksi
+     "trial_users" sengaja dipertahankan, lihat catatan di
+     firestore-umum.rules).
    • Tanpa peran admin/guru/siswa, tanpa kelas/NIS/roster — hanya
-     satu jenis akun: pengguna uji coba (dibedakan field pekerjaan).
+     satu jenis akun: pengguna umum (dibedakan field pekerjaan).
    ============================================================ */
 
 const DB = (() => {
@@ -19,7 +22,7 @@ const DB = (() => {
   const cacheClear = () => { cache.own.clear(); cache.g.clear(); cache.gw.clear(); };
 
   async function fb() {
-    return TrialAuth._load();
+    return UmumAuth._load();
   }
 
   function clean(obj) {
@@ -47,13 +50,13 @@ const DB = (() => {
     get role() { return 'siswa'; },
 
     async init() {
-      user = await TrialAuth.init();
+      user = await UmumAuth.init();
       cacheClear();
       return user;
     },
 
     async logout() {
-      await TrialAuth.logout();
+      await UmumAuth.logout();
       cacheClear();
       user = null;
     },
@@ -63,7 +66,7 @@ const DB = (() => {
       const { id, email, ...safe } = patch;
       await F.setDoc(F.doc(db, 'trial_users', user.id), clean(safe), { merge: true });
       user = { ...user, ...patch };
-      TrialAuth.user = user;
+      UmumAuth.user = user;
       return user;
     },
 

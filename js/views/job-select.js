@@ -1,10 +1,13 @@
 /* ============================================================
-   TUMARA — Pilih Pekerjaan (jalur uji coba)
+   TUMARA — Pilih Pekerjaan (jalur Umum)
    ------------------------------------------------------------
-   Ditampilkan setelah Google/email login lewat register.html.
+   Ditampilkan setelah Google/email login lewat register.html,
+   untuk orang di luar sekolah tanpa akun/sangkut-paut sekolah.
    Memilih satu kartu → disimpan ke trial_users/{uid}.pekerjaan
-   (TrialAuth.savePekerjaan) → lanjut ke coba-app.html (shell
-   aplikasi uji coba — fitur sama dengan app.html versi siswa).
+   (UmumAuth.savePekerjaan) → lanjut ke data-diri.html (usia/
+   tinggi/berat untuk Indeks BMI, lihat js/views/data-diri.js)
+   → baru masuk umum-app.html (shell aplikasi umum — fitur sama
+   dengan app.html versi siswa).
    ============================================================ */
 
 const JOBS = [
@@ -76,8 +79,8 @@ const JobSelectView = {
   async _pick(pekerjaan) {
     $$('.job-card').forEach(c => c.classList.add('busy'));
     try {
-      await TrialAuth.savePekerjaan(pekerjaan);
-      location.replace('coba-app.html');
+      await UmumAuth.savePekerjaan(pekerjaan);
+      location.replace(UmumAuth.hasDataDiri(UmumAuth.user) ? 'umum-app.html' : 'data-diri.html');
     } catch (_) {
       toast(tr('Gagal menyimpan pilihan. Coba lagi.', 'Failed to save your choice. Please try again.'), 'error');
       $$('.job-card').forEach(c => c.classList.remove('busy'));

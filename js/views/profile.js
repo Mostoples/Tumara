@@ -25,13 +25,14 @@ const Profile = {
     const isDark = document.documentElement.dataset.theme === 'dark';
     const ed = this._editing;                      // mode edit data diri aktif?
     const dis = ed ? '' : 'disabled';              // atribut untuk menonaktifkan input
-    // Jalur uji coba (coba-app.html, lihat js/trial-auth.js) tidak punya
-    // kelas/NIS sekolah — sembunyikan field & teks yang khusus siswa sekolah.
-    const isTrial = typeof TrialAuth !== 'undefined';
+    // Jalur Umum (umum-app.html, lihat js/umum-auth.js) — orang di luar
+    // sekolah — tidak punya kelas/NIS sekolah; sembunyikan field & teks
+    // yang khusus siswa sekolah.
+    const isUmum = typeof UmumAuth !== 'undefined';
 
     // Daftar kelas sekolah (untuk memilih/mengubah kelas siswa).
     let classes = [];
-    if (!isTrial) {
+    if (!isUmum) {
       try {
         classes = (await DB.gList('school_classes'))
           .sort((a, b) => (a.urutan ?? 999999) - (b.urutan ?? 999999) || (a.nama || '').localeCompare(b.nama || ''));
@@ -101,10 +102,11 @@ const Profile = {
             <div class="field">
               <label>${tr('Tingkat aktivitas harian', 'Daily activity level')}</label>
               <select class="select" id="pfAktivitas" ${dis}>
-                ${Calc.AKTIVITAS.map(a => `<option value="${a.key}" ${a.key === (u.aktivitas || 'ringan') ? 'selected' : ''}>${a.label}</option>`).join('')}
+                ${!u.aktivitas ? `<option value="" disabled selected>${tr('Silakan pilih...', 'Please select...')}</option>` : ''}
+                ${Calc.AKTIVITAS.map(a => `<option value="${a.key}" ${a.key === u.aktivitas ? 'selected' : ''}>${a.label}</option>`).join('')}
               </select>
             </div>
-            ${isTrial ? '' : `
+            ${isUmum ? '' : `
             <div class="grid grid-2 keep-2" style="gap:12px;">
               <div class="field">
                 <label>${tr('Kelas', 'Class')}</label>
@@ -187,7 +189,7 @@ const Profile = {
                 <ion-icon name="key-outline" style="font-size:1.2rem;color:var(--text-3);"></ion-icon>
                 <div class="sr-text">
                   <div class="sr-title">${tr('Nama masuk &amp; kata sandi', 'Sign-in name &amp; password')}</div>
-                  <div class="sr-sub">${isTrial
+                  <div class="sr-sub">${isUmum
                     ? tr('Akun terhubung ke email/Google yang kamu pakai mendaftar.', 'Your account is linked to the email/Google you signed up with.')
                     : tr('Diatur oleh admin sekolah. Lupa NIS? Hubungi admin/wali kelasmu.', 'Managed by the school admin. Forgot your NIS? Contact your admin/homeroom teacher.')}</div>
                 </div>
@@ -253,6 +255,7 @@ const Profile = {
       if (!berat || berat < 25 || berat > 200) return toast(tr('Periksa kembali berat badanmu (kg).', 'Please double-check your weight (kg).'), 'warning');
 
       const aktivitas = $('#pfAktivitas', el).value;
+      if (!aktivitas) return toast(tr('Pilih tingkat aktivitas harianmu.', 'Please select your daily activity level.'), 'warning');
       const tdee = Calc.tdee(Calc.bmr({ jenisKelamin: jk, berat, tinggi, usia }), aktivitas);
       const air = Calc.waterTarget(berat);
 

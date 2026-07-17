@@ -1,20 +1,24 @@
 /* ============================================================
-   TUMARA — Halaman Daftar / Masuk (jalur uji coba)
+   TUMARA — Halaman Daftar / Masuk (jalur Umum)
    ------------------------------------------------------------
    Jalur terpisah dari auth.html (khusus akun sekolah). Dipakai
-   orang yang ingin mencoba Tumara: Google, atau email & kata
-   sandi, lalu (setelah pilih pekerjaan) masuk ke coba-app.html.
-   Auth beneran lewat TrialAuth (project Firebase myosigid,
-   lihat js/trial-auth.js) — terpisah dari project sekolah.
+   orang di luar sekolah yang tak ada sangkut-paut dengan akun
+   sekolah: Google, atau email & kata sandi, lalu (setelah pilih
+   pekerjaan & isi data diri) masuk ke umum-app.html. Auth beneran
+   lewat UmumAuth (project Firebase myosigid, lihat
+   js/umum-auth.js) — terpisah dari project sekolah.
    ============================================================ */
 
 const RegisterView = {
-  mode: 'daftar', // 'daftar' | 'masuk'
+  mode: 'masuk', // 'daftar' | 'masuk' — halaman dibuka di layar masuk
 
-  // Setelah login/daftar sukses: sudah pernah pilih pekerjaan?
-  // → langsung ke beranda. Belum? → ke halaman pilih pekerjaan.
+  // Setelah login/daftar sukses: pekerjaan → data diri (usia/tinggi/
+  // berat, untuk Indeks BMI) → beranda. Yang belum diisi menentukan
+  // halaman berikutnya.
   goNext(user) {
-    location.replace(user?.pekerjaan ? 'coba-app.html' : 'pilih-pekerjaan.html');
+    if (!user?.pekerjaan) return location.replace('pilih-pekerjaan.html');
+    if (!UmumAuth.hasDataDiri(user)) return location.replace('data-diri.html');
+    location.replace('umum-app.html');
   },
 
   render() {
@@ -50,21 +54,10 @@ const RegisterView = {
     const isDaftar = this.mode === 'daftar';
     return `
       <div class="auth-form-side">
-        <div class="tabs" id="rgTabs">
-          <button type="button" class="tab ${isDaftar ? 'active' : ''}" data-mode="daftar">${tr('Daftar', 'Sign Up')}</button>
-          <button type="button" class="tab ${!isDaftar ? 'active' : ''}" data-mode="masuk">${tr('Masuk', 'Sign In')}</button>
-        </div>
-
         <h2 class="af-title">${isDaftar ? tr('Buat akun baru 🌱', 'Create a new account 🌱') : tr('Selamat datang kembali 👋', 'Welcome back 👋')}</h2>
         <p class="af-sub">${isDaftar
-          ? tr('Daftar dengan Google atau email — gratis.', 'Sign up with Google or email — it\'s free.')
-          : tr('Masuk dengan akun Google atau emailmu.', 'Sign in with your Google account or email.')}</p>
-
-        <button type="button" class="btn-google" id="rgGoogleBtn">
-          ${this._googleIcon()} ${tr('Lanjutkan dengan Google', 'Continue with Google')}
-        </button>
-
-        <div class="af-divider">${tr('atau dengan email', 'or with email')}</div>
+          ? tr('Daftar dengan email atau Google — gratis.', 'Sign up with email or Google — it\'s free.')
+          : tr('Masuk dengan emailmu atau akun Google.', 'Sign in with your email or Google account.')}</p>
 
         <form id="rgForm" novalidate>
           ${isDaftar ? `
@@ -88,6 +81,12 @@ const RegisterView = {
           </button>
         </form>
 
+        <div class="af-divider">${tr('atau', 'or')}</div>
+
+        <button type="button" class="btn-google" id="rgGoogleBtn">
+          ${this._googleIcon()} ${tr('Lanjutkan dengan Google', 'Continue with Google')}
+        </button>
+
         <p class="af-switch">${isDaftar
           ? tr('Sudah punya akun? <a id="rgSwap">Masuk di sini</a>', 'Already have an account? <a id="rgSwap">Sign in here</a>')
           : tr('Belum punya akun? <a id="rgSwap">Daftar di sini</a>', 'No account yet? <a id="rgSwap">Sign up here</a>')}</p>
@@ -95,11 +94,6 @@ const RegisterView = {
   },
 
   _bind() {
-    $$('#rgTabs .tab').forEach(btn => btn.onclick = () => {
-      this.mode = btn.dataset.mode;
-      this.render();
-    });
-
     const swap = $('#rgSwap');
     if (swap) swap.onclick = () => {
       this.mode = this.mode === 'daftar' ? 'masuk' : 'daftar';
@@ -116,7 +110,7 @@ const RegisterView = {
 
     $('#rgGoogleBtn').onclick = async () => {
       try {
-        const user = await TrialAuth.loginGoogle();
+        const user = await UmumAuth.loginGoogle();
         this.goNext(user);
       } catch (err) {
         if (err.code === 'auth/popup-closed-by-user') return;
@@ -139,8 +133,8 @@ const RegisterView = {
       btn.disabled = true;
       try {
         const user = isDaftar
-          ? await TrialAuth.register(nama, email, pass)
-          : await TrialAuth.login(email, pass);
+          ? await UmumAuth.register(nama, email, pass)
+          : await UmumAuth.login(email, pass);
         this.goNext(user);
       } catch (err) {
         toast(this._friendlyError(err), 'error');

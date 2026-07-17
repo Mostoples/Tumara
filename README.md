@@ -38,9 +38,6 @@ Saat pertama login, guru mengisi form **Data Guru**: nama, mapel, dan status wal
 - **Akun** — buat akun guru/siswa, ubah peran, hapus akun; pencarian & filter peran berjalan **di memori** (mengetik tidak memuat ulang halaman maupun data).
 - **Kelas & Siswa** (data induk) — buat daftar **kelas** sekolah; data siswa (nama + **NIS**, maks 20 angka) per kelas dengan **import massal** (tempel dari Excel/Sheets) + tambah/edit/hapus + ekspor CSV. Data ini jadi acuan; roster aktif guru berasal dari siswa yang sudah login.
 
-### 📖 Ensiklopedia (`encyclopedia.html`)
-Ensiklopedia publik (tanpa login) berisi artikel tentang kesehatan, produktivitas, keuangan, dan tahapan membangun aplikasi.
-
 ---
 
 ## 🛠️ Tech Stack
@@ -65,7 +62,6 @@ Tumara/
 ├── app.html              Shell aplikasi siswa (SPA, view dirender JS)
 ├── guru.html             Portal guru
 ├── admin.html            Panel admin
-├── encyclopedia.html     Ensiklopedia publik
 ├── offline.html / 404.html
 ├── manifest.json / sw.js / version.json   (PWA)
 ├── firebase.json / .firebaserc / firestore.rules / firestore.indexes.json
@@ -83,7 +79,7 @@ Tumara/
 │   ├── supabase-storage.js Upload foto ke Supabase
 │   ├── app.js              Router aplikasi siswa
 │   └── views/              dashboard, health, productivity, finance, ibadah,
-│                           encyclopedia, profile, auth, teacher, admin
+│                           profile, auth, teacher, admin
 └── assets/                 logo.png + icons PWA
 ```
 

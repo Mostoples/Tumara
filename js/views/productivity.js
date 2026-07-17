@@ -1,6 +1,16 @@
 /* ============================================================
    TUMARA — Produktivitas (Tugas · Catatan · Kebiasaan · Jadwal · Fokus)
    Kini masing-masing halaman nav tersendiri — lihat js/app.js.
+   ------------------------------------------------------------
+   Tab Tugas punya DUA model berbeda, dibedakan lewat DB.user.pekerjaan
+   (hanya ada di jalur Umum — lihat js/views/job-select.js):
+   • Siswa (app.html, tanpa pekerjaan): tugas DIKIRIM GURU (koleksi
+     class_tasks per kelas) — hanya bisa dicentang/dikumpulkan, tidak
+     bisa menambah tugas sendiri. Lihat _renderTasksSiswa().
+   • Umum (umum-app.html, punya pekerjaan): tidak ada guru/kelas sama
+     sekali, jadi tugas sepenuhnya dikelola sendiri (koleksi pribadi
+     `tasks` — tambah/ubah/hapus lewat openTaskModal()). Lihat
+     _renderTasksUmum().
    ============================================================ */
 
 const Prod = {
@@ -8,7 +18,6 @@ const Prod = {
   detailTaskId: null,   // tugas yang sedang dibuka di halaman detail (sisi siswa)
   _TASK_DKEY: 'tumara_siswa_task_detail',   // agar detail tugas tahan refresh
   noteQuery: '',
-  selectedDay: new Date().getDay(), // 0=Minggu
 
   // Tugas/Catatan/Kebiasaan/Jadwal/Fokus masing-masing halaman nav
   // tersendiri (lihat js/app.js) — dibedakan langsung lewat App.route,
@@ -166,6 +175,10 @@ const Prod = {
 
   /* ============ TAB: TUGAS ============ */
 
+  async renderTasks(el) {
+    return DB.user?.pekerjaan ? this._renderTasksUmum(el) : this._renderTasksSiswa(el);
+  },
+
   // Empty-state bila siswa belum mengatur kelasnya (kelasId) — tugas & jadwal
   // datang dari kelas, jadi butuh kelas dulu.
   _needKelas() {
@@ -183,7 +196,7 @@ const Prod = {
 
   // Tugas kini DIKIRIM GURU (koleksi class_tasks per kelas). Siswa hanya
   // menerima & boleh mencentang selesai (progres pribadi di profil.tugasSelesai).
-  async renderTasks(el) {
+  async _renderTasksSiswa(el) {
     const kelasId = DB.user?.kelasId;
     if (!kelasId) { el.innerHTML = this._needKelas(); this._bindNeedKelas(el); return; }
 
@@ -271,6 +284,87 @@ const Prod = {
     });
     $$('[data-detail]', el).forEach(b => b.onclick = () => { this.detailTaskId = b.dataset.detail; localStorage.setItem(this._TASK_DKEY, this.detailTaskId); App.refresh(); });
     $$('[data-viewsrc]', el).forEach(im => im.onclick = () => openImageViewer(im.dataset.viewsrc));
+  },
+
+  // Umum: tanpa guru/kelas — tugas sepenuhnya milik & dikelola sendiri
+  // (koleksi pribadi `tasks`, lihat openTaskModal()). Tambah/ubah/hapus
+  // bebas, plus tugas berulang (harian/mingguan/bulanan) yang otomatis
+  // membuat occurrence berikutnya begitu ditandai selesai.
+  async _renderTasksUmum(el) {
+    const tasks = await DB.list('tasks');
+    const sortKey = t => (t.tenggat || '9999-99-99');
+    let shown = tasks.slice()
+      .sort((a, b) => prioUrut(a.prioritas) - prioUrut(b.prioritas) || (sortKey(a).localeCompare(sortKey(b))));
+    if (this.taskFilter === 'aktif') shown = shown.filter(t => t.status !== 'selesai');
+    else if (this.taskFilter === 'selesai') shown = shown.filter(t => t.status === 'selesai');
+
+    const doneCount = tasks.filter(t => t.status === 'selesai').length;
+    const filterLabel = { aktif: tr('Aktif', 'Active'), selesai: tr('Selesai', 'Done'), semua: tr('Semua', 'All') };
+
+    el.innerHTML = `
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:16px;">
+        <div style="font-size:.88rem;color:var(--text-3);font-weight:600;">${tr('Tugas & rencanamu sendiri — atur sesukamu 📌', 'Your own tasks & plans — organize them your way 📌')}</div>
+        <button class="btn btn-prod btn-sm" id="addTask"><ion-icon name="add"></ion-icon> ${tr('Tugas Baru', 'New Task')}</button>
+      </div>
+      <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:16px;">
+        ${['aktif', 'selesai', 'semua'].map(f => `
+          <button class="chip ${this.taskFilter === f ? 'active' : ''}" data-filter="${f}">
+            ${filterLabel[f]}${f === 'selesai' && doneCount ? ` (${doneCount})` : ''}
+          </button>`).join('')}
+      </div>
+
+      ${shown.length ? `
+        <div style="display:flex;flex-direction:column;gap:10px;">
+          ${shown.map(t => `
+            <div class="list-item">
+              <button class="task-check ${t.status === 'selesai' ? 'done' : ''}" data-toggle="${t.id}"><ion-icon name="checkmark"></ion-icon></button>
+              <div style="flex:1;min-width:0;">
+                <div style="font-weight:700;font-size:.92rem;" class="${t.status === 'selesai' ? 'task-title-done' : ''}">${esc(t.judul)}</div>
+                <div style="display:flex;gap:8px;align-items:center;margin-top:4px;flex-wrap:wrap;">
+                  ${t.mapel ? `<span class="badge badge-purple">${esc(t.mapel)}</span>` : ''}
+                  ${t.label ? `<span class="badge badge-blue"># ${esc(t.label)}</span>` : ''}
+                  ${t.ulang && t.ulang !== 'tidak' ? `<span class="badge badge-gray"><ion-icon name="repeat-outline"></ion-icon> ${t.ulang === 'harian' ? tr('Harian', 'Daily') : t.ulang === 'mingguan' ? tr('Mingguan', 'Weekly') : tr('Bulanan', 'Monthly')}</span>` : ''}
+                  ${t.tenggat && t.status !== 'selesai' ? deadlineBadge(t.tenggat) : t.tenggat ? `<span class="badge badge-gray">${fmtDate(t.tenggat, { short: true })}</span>` : ''}
+                  ${prioBadge(t.prioritas)}
+                </div>
+              </div>
+              <button class="mini-icon-btn" data-edit="${t.id}"><ion-icon name="create-outline"></ion-icon></button>
+              <button class="mini-icon-btn danger" data-del="${t.id}"><ion-icon name="trash-outline"></ion-icon></button>
+            </div>`).join('')}
+        </div>` : `
+        <div class="card empty-state">
+          <ion-icon name="${this.taskFilter === 'selesai' ? 'trophy-outline' : 'checkbox-outline'}"></ion-icon>
+          <div class="es-title">${this.taskFilter === 'selesai' ? tr('Belum ada tugas selesai', 'No finished tasks yet') : tr('Belum ada tugas', 'No tasks yet')}</div>
+          <div class="es-sub">${this.taskFilter === 'aktif' ? tr('Semua beres! Tambah tugas atau rencana baru? ✨', 'All clear! Add a new task or plan? ✨') : tr('Selesaikan tugas untuk mengisi daftar ini 💪', 'Finish some tasks to fill this list 💪')}</div>
+        </div>`}`;
+
+    $$('[data-filter]', el).forEach(c => c.onclick = () => { this.taskFilter = c.dataset.filter; App.refresh(); });
+    $('#addTask', el).onclick = () => this.openTaskModal();
+    $$('[data-toggle]', el).forEach(b => b.onclick = async () => {
+      const t = tasks.find(x => x.id === b.dataset.toggle);
+      const done = t.status !== 'selesai';
+      await DB.update('tasks', t.id, { status: done ? 'selesai' : 'aktif' });
+      if (done) {
+        toast(tr('Tugas selesai — mantap! 🎉', 'Task done — nice work! 🎉'));
+        // Tugas berulang: buat otomatis occurrence berikutnya
+        if (t.ulang && t.ulang !== 'tidak') {
+          const base = t.tenggat ? parseDate(t.tenggat) : parseDate(todayStr());
+          if (t.ulang === 'harian') base.setDate(base.getDate() + 1);
+          else if (t.ulang === 'mingguan') base.setDate(base.getDate() + 7);
+          else base.setMonth(base.getMonth() + 1);
+          await DB.add('tasks', { judul: t.judul, mapel: t.mapel || '', label: t.label || '', prioritas: t.prioritas || 'sedang', ulang: t.ulang, tenggat: todayStr(base), status: 'aktif' });
+          toast(tr('Tugas berulang berikutnya dibuat 🔁', 'Next recurring task created 🔁'), 'info');
+        }
+      }
+      App.refresh();
+    });
+    $$('[data-edit]', el).forEach(b => b.onclick = () => this.openTaskModal(tasks.find(x => x.id === b.dataset.edit)));
+    $$('[data-del]', el).forEach(b => b.onclick = async () => {
+      if (!await confirmDialog(tr('Hapus tugas ini?', 'Delete this task?'), { danger: true, okText: tr('Hapus', 'Delete') })) return;
+      await DB.remove('tasks', b.dataset.del);
+      toast(tr('Tugas dihapus.', 'Task deleted.'));
+      App.refresh();
+    });
   },
 
   // Halaman siswa: detail tugas (deskripsi, lampiran zoomable, status kumpul,
@@ -450,8 +544,8 @@ const Prod = {
         </div>
         <div class="grid grid-2 keep-2" style="gap:12px;">
           <div class="field">
-            <label>${tr('Mata pelajaran', 'Subject')} <span style="font-weight:500;color:var(--text-3)">${tr('(opsional)', '(optional)')}</span></label>
-            <input type="text" class="input" id="mMapel" placeholder="${tr('mis. Matematika', 'e.g. Math')}" value="${esc(task?.mapel || '')}">
+            <label>${tr('Kategori', 'Category')} <span style="font-weight:500;color:var(--text-3)">${tr('(opsional)', '(optional)')}</span></label>
+            <input type="text" class="input" id="mMapel" placeholder="${tr('mis. Kerja, Rumah', 'e.g. Work, Home')}" value="${esc(task?.mapel || '')}">
           </div>
           <div class="field">
             <label>${tr('Label/Tag', 'Label/Tag')} <span style="font-weight:500;color:var(--text-3)">${tr('(opsional)', '(optional)')}</span></label>
@@ -589,98 +683,181 @@ const Prod = {
 
   /* ============ TAB: JADWAL ============ */
 
-  // Jadwal kini DIKIRIM WALI KELAS (dokumen class_schedule per kelas).
-  // Siswa hanya melihat (read-only).
-  async renderSchedule(el) {
-    const kelasId = DB.user?.kelasId;
-    if (!kelasId) { el.innerHTML = this._needKelas(); this._bindNeedKelas(el); return; }
+  // Jadwal kelas (dari wali kelas, koleksi global class_schedule) DITAMPILKAN
+  // berdampingan dengan jadwal PRIBADI milik siswa sendiri (koleksi per-akun
+  // "schedule" — CRUD penuh lewat _scheduleModal di bawah). Pengguna jalur
+  // Umum (umum-app.html, lihat js/umum-auth.js) tak punya kelas sama sekali,
+  // jadi bagian wali dilewati untuk mereka — bukan diblokir seperti tugas
+  // (lihat _needKelas), karena jadwal pribadi tak butuh kelas.
+  jadGeser: 0,                          // pergeseran bulan kalender (0 = bulan ini)
+  selectedDate: null,                   // tanggal ISO yang detailnya tampil di bawah grid (default: hari ini)
 
-    const doc = await DB.gGet('class_schedule', kelasId);
-    const entries = doc?.entries || [];
-    const todayIdx = new Date().getDay();
-    const dayItems = entries
-      .filter(s => +s.hari === this.selectedDay)
-      .sort((a, b) => (a.jamMulai || '') < (b.jamMulai || '') ? -1 : 1);
-    const dayOrder = [1, 2, 3, 4, 5, 6, 0];
+  async renderSchedule(el) {
+    const isUmum = typeof UmumAuth !== 'undefined';
+    const kelasId = !isUmum ? (DB.user?.kelasId || null) : null;
+    if (!this.selectedDate) this.selectedDate = todayStr();
+
+    const [personal, waliDoc] = await Promise.all([
+      DB.list('schedule'),
+      kelasId ? DB.gGet('class_schedule', kelasId) : Promise.resolve(null)
+    ]);
+    const waliEntries = waliDoc?.entries || [];
+
+    const kini = new Date();
+    const hariIni = todayStr();
+    const tampil = new Date(kini.getFullYear(), kini.getMonth() + this.jadGeser, 1);
+    const thn = tampil.getFullYear(), bln = tampil.getMonth();
+    const jmlHari = new Date(thn, bln + 1, 0).getDate();
+    const kosongAwal = new Date(thn, bln, 1).getDay();
+    const NAMA_HARI = HARI.map(h => h.slice(0, 3));
+
+    // Sel kalender: satu per tanggal, dengan titik penanda kalau hari itu
+    // (berdasarkan HARI DALAM MINGGU, bukan tanggal spesifik — jadwal di
+    // Tumara berulang tiap minggu) punya jadwal pribadi dan/atau kelas.
+    const sel = [];
+    for (let i = 0; i < kosongAwal; i++) sel.push('<div class="kal-sel kal-kosong"></div>');
+    for (let t = 1; t <= jmlHari; t++) {
+      const d = new Date(thn, bln, t);
+      const iso = todayStr(d);
+      const wd = d.getDay();
+      const adaPribadi = personal.some(s => +s.hari === wd);
+      const adaWali = waliEntries.some(s => +s.hari === wd);
+      const kelas = [
+        'kal-sel',
+        iso === hariIni ? 'kal-kini' : '',
+        iso === this.selectedDate ? 'kal-pilih' : ''
+      ].filter(Boolean).join(' ');
+      sel.push(`
+        <div class="${kelas}" data-tanggal="${iso}">
+          <div class="kal-m">${t}</div>
+          ${(adaPribadi || adaWali) ? `
+            <div class="kal-titik-wrap">
+              ${adaPribadi ? '<span class="kal-titik"></span>' : ''}
+              ${adaWali ? '<span class="kal-titik wali"></span>' : ''}
+            </div>` : ''}
+        </div>`);
+    }
+
+    // Detail hari yang dipilih.
+    const dPilih = parseDate(this.selectedDate) || kini;
+    const wdPilih = dPilih.getDay();
+    const daftarWali = waliEntries.filter(s => +s.hari === wdPilih).map(s => ({ ...s, _sumber: 'wali' }));
+    const daftarPribadi = personal.filter(s => +s.hari === wdPilih).map(s => ({ ...s, _sumber: 'pribadi' }));
+    const daftar = [...daftarWali, ...daftarPribadi].sort((a, b) => (a.jamMulai || '') < (b.jamMulai || '') ? -1 : 1);
 
     el.innerHTML = `
-      <div style="font-size:.82rem;color:var(--text-3);margin-bottom:12px;"><ion-icon name="school-outline" style="vertical-align:-2px;"></ion-icon> ${tr('Jadwal kelas dari wali kelasmu.', 'Class schedule from your homeroom teacher.')}${doc?.waliNama ? ` · ${tr('Wali', 'Homeroom')}: ${esc(doc.waliNama)}` : ''}</div>
-      <div class="day-selector" style="margin-bottom:16px;">
-        ${dayOrder.map(d => `
-          <div class="day-pill ${d === this.selectedDay ? 'active' : ''} ${d === todayIdx ? 'today' : ''}" data-day="${d}">
-            <div class="dp-name">${HARI[d].slice(0, 3)}</div>
-          </div>`).join('')}
+      <div class="section-head" style="margin-top:0;">
+        <h2 style="font-size:1rem;">${BULAN[bln]} ${thn}</h2>
+        <div style="display:flex;gap:6px;">
+          <button class="mini-icon-btn" id="jadPrev"><ion-icon name="chevron-back-outline"></ion-icon></button>
+          ${this.jadGeser !== 0 ? `<button class="btn btn-sm" id="jadNow">${tr('Bulan ini', 'This month')}</button>` : ''}
+          <button class="mini-icon-btn" id="jadNext"><ion-icon name="chevron-forward-outline"></ion-icon></button>
+        </div>
       </div>
 
-      <div class="section-head" style="margin-top:4px;">
-        <h2>${HARI[this.selectedDay]} ${this.selectedDay === todayIdx ? '<span class="badge badge-purple">Hari ini</span>' : ''}</h2>
+      <div class="card" style="padding:12px;">
+        <div class="kal-grid kal-head">${NAMA_HARI.map(h => `<div>${h}</div>`).join('')}</div>
+        <div class="kal-grid">${sel.join('')}</div>
+        <div style="display:flex;gap:12px;flex-wrap:wrap;margin-top:12px;font-size:.72rem;color:var(--text-3);">
+          <span><span class="kal-cip" style="background:var(--prod);"></span> ${tr('Jadwalmu', 'Your schedule')}</span>
+          ${kelasId ? `<span><span class="kal-cip" style="background:var(--text-3);"></span> ${tr('Dari wali kelas', 'From your homeroom teacher')}</span>` : ''}
+        </div>
       </div>
 
-      ${dayItems.length ? `
+      <div class="section-head" style="margin-top:20px;">
+        <h2 style="font-size:1rem;">${HARI[wdPilih]}, ${dPilih.getDate()} ${BULAN[dPilih.getMonth()]} ${this.selectedDate === hariIni ? '<span class="badge badge-purple">' + tr('Hari ini', 'Today') + '</span>' : ''}</h2>
+        <button class="btn btn-sm btn-prod" id="jadTambah"><ion-icon name="add"></ion-icon> ${tr('Tambah', 'Add')}</button>
+      </div>
+
+      ${daftar.length ? `
         <div style="display:flex;flex-direction:column;gap:10px;">
-          ${dayItems.map(s => `
+          ${daftar.map(s => `
             <div class="list-item">
-              <div class="item-icon" style="background:var(--prod-soft);color:var(--prod);font-size:.78rem;font-weight:800;flex-direction:column;display:flex;align-items:center;justify-content:center;line-height:1.3;">
+              <div class="item-icon" style="background:${s._sumber === 'wali' ? 'var(--surface-3)' : 'var(--prod-soft)'};color:${s._sumber === 'wali' ? 'var(--text-3)' : 'var(--prod)'};font-size:.78rem;font-weight:800;flex-direction:column;display:flex;align-items:center;justify-content:center;line-height:1.3;">
                 ${esc(s.jamMulai)}<span style="opacity:.6;font-size:.62rem;">${esc(s.jamSelesai)}</span>
               </div>
-              <div style="flex:1;">
+              <div style="flex:1;min-width:0;">
                 <div style="font-weight:700;font-size:.92rem;">${esc(s.mapel)}</div>
-                ${s.ruang ? `<div style="font-size:.78rem;color:var(--text-3);"><ion-icon name="location-outline" style="vertical-align:-2px;"></ion-icon> ${esc(s.ruang)}</div>` : ''}
+                <div style="font-size:.78rem;color:var(--text-3);display:flex;gap:8px;flex-wrap:wrap;">
+                  ${s.ruang ? `<span><ion-icon name="location-outline" style="vertical-align:-2px;"></ion-icon> ${esc(s.ruang)}</span>` : ''}
+                  ${s._sumber === 'wali' ? `<span><ion-icon name="lock-closed-outline" style="vertical-align:-2px;"></ion-icon> ${tr('Dari wali kelas', 'From homeroom')}</span>` : ''}
+                </div>
               </div>
+              ${s._sumber === 'pribadi' ? `
+                <div style="display:flex;gap:4px;">
+                  <button class="mini-icon-btn" data-edit="${s.id}"><ion-icon name="pencil-outline"></ion-icon></button>
+                  <button class="mini-icon-btn" data-del="${s.id}"><ion-icon name="trash-outline"></ion-icon></button>
+                </div>` : ''}
             </div>`).join('')}
         </div>` : `
         <div class="card empty-state">
           <ion-icon name="calendar-outline"></ion-icon>
-          <div class="es-title">${tr('Belum ada jadwal', 'No schedule yet')} — ${HARI[this.selectedDay]}</div>
-          <div class="es-sub">${tr('Wali kelas belum mengisi jadwal untuk hari ini.', "Your homeroom teacher hasn't set the schedule for this day.")}</div>
+          <div class="es-title">${tr('Belum ada jadwal', 'No schedule yet')} — ${HARI[wdPilih]}</div>
+          <div class="es-sub">${tr('Ketuk "Tambah" untuk menambahkan jadwal pribadimu di hari ini.', 'Tap "Add" to add your own schedule for this day.')}</div>
         </div>`}`;
 
-    $$('[data-day]', el).forEach(p => p.onclick = () => { this.selectedDay = +p.dataset.day; this.renderSchedule(el); });
+    $('#jadPrev', el).onclick = () => { this.jadGeser--; this.renderSchedule(el); };
+    $('#jadNext', el).onclick = () => { this.jadGeser++; this.renderSchedule(el); };
+    $('#jadNow', el) && ($('#jadNow', el).onclick = () => { this.jadGeser = 0; this.selectedDate = todayStr(); this.renderSchedule(el); });
+    $$('[data-tanggal]', el).forEach(c => c.onclick = () => { this.selectedDate = c.dataset.tanggal; this.renderSchedule(el); });
+    $('#jadTambah', el).onclick = () => this._scheduleModal(null, wdPilih);
+    $$('[data-edit]', el).forEach(b => b.onclick = () => {
+      const item = personal.find(s => s.id === b.dataset.edit);
+      if (item) this._scheduleModal(item, wdPilih);
+    });
+    $$('[data-del]', el).forEach(b => b.onclick = async () => {
+      if (!await confirmDialog(tr('Hapus jadwal ini?', 'Delete this schedule item?'), { danger: true })) return;
+      await DB.remove('schedule', b.dataset.del);
+      toast(tr('Jadwal dihapus.', 'Schedule item deleted.'));
+      App.refresh();
+    });
   },
 
-  _scheduleModal(item = null) {
+  // item: entri "schedule" yang diedit (null = tambah baru).
+  // hariDefault: hari-dalam-minggu (0-6) yang sedang dipilih di kalender,
+  // dipakai sebagai nilai awal saat menambah jadwal baru.
+  _scheduleModal(item, hariDefault) {
     const dayOrder = [1, 2, 3, 4, 5, 6, 0];
     openModal({
-      title: item ? 'Ubah Jadwal' : 'Jadwal Baru',
+      title: item ? tr('Ubah Jadwal', 'Edit Schedule') : tr('Jadwal Baru', 'New Schedule'),
       body: `
         <div class="field">
-          <label>Mata pelajaran / kegiatan</label>
-          <input type="text" class="input" id="mMapel" placeholder="mis. Fisika" value="${esc(item?.mapel || '')}">
+          <label>${tr('Mata pelajaran / kegiatan', 'Subject / activity')}</label>
+          <input type="text" class="input" id="mMapel" placeholder="${tr('mis. Fisika / Les renang', 'e.g. Physics / Swimming lesson')}" value="${esc(item?.mapel || '')}">
         </div>
         <div class="field">
-          <label>Hari</label>
+          <label>${tr('Hari', 'Day')}</label>
           <select class="select" id="mHari">
-            ${dayOrder.map(d => `<option value="${d}" ${(item ? +item.hari : this.selectedDay) === d ? 'selected' : ''}>${HARI[d]}</option>`).join('')}
+            ${dayOrder.map(d => `<option value="${d}" ${(item ? +item.hari : hariDefault) === d ? 'selected' : ''}>${HARI[d]}</option>`).join('')}
           </select>
         </div>
         <div class="grid grid-2 keep-2" style="gap:12px;">
           <div class="field">
-            <label>Jam mulai</label>
+            <label>${tr('Jam mulai', 'Start time')}</label>
             <input type="time" class="input" id="mMulai" value="${item?.jamMulai || '07:00'}">
           </div>
           <div class="field">
-            <label>Jam selesai</label>
+            <label>${tr('Jam selesai', 'End time')}</label>
             <input type="time" class="input" id="mSelesai" value="${item?.jamSelesai || '08:30'}">
           </div>
         </div>
         <div class="field">
-          <label>Ruang <span style="font-weight:500;color:var(--text-3)">(opsional)</span></label>
-          <input type="text" class="input" id="mRuang" placeholder="mis. Lab IPA / R. 12" value="${esc(item?.ruang || '')}">
+          <label>${tr('Ruang', 'Room')} <span style="font-weight:500;color:var(--text-3)">(${tr('opsional', 'optional')})</span></label>
+          <input type="text" class="input" id="mRuang" placeholder="${tr('mis. Lab IPA / R. 12', 'e.g. Science lab / Room 12')}" value="${esc(item?.ruang || '')}">
         </div>
-        <button class="btn btn-prod btn-block" id="mSave"><ion-icon name="checkmark"></ion-icon> Simpan</button>`,
+        <button class="btn btn-prod btn-block" id="mSave"><ion-icon name="checkmark"></ion-icon> ${tr('Simpan', 'Save')}</button>`,
       onMount: m => {
         $('#mSave', m).onclick = async () => {
           const mapel = $('#mMapel', m).value.trim();
           const jamMulai = $('#mMulai', m).value, jamSelesai = $('#mSelesai', m).value;
-          if (!mapel) return toast('Isi nama pelajaran/kegiatan.', 'warning');
-          if (!jamMulai || !jamSelesai) return toast('Isi jam mulai dan selesai.', 'warning');
-          if (jamSelesai <= jamMulai) return toast('Jam selesai harus setelah jam mulai.', 'warning');
+          if (!mapel) return toast(tr('Isi nama pelajaran/kegiatan.', 'Fill in the subject/activity name.'), 'warning');
+          if (!jamMulai || !jamSelesai) return toast(tr('Isi jam mulai dan selesai.', 'Fill in the start and end time.'), 'warning');
+          if (jamSelesai <= jamMulai) return toast(tr('Jam selesai harus setelah jam mulai.', 'End time must be after start time.'), 'warning');
           const data = { mapel, hari: +$('#mHari', m).value, jamMulai, jamSelesai, ruang: $('#mRuang', m).value.trim() };
           if (item) await DB.update('schedule', item.id, data);
           else await DB.add('schedule', data);
-          this.selectedDay = data.hari;
           closeModal();
-          toast('Jadwal tersimpan 📅');
+          toast(tr('Jadwal tersimpan 📅', 'Schedule saved 📅'));
           App.refresh();
         };
       }
@@ -732,14 +909,14 @@ const Prod = {
               <div class="pomo-time" id="pomoTime">${this._fmtTime(p.remaining)}</div>
             </div>
           </div>
-          <div style="display:flex;gap:10px;justify-content:center;margin-top:10px;">
+          <div style="display:flex;flex-wrap:wrap;gap:10px;justify-content:center;margin-top:10px;">
             <button class="btn ${p.running ? '' : (isFokus ? 'btn-danger' : 'btn-primary')} btn-lg" id="pomoToggle">
               <ion-icon name="${p.running ? 'pause' : 'play'}"></ion-icon> ${p.running ? 'Jeda' : 'Mulai'}
             </button>
             <button class="btn btn-lg" id="pomoReset"><ion-icon name="refresh"></ion-icon></button>
             <button class="btn btn-lg" id="pomoSkip" title="Lewati ke sesi berikutnya"><ion-icon name="play-skip-forward"></ion-icon></button>
           </div>
-          <div id="pomoStats" style="display:flex;gap:8px;justify-content:center;margin-top:18px;"></div>
+          <div id="pomoStats" style="display:flex;flex-wrap:wrap;gap:8px;justify-content:center;margin-top:18px;"></div>
         </div>
 
         <div class="card">

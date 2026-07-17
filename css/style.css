@@ -888,8 +888,14 @@ ion-icon { pointer-events: none; flex-shrink: 0; }
 .day-pill.today:not(.active) { border-color: var(--prod); }
 
 /* Pomodoro */
-.pomo-ring { position: relative; width: 250px; height: 250px; margin: 8px auto; }
-.pomo-ring svg { transform: rotate(-90deg); }
+/* aspect-ratio menjaga kontainer tetap persegi (lingkaran tidak lonjong)
+   walau lebar dipaksa menyusut oleh max-width di layar sangat sempit. */
+.pomo-ring { position: relative; width: 250px; max-width: 100%; aspect-ratio: 1 / 1; margin: 8px auto; }
+/* SVG dibuat JS dengan ukuran tetap (ringSVG size:250) — dipaksa ikut
+   ukuran kontainer via CSS, bukan atribut width/height bawaannya, supaya
+   ring tetap pas & pusatnya sejajar dengan .pomo-center saat kontainer
+   mengecil di mobile (lihat breakpoint ≤560px di bawah). */
+.pomo-ring svg { display: block; width: 100%; height: 100%; transform: rotate(-90deg); }
 .pomo-center {
   position: absolute; inset: 0; display: flex; flex-direction: column;
   align-items: center; justify-content: center; gap: 4px;
@@ -930,37 +936,6 @@ ion-icon { pointer-events: none; flex-shrink: 0; }
 .setting-row .sr-text { flex: 1; }
 .setting-row .sr-title { font-weight: 700; font-size: .9rem; }
 .setting-row .sr-sub { font-size: .78rem; color: var(--text-3); }
-
-/* ============ ENSIKLOPEDIA ============ */
-
-.ency-search { position: relative; margin-bottom: 14px; }
-.ency-search > ion-icon {
-  position: absolute; left: 15px; top: 50%; transform: translateY(-50%);
-  color: var(--text-3); font-size: 1.05rem; pointer-events: none;
-}
-.ency-search .input { padding-left: 42px; }
-
-.ency-chips { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 20px; }
-
-.ency-card { display: flex; flex-direction: column; }
-.ency-card-head { display: flex; align-items: flex-start; justify-content: space-between; margin-bottom: 13px; }
-.ency-card-title { font-weight: 800; font-size: .95rem; line-height: 1.45; margin-bottom: 6px; }
-.ency-card-sub { font-size: .82rem; color: var(--text-3); line-height: 1.6; flex: 1; }
-.ency-card-meta { display: flex; align-items: center; gap: 10px; margin-top: 14px; flex-wrap: wrap; }
-.ency-min {
-  display: inline-flex; align-items: center; gap: 4px;
-  font-size: .74rem; font-weight: 600; color: var(--text-3);
-}
-
-.ency-bm.saved { color: var(--fin); }
-
-.ency-hero { display: flex; align-items: flex-start; gap: 15px; margin-bottom: 6px; }
-.ency-title { font-size: 1.2rem; font-weight: 800; line-height: 1.4; letter-spacing: -.01em; }
-
-.ency-body h3 { font-size: .98rem; font-weight: 800; margin: 20px 0 8px; }
-.ency-body p { font-size: .89rem; color: var(--text-2); line-height: 1.75; margin: 12px 0 0; }
-.ency-body ul { margin: 8px 0 0; padding-left: 20px; }
-.ency-body li { font-size: .89rem; color: var(--text-2); line-height: 1.7; margin-bottom: 7px; }
 
 /* ============ RESPONSIVE ============ */
 
@@ -1827,6 +1802,21 @@ ion-icon { pointer-events: none; flex-shrink: 0; }
 [data-theme="dark"] .kal-jumat .kal-m,
 [data-theme="dark"] .kal-besar .kal-m,
 [data-theme="dark"] .kal-besar .kal-h { color: #34d399; }
+
+/* Tanggal yang sedang dipilih (detail di bawah grid mengikuti tanggal ini) —
+   beda dari .kal-kini (penanda "hari ini") supaya keduanya bisa tampil
+   bersamaan tanpa bentrok (border dari kal-kini + isi dari kal-pilih). */
+.kal-pilih { background: var(--brand); cursor: pointer; }
+.kal-pilih .kal-m, .kal-pilih .kal-h { color: #fff; }
+.kal-sel:not(.kal-kosong) { cursor: pointer; transition: background .15s, transform .1s; }
+.kal-sel:not(.kal-kosong):hover { background: var(--surface-3); }
+.kal-pilih:not(.kal-kosong):hover { background: var(--brand-dark); }
+/* Titik penanda "tanggal ini punya jadwal" — sampai 2 titik warna beda
+   (pribadi vs dari wali kelas), diposisikan di bawah tengah sel. */
+.kal-titik-wrap { position: absolute; bottom: 4px; left: 50%; transform: translateX(-50%); display: flex; gap: 3px; }
+.kal-titik { width: 5px; height: 5px; border-radius: 50%; background: var(--prod); }
+.kal-titik.wali { background: var(--text-3); }
+.kal-pilih .kal-titik { background: #fff; opacity: .9; }
 
 /* Tombol "mata" penyembunyi saldo (Keuangan & Beranda) — ikon saja, ringkas. */
 .saldo-eye { padding: 6px 9px; line-height: 1; }

@@ -137,7 +137,6 @@ Semua file rancangan sudah dibuat dan Firebase sudah AKTIF.
   - `index.html` — **company profile / landing page** (CSS sendiri: `css/index.css`)
   - `auth.html` — halaman masuk/daftar (pakai `css/style.css`)
   - `app.html` — shell aplikasi/dasbor SPA (pakai `css/style.css`; view dirender JS)
-  - `encyclopedia.html` — **ensiklopedia publik** (tanpa login; memuat `utils.js` + `views/encyclopedia.js` saja, render `Ency` langsung; ditautkan dari nav & footer landing)
 - Database: **Firebase AKTIF** (`USE_FIREBASE = true`, config project `tumara-id` sudah diisi di `js/firebase-config.js`). Adapter Firebase Auth + Firestore ada di `js/db.js`. Bila ingin mode offline/lokal, ubah `USE_FIREBASE = false` → otomatis pakai localStorage.
 - Bahasa UI: Indonesia. Desain: elegan, modern, mobile-first, mode terang/gelap (app), font Plus Jakarta Sans, ikon Ionicons 7 (CDN).
 - Warna pilar: hijau = kesehatan (`--health`), ungu = produktivitas (`--prod`), amber = keuangan (`--fin`). Brand: emerald.
@@ -168,7 +167,6 @@ Tumara/
         ├── health.js          ✅ tab today/calc/sleep/sport
         ├── productivity.js    ✅ tab tugas/catatan/jadwal/fokus (Pomodoro)
         ├── finance.js         ✅ tab transaksi/target/laporan + Fin.openTxModal (dipakai dashboard)
-        ├── encyclopedia.js    ✅ ensiklopedia: artikel statis 3 pilar (cari, filter kategori, detail, bookmark via localStorage `tumara_ency_bm`)
         └── profile.js         ✅ data diri, preferensi (tema, pengingat minum), akun (sandi/ekspor/reset/keluar)
     (dan js/app.js             ✅ router App: init → redirect auth.html bila belum login; navigate/refresh/tema/water reminder)
 ```
@@ -187,14 +185,7 @@ Logout (Profil) ──▶ auth.html
 `App.navigate(route)`, `App.refresh()`, `App.route`, `App.afterAuth()`, `App.showAuth()`,
 `App.setTheme(t)`, `App.startWaterReminder()`, `App.stopWaterReminder()`,
 `Fin.openTxModal()`, `Prod.openTaskModal()`, `Prod.tab`, `Profile._inisial(nama)`,
-view objects: `Dashboard`, `Health`, `Prod`, `Fin`, `Ency`, `Profile`, `AuthView`, `OnboardView`.
-
-Modul Ensiklopedia (route `encyclopedia`, view `Ency` di `js/views/encyclopedia.js`):
-konten artikel statis di `Ency.ARTIKEL` (id unik, kategori health/prod/fin, isi = array `{h?, p?, list?}`),
-gaya di `css/style.css` bagian "ENSIKLOPEDIA" (prefix `.ency-*`), tidak menyentuh Firestore.
-Selain di dalam app, `Ency` juga dirender di halaman publik `encyclopedia.html`
-(shell sendiri via `<style>` inline, tema ikut localStorage `tumara_theme`,
-bookmark berbagi key `tumara_ency_bm` dengan versi in-app).
+view objects: `Dashboard`, `Health`, `Prod`, `Fin`, `Profile`, `AuthView`, `OnboardView`.
 
 ## Setup Firebase (console.firebase.google.com, project: tumara-id)
 
@@ -236,7 +227,7 @@ Wajib dipastikan agar login berfungsi:
   `[data-theme="dark"]`); tema diterapkan lewat script inline di `<head>` sebelum
   CSS agar tidak berkedip.
 - **Mobile-first di semua halaman**: bottom nav muncul di layar kecil pada semua halaman —
-  app (`.bottom-nav` bawaan, ≤860px), `encyclopedia.html` / `auth.html` / `404.html`
+  app (`.bottom-nav` bawaan, ≤860px), `auth.html` / `404.html`
   (pakai `.bottom-nav` + `.bnav-item` dari `style.css`, link antar halaman),
   dan landing `index.html` (kelas `.bnav` sendiri di `css/index.css`, tampil ≤620px,
   dengan scrollspy IntersectionObserver untuk menandai section aktif).

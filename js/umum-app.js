@@ -1,14 +1,18 @@
 /* ============================================================
-   TUMARA — Router jalur uji coba (coba-app.html)
+   TUMARA — Router jalur Umum (umum-app.html)
    ------------------------------------------------------------
-   Adaptasi js/app.js untuk pengguna uji coba (bukan siswa
-   sekolah): pakai TrialAuth/trial-db.js (project myosigid),
-   showAuth() ke register.html, tanpa pengecekan peran. Tidak ada
-   form onboarding — setelah pilih pekerjaan langsung masuk app;
-   data diri (usia/tinggi/berat) opsional lewat Profil bila mau
-   target kalori/air yang presisi (view sudah punya fallback
-   default). View fitur (Dashboard/Health/Prod/Fin/Ibadah/Ency/
-   Profile) SAMA persis dengan yang dipakai app.html — tidak diubah.
+   Adaptasi js/app.js untuk pengguna umum: orang di luar sekolah,
+   tanpa akun/sangkut-paut sekolah (bukan siswa). Pakai UmumAuth/
+   umum-db.js (project myosigid), showAuth() ke register.html,
+   tanpa pengecekan peran. Onboarding dua langkah sebelum masuk
+   app: pilih pekerjaan (pilih-pekerjaan.html) lalu data diri
+   usia/tinggi/berat untuk Indeks BMI (data-diri.html, lihat
+   js/views/data-diri.js) — keduanya wajib, dicek ulang di init()
+   di bawah untuk pengguna yang membuka umum-app.html langsung.
+   View fitur (Dashboard/Health/Prod/Fin/Ibadah/Profile)
+   SAMA persis dengan yang dipakai app.html — tidak diubah. Rute
+   produktivitas (tugas/catatan/kebiasaan/jadwal/fokus) & nav ikut
+   disamakan dengan app.html (siswa); Ensiklopedia sudah dihapus.
    ============================================================ */
 
 const App = {
@@ -16,23 +20,29 @@ const App = {
   _reminderId: null,
 
   TITLES: {
-    dashboard:    [() => tr('Beranda', 'Home'),                   () => fmtDate(todayStr(), { weekday: true })],
-    health:       [() => tr('Kesehatan', 'Health'),               () => tr('Tubuh sehat, semangat kuat 💪', 'Healthy body, strong spirit 💪')],
-    productivity: [() => tr('Produktivitas', 'Productivity'),     () => tr('Tugas, catatan, jadwal & fokus', 'Tasks, notes, schedule & focus')],
-    finance:      [() => tr('Keuangan', 'Finance'),               () => tr('Uang saku terpantau, nabung jalan terus', 'Allowance tracked, savings on track')],
-    ibadah:       [() => tr('Ibadah', 'Worship'),                 () => tr('Sholat, Al-Qur\'an, dzikir & zakat', 'Prayer, Qur\'an, dhikr & zakat')],
-    encyclopedia: [() => tr('Ensiklopedia', 'Encyclopedia'),      () => tr('Pengetahuan seputar sehat, belajar & uang', 'Knowledge on health, study & money')],
-    profile:      [() => tr('Profil', 'Profile'),                 () => tr('Data diri & pengaturan aplikasi', 'Personal data & app settings')]
+    dashboard:  [() => tr('Beranda', 'Home'),          () => fmtDate(todayStr(), { weekday: true })],
+    health:     [() => tr('Kesehatan', 'Health'),       () => tr('Tubuh sehat, semangat kuat 💪', 'Healthy body, strong spirit 💪')],
+    tugas:      [() => tr('Tugas', 'Tasks'),            () => tr('Tugas & progresmu', 'Tasks & your progress')],
+    catatan:    [() => tr('Catatan', 'Notes'),          () => tr('Ide & catatan pribadimu', 'Your personal notes & ideas')],
+    kebiasaan:  [() => tr('Kebiasaan', 'Habits'),       () => tr('Bangun kebiasaan baik, satu hari satu langkah', 'Build good habits, one day at a time')],
+    jadwal:     [() => tr('Jadwal', 'Schedule'),        () => tr('Jadwalmu sehari-hari', 'Your daily schedule')],
+    fokus:      [() => tr('Fokus', 'Focus'),            () => tr('Timer Pomodoro untuk belajar fokus', 'Pomodoro timer for focused study')],
+    finance:    [() => tr('Keuangan', 'Finance'),       () => tr('Uang saku terpantau, nabung jalan terus', 'Allowance tracked, savings on track')],
+    ibadah:     [() => tr('Ibadah', 'Worship'),         () => tr('Sholat, Al-Qur\'an, dzikir & zakat', 'Prayer, Qur\'an, dhikr & zakat')],
+    profile:    [() => tr('Profil', 'Profile'),         () => tr('Data diri & pengaturan aplikasi', 'Personal data & app settings')]
   },
 
   VIEWS: {
-    dashboard:    () => Dashboard,
-    health:       () => Health,
-    productivity: () => Prod,
-    finance:      () => Fin,
-    ibadah:       () => Ibadah,
-    encyclopedia: () => Ency,
-    profile:      () => Profile
+    dashboard: () => Dashboard,
+    health:    () => Health,
+    tugas:     () => Prod,
+    catatan:   () => Prod,
+    kebiasaan: () => Prod,
+    jadwal:    () => Prod,
+    fokus:     () => Prod,
+    finance:   () => Fin,
+    ibadah:    () => Ibadah,
+    profile:   () => Profile
   },
 
   async init() {
@@ -46,6 +56,7 @@ const App = {
     }
     if (!DB.user) return this.showAuth();
     if (!DB.user.pekerjaan) { location.replace('pilih-pekerjaan.html'); return; }
+    if (!UmumAuth.hasDataDiri(DB.user)) { location.replace('data-diri.html'); return; }
     this.afterAuth();
   },
 

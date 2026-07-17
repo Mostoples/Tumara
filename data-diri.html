@@ -3,8 +3,8 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Tumara — Pilih Pekerjaan</title>
-  <meta name="description" content="Pilih pekerjaanmu agar Tumara bisa disesuaikan dengan kebutuhanmu.">
+  <title>Tumara — Data Diri</title>
+  <meta name="description" content="Usia, tinggi & berat badan untuk menghitung Indeks BMI serta target kalori & air minum harianmu.">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:ital,wght@0,300;0,400;0,500;0,600;0,700;0,800;1,400&display=swap" rel="stylesheet">
@@ -31,26 +31,29 @@
 
   <button class="lang-btn" id="langBtn" title="Bahasa / Language"><ion-icon name="language-outline"></ion-icon></button>
 
-  <div class="job-screen"><div id="jobRoot"></div></div>
+  <div class="job-screen"><div id="ddRoot"></div></div>
 
   <div id="modalRoot"></div>
   <div id="toastRoot" class="toast-root"></div>
 
   <script src="js/i18n.js"></script>
   <script src="js/utils.js"></script>
+  <script src="js/calc.js"></script>
   <script src="js/firebase-config-umum.js"></script>
   <script src="js/umum-auth.js"></script>
-  <script src="js/views/job-select.js"></script>
+  <script src="js/views/data-diri.js"></script>
   <script>
     document.addEventListener('DOMContentLoaded', async () => {
       document.getElementById('langBtn').onclick = () => {
         I18N.toggle();
-        JobSelectView.render(UmumAuth.user);
+        DataDiriView.render(UmumAuth.user);
       };
       let user = null;
       try { user = await UmumAuth.init(); } catch (_) { user = null; }
       if (!user) return location.replace('register.html');
-      JobSelectView.render(user);
+      if (!user.pekerjaan) return location.replace('pilih-pekerjaan.html');
+      if (UmumAuth.hasDataDiri(user)) return location.replace('umum-app.html');
+      DataDiriView.render(user);
     });
   </script>
 </body>

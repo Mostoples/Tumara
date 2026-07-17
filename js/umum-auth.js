@@ -1,18 +1,24 @@
 /* ============================================================
-   TUMARA — Auth jalur uji coba (TrialAuth)
+   TUMARA — Auth jalur Umum (UmumAuth)
    ------------------------------------------------------------
+   Untuk orang di luar sekolah, tanpa akun/sangkut-paut sekolah.
    Lapisan Firebase terpisah dari js/db.js (yang dipakai alur
-   sekolah admin/guru/siswa, project tumara-id). TrialAuth
+   sekolah admin/guru/siswa, project tumara-id). UmumAuth
    memakai project Firebase-nya sendiri (myosigid, lihat
-   js/firebase-config-trial.js) lewat instance app bernama
-   'tumara-trial' agar tidak bentrok bila suatu saat dimuat di
+   js/firebase-config-umum.js) lewat instance app bernama
+   'tumara-umum' agar tidak bentrok bila suatu saat dimuat di
    halaman yang sama dengan js/db.js.
 
-   Data pengguna uji coba disimpan di koleksi top-level
+   Data pengguna umum disimpan di koleksi top-level
    `trial_users/{uid}` — { nama, email, fotoUrl, pekerjaan }.
+   Nama koleksi ini SENGAJA tidak diganti jadi "umum_users":
+   mengganti nama koleksi berarti migrasi data (pindah semua
+   dokumen ke path baru), bukan cuma ganti nama file/variabel —
+   nama koleksi ini murni detail penyimpanan internal, tidak
+   pernah tampil ke pengguna.
    ============================================================ */
 
-const TrialAuth = {
+const UmumAuth = {
   fb: null,
   user: null,
 
@@ -24,14 +30,14 @@ const TrialAuth = {
       import(`https://www.gstatic.com/firebasejs/${V}/firebase-auth.js`),
       import(`https://www.gstatic.com/firebasejs/${V}/firebase-firestore.js`)
     ]);
-    const app = appM.initializeApp(TRIAL_FIREBASE_CONFIG, 'tumara-trial');
+    const app = appM.initializeApp(UMUM_FIREBASE_CONFIG, 'tumara-umum');
     const auth = authM.getAuth(app);
     const db = fsM.getFirestore(app);
     this.fb = { auth, db, A: authM, F: fsM };
     return this.fb;
   },
 
-  // Panggil sekali di awal tiap halaman trial: mengembalikan
+  // Panggil sekali di awal tiap halaman jalur umum: mengembalikan
   // user yang sedang login (atau null bila belum/tidak login).
   async init() {
     const { auth, A } = await this._load();
@@ -99,5 +105,21 @@ const TrialAuth = {
     const { F, db } = await this._load();
     await F.setDoc(F.doc(db, 'trial_users', this.user.id), { pekerjaan: key }, { merge: true });
     this.user.pekerjaan = key;
+  },
+
+  // Usia/jenis kelamin/tinggi/berat — diminta sekali setelah memilih
+  // pekerjaan (lihat js/views/data-diri.js), dipakai untuk Indeks BMI
+  // & target kalori/air minum di halaman Kesehatan.
+  async saveDataDiri(patch) {
+    const { F, db } = await this._load();
+    await F.setDoc(F.doc(db, 'trial_users', this.user.id), patch, { merge: true });
+    this.user = { ...this.user, ...patch };
+    return this.user;
+  },
+
+  // Sudah mengisi data diri (usia/tinggi/berat)? Dipakai untuk gerbang
+  // navigasi: pekerjaan terisi → data diri terisi → baru masuk umum-app.html.
+  hasDataDiri(user) {
+    return !!(user && user.usia && user.tinggi && user.berat);
   }
 };

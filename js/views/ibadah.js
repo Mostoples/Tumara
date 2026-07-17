@@ -23,6 +23,22 @@ const Ibadah = {
     { key: 'dzuhur', id: 'Sholat Dzuhur', en: 'Dhuhr prayer', emoji: '☀️' }
   ],
 
+  // Checklist "Hari Ini" untuk pengguna umum — orang di luar sekolah
+  // (jalur umum-app.html, dibedakan dari siswa lewat DB.user.pekerjaan
+  // — lihat _itemsHariIni()): sholat 5 waktu, bukan cuma dua yang
+  // dipantau guru di sekolah.
+  UMUM: [
+    { key: 'subuh',   id: 'Subuh',   en: 'Fajr',   emoji: '🌅' },
+    { key: 'dzuhur',  id: 'Dzuhur',  en: 'Dhuhr',  emoji: '☀️' },
+    { key: 'ashar',   id: 'Ashar',   en: 'Asr',    emoji: '🌤️' },
+    { key: 'maghrib', id: 'Maghrib', en: 'Maghrib', emoji: '🌇' },
+    { key: 'isya',    id: 'Isya',   en: 'Isha',    emoji: '🌙' }
+  ],
+
+  // Siswa (app.html, tanpa field pekerjaan) → SEKOLAH (dipantau guru).
+  // Umum (umum-app.html, punya DB.user.pekerjaan) → sholat 5 waktu.
+  _itemsHariIni() { return DB.user?.pekerjaan ? this.UMUM : this.SEKOLAH; },
+
   async render(el) {
     // Catat tanggal (lokal) saat render & pasang watcher pergantian hari
     this._lastDate = todayStr();
@@ -791,8 +807,9 @@ const Ibadah = {
   async renderToday(el) {
     const rec = await this._today();
     const done = rec.done || {};
+    const siswa = !DB.user?.pekerjaan;
 
-    const items = this.SEKOLAH;
+    const items = this._itemsHariIni();
     const total = items.length;
     const selesai = items.filter(i => done[i.key]).length;
     const pct = total ? Math.round(selesai / total * 100) : 0;
@@ -820,8 +837,8 @@ const Ibadah = {
       </div>
 
       <div class="section-head" style="margin-top:20px;">
-        <h2>🕌 ${tr('Sholat Dhuha & Dzuhur', 'Dhuha & Dhuhr Prayers')}</h2>
-        <span class="badge badge-green">${tr('Dipantau guru', 'Monitored by teacher')}</span>
+        <h2>🕌 ${siswa ? tr('Sholat Dhuha & Dzuhur', 'Dhuha & Dhuhr Prayers') : tr('Sholat 5 Waktu', 'The 5 Daily Prayers')}</h2>
+        ${siswa ? `<span class="badge badge-green">${tr('Dipantau guru', 'Monitored by teacher')}</span>` : ''}
       </div>
       <div class="fardhu-grid">
         ${items.map(tile).join('')}
@@ -829,8 +846,11 @@ const Ibadah = {
 
       <div class="disclaimer" style="margin-top:20px;">
         <ion-icon name="bulb-outline"></ion-icon>
-        <span>${tr('Centang setelah kamu mengerjakannya. Guru melihat rekap harian & bulanannya, jadi isi dengan jujur ya. 🌱',
-                   'Check them off once you have prayed. Your teacher sees the daily and monthly recap, so be honest. 🌱')}</span>
+        <span>${siswa
+          ? tr('Centang setelah kamu mengerjakannya. Guru melihat rekap harian & bulanannya, jadi isi dengan jujur ya. 🌱',
+               'Check them off once you have prayed. Your teacher sees the daily and monthly recap, so be honest. 🌱')
+          : tr('Centang setelah kamu mengerjakannya — sekadar pengingat harian untuk dirimu sendiri. 🌱',
+               "Check them off once you have prayed — a simple daily reminder just for you. 🌱")}</span>
       </div>`;
 
     $$('[data-toggle]', el).forEach(b => b.onclick = async () => {

@@ -1,0 +1,23 @@
+rules_version = '2';
+// Rules KHUSUS project Firebase "myosigid" — jalur Umum Tumara, untuk
+// orang di luar sekolah yang tak ada sangkut-paut dengan akun sekolah
+// (register.html / pilih-pekerjaan.html / data-diri.html / umum-app.html).
+// Terpisah dari firestore.rules (project sekolah tumara-id).
+//
+// Koleksi Firestore-nya masih bernama "trial_users" (bukan "umum_users")
+// SENGAJA tidak diganti: mengganti nama koleksi berarti memindahkan semua
+// dokumen yang sudah ada ke path baru (operasi migrasi data, bukan cuma
+// ganti nama file) — nama koleksi ini murni detail penyimpanan internal,
+// tidak pernah tampil ke pengguna.
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /trial_users/{uid} {
+      allow read, write: if request.auth != null && request.auth.uid == uid;
+
+      // Subkoleksi data aplikasi (health_daily, notes, tasks, transactions, dst.)
+      match /{document=**} {
+        allow read, write: if request.auth != null && request.auth.uid == uid;
+      }
+    }
+  }
+}

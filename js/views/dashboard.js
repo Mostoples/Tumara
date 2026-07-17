@@ -1,23 +1,18 @@
 /* ============================================================
    TUMARA — Beranda (Dashboard)
-   Ringkasan tiga pilar + Skor Keseimbangan + aksi cepat
+   Ringkasan Tugas & Ibadah + aksi cepat
+   (Kesehatan, Keuangan, Ensiklopedia dihapus dari aplikasi siswa —
+   lihat js/app.js. Skor Keseimbangan 3-pilar ikut dihapus karena
+   dua pilarnya sudah tak ada halamannya lagi.)
    ============================================================ */
 
 const Dashboard = {
 
   async render(el) {
     const user = DB.user;
-    const [daily, tasks, transactions, goals] = await Promise.all([
-      DB.getDaily(), DB.list('tasks'), DB.list('transactions'), DB.list('goals')
+    const [tasks, ibadahRec] = await Promise.all([
+      DB.list('tasks'), Ibadah._today()
     ]);
-
-    const score = Calc.balanceScore({ daily, user, tasks, transactions });
-
-    /* --- data kesehatan --- */
-    const targetKalori = user.targetKalori || 2000;
-    const targetAir = user.targetAir || 8;
-    const pctKalori = clamp(Math.round((daily.kalori / targetKalori) * 100), 0, 100);
-    const pctAir = clamp(Math.round((daily.air / targetAir) * 100), 0, 100);
 
     /* --- data tugas --- */
     // Prioritas dulu (P1 → P3), lalu tenggat — yang krusial tampil paling atas.
@@ -26,17 +21,12 @@ const Dashboard = {
                    || (a.tenggat || '9999-99-99').localeCompare(b.tenggat || '9999-99-99'));
     const dueToday = aktif.filter(t => t.tenggat === todayStr()).length;
 
-    /* --- data keuangan --- */
-    const bulan = monthStr();
-    const txBulan = transactions.filter(t => (t.tanggal || '').startsWith(bulan));
-    const masuk = txBulan.filter(t => t.tipe === 'masuk').reduce((s, t) => s + t.jumlah, 0);
-    const keluar = txBulan.filter(t => t.tipe === 'keluar').reduce((s, t) => s + t.jumlah, 0);
-    const saldo = masuk - keluar;
-    const topGoal = goals.filter(g => g.terkumpul < g.target)
-      .sort((a, b) => (b.terkumpul / b.target) - (a.terkumpul / a.target))[0];
-    // Kalau menu Keuangan sedang dikunci PIN, saldo TIDAK boleh bocor di sini —
-    // sebelumnya kartu ini tetap memampangkannya, membuat PIN itu praktis sia-sia.
-    const finTerkunci = Fin.terkunci();
+    /* --- data ibadah hari ini --- */
+    const doneMap = ibadahRec.done || {};
+    const ibadahItems = Ibadah.SEKOLAH;
+    const ibadahTotal = ibadahItems.length;
+    const ibadahSelesai = ibadahItems.filter(i => doneMap[i.key]).length;
+    const ibadahPct = ibadahTotal ? Math.round(ibadahSelesai / ibadahTotal * 100) : 0;
 
     el.innerHTML = `
       <!-- HERO -->
@@ -44,28 +34,15 @@ const Dashboard = {
         <div>
           <div class="hero-greet">${greeting()}, ${esc((user.nama || '').split(' ')[0])}! 👋</div>
           <div class="hero-date">${fmtDate(todayStr(), { weekday: true })}</div>
-          <p class="hero-msg">${Calc.balanceMessage(score.total)}</p>
-        </div>
-        <div class="score-ring">
-          ${ringSVG(score.total, { size: 130, stroke: 11 })}
-          <div class="sr-val">
-            <div class="sr-num">${score.total}</div>
-            <div class="sr-label">${tr('Skor Seimbang', 'Balance Score')}</div>
-          </div>
+          <p class="hero-msg">${dueToday > 0
+            ? tr(`📌 ${dueToday} tugas jatuh tempo hari ini.`, `📌 ${dueToday} task${dueToday > 1 ? 's' : ''} due today.`)
+            : tr('Semoga harimu lancar & berkah 🌱', 'Hope your day is smooth & blessed 🌱')}</p>
         </div>
       </div>
 
       <!-- AKSI CEPAT -->
       <div class="section-head"><h2>${tr('Aksi Cepat', 'Quick Actions')}</h2></div>
       <div class="quick-actions">
-        <button class="qa-btn" id="qaWater">
-          <span class="item-icon" style="background:var(--info-soft);color:var(--info)"><ion-icon name="water"></ion-icon></span>
-          ${tr('+ Gelas Air', '+ Glass of Water')}
-        </button>
-        <button class="qa-btn" id="qaTx">
-          <span class="item-icon" style="background:var(--fin-soft);color:var(--fin)"><ion-icon name="cash-outline"></ion-icon></span>
-          ${tr('+ Transaksi', '+ Transaction')}
-        </button>
         <button class="qa-btn" id="qaTask">
           <span class="item-icon" style="background:var(--prod-soft);color:var(--prod)"><ion-icon name="add-circle-outline"></ion-icon></span>
           ${tr('+ Tugas', '+ Task')}
@@ -76,47 +53,17 @@ const Dashboard = {
         </button>
       </div>
 
-      <!-- TIGA PILAR -->
+      <!-- RINGKASAN -->
       <div class="section-head"><h2>${tr('Ringkasan Hari Ini', "Today's Summary")}</h2></div>
-      <div class="grid grid-3">
+      <div class="grid grid-2">
 
-        <!-- KESEHATAN -->
-        <div class="card pillar-card hoverable" data-goto="health">
+        <!-- TUGAS -->
+        <div class="card pillar-card hoverable" data-goto="tugas">
           <div class="pc-head">
             <div class="pc-title">
-              <span class="item-icon" style="background:var(--health-soft);color:var(--health)"><ion-icon name="heart"></ion-icon></span>
-              ${tr('Kesehatan', 'Health')}
+              <span class="item-icon" style="background:var(--prod-soft);color:var(--prod)"><ion-icon name="checkbox"></ion-icon></span>
+              ${tr('Tugas', 'Tasks')}
             </div>
-            <span class="badge badge-green">${score.health}</span>
-          </div>
-          <div style="display:flex;flex-direction:column;gap:13px;">
-            <div>
-              <div style="display:flex;justify-content:space-between;font-size:.8rem;font-weight:600;color:var(--text-2);margin-bottom:6px;">
-                <span>🔥 ${tr('Energi', 'Energy')}</span><span>${daily.kalori.toLocaleString('id-ID')} / ${targetKalori.toLocaleString('id-ID')} ${tr('kkal', 'kcal')}</span>
-              </div>
-              <div class="progress"><div class="progress-fill" style="width:${pctKalori}%"></div></div>
-            </div>
-            <div>
-              <div style="display:flex;justify-content:space-between;font-size:.8rem;font-weight:600;color:var(--text-2);margin-bottom:6px;">
-                <span>💧 ${tr('Minum', 'Water')}</span><span>${daily.air} / ${targetAir} ${tr('gelas', 'glasses')}</span>
-              </div>
-              <div class="progress"><div class="progress-fill blue" style="width:${pctAir}%"></div></div>
-            </div>
-            <div style="display:flex;justify-content:space-between;font-size:.8rem;font-weight:600;color:var(--text-2);">
-              <span>🌙 ${tr('Tidur semalam', "Last night's sleep")}</span>
-              <span>${daily.tidur > 0 ? daily.tidur + ' ' + tr('jam', 'hours') : `<i style="color:var(--text-3)">${tr('belum dicatat', 'not logged yet')}</i>`}</span>
-            </div>
-          </div>
-        </div>
-
-        <!-- PRODUKTIVITAS -->
-        <div class="card pillar-card hoverable" data-goto="productivity">
-          <div class="pc-head">
-            <div class="pc-title">
-              <span class="item-icon" style="background:var(--prod-soft);color:var(--prod)"><ion-icon name="rocket"></ion-icon></span>
-              ${tr('Produktivitas', 'Productivity')}
-            </div>
-            <span class="badge badge-purple">${score.prod}</span>
           </div>
           ${dueToday > 0 ? `<div style="font-size:.8rem;font-weight:600;color:var(--text-2);margin-bottom:11px;">📌 ${tr(`${dueToday} tugas jatuh tempo hari ini`, `${dueToday} task${dueToday > 1 ? 's' : ''} due today`)}</div>` : ''}
           ${aktif.length ? `
@@ -135,62 +82,26 @@ const Dashboard = {
             </div>`}
         </div>
 
-        <!-- KEUANGAN -->
-        <div class="card pillar-card hoverable" data-goto="finance">
+        <!-- IBADAH -->
+        <div class="card pillar-card hoverable" data-goto="ibadah">
           <div class="pc-head">
             <div class="pc-title">
-              <span class="item-icon" style="background:var(--fin-soft);color:var(--fin)"><ion-icon name="wallet"></ion-icon></span>
-              ${tr('Keuangan', 'Finance')}
+              <span class="item-icon" style="background:var(--health-soft);color:var(--brand-dark)"><ion-icon name="moon"></ion-icon></span>
+              ${tr('Ibadah', 'Worship')}
             </div>
-            <span class="badge badge-amber">${score.fin}</span>
+            <span class="badge badge-green">${ibadahPct}%</span>
           </div>
-          ${finTerkunci ? `
-            <div class="empty-state" style="padding:22px 10px;">
-              <ion-icon name="lock-closed-outline"></ion-icon>
-              <div class="es-title">${tr('Keuangan terkunci', 'Finance locked')}</div>
-              <div class="es-sub">${tr('Masukkan PIN di menu Keuangan untuk melihat saldo', 'Enter your PIN in the Finance menu to see the balance')}</div>
-            </div>` : `
-            <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;">
-              <div style="font-size:.78rem;font-weight:700;color:var(--text-3);">${tr('SISA SALDO BULAN INI', "THIS MONTH'S BALANCE")}</div>
-              ${Saldo.btnHTML('dashEye')}
-            </div>
-            <div class="stat-row" style="margin:3px 0 13px;">
-              <span class="stat-num" style="color:${saldo >= 0 ? 'inherit' : 'var(--danger)'}">${fmtRpM(saldo)}</span>
-            </div>
-            ${topGoal ? `
-              <div style="font-size:.8rem;font-weight:600;color:var(--text-2);display:flex;justify-content:space-between;margin-bottom:6px;">
-                <span>🎯 ${esc(topGoal.nama)}</span>
-                <span>${Math.round(topGoal.terkumpul / topGoal.target * 100)}%</span>
-              </div>
-              <div class="progress"><div class="progress-fill amber" style="width:${clamp(Math.round(topGoal.terkumpul / topGoal.target * 100), 0, 100)}%"></div></div>` : `
-              <div style="font-size:.8rem;color:var(--text-3);">${tr('Belum ada target menabung — yuk buat satu! 🎯', 'No savings goal yet — create one! 🎯')}</div>`}`}
+          <div style="font-size:.8rem;font-weight:600;color:var(--text-2);margin-bottom:6px;">
+            ${tr(`${ibadahSelesai} / ${ibadahTotal} selesai hari ini`, `${ibadahSelesai} / ${ibadahTotal} done today`)}
+          </div>
+          <div class="progress"><div class="progress-fill" style="width:${ibadahPct}%"></div></div>
         </div>
-      </div>
-
-      <div class="disclaimer" style="margin-top:26px;">
-        <ion-icon name="shield-checkmark-outline"></ion-icon>
-        <span>${tr('Tumara adalah pendamping kebiasaan sehat dan bukan pengganti nasihat tenaga kesehatan profesional.', 'Tumara is a healthy-habit companion and not a substitute for professional medical advice.')}</span>
       </div>`;
 
     /* --- interaksi --- */
     $$('[data-goto]', el).forEach(c => c.onclick = () => App.navigate(c.dataset.goto));
 
-    // Tombol mata berada DI DALAM kartu yang bisa diklik → hentikan bubbling,
-    // supaya menyembunyikan saldo tidak ikut membuka halaman Keuangan.
-    $('#dashEye', el) && ($('#dashEye', el).onclick = e => {
-      e.stopPropagation();
-      Saldo.toggle();
-      App.refresh();
-    });
-
-    $('#qaWater', el).onclick = async () => {
-      const d = await DB.getDaily();
-      await DB.saveDaily(todayStr(), { air: (d.air || 0) + 1 });
-      toast(tr(`Segar! ${(d.air || 0) + 1} gelas air hari ini 💧`, `Refreshing! ${(d.air || 0) + 1} glasses of water today 💧`));
-      App.refresh();
-    };
-    $('#qaTx', el).onclick = () => Fin.openTxModal();
     $('#qaTask', el).onclick = () => Prod.openTaskModal();
-    $('#qaFocus', el).onclick = () => { Prod.tab = 'fokus'; App.navigate('productivity'); };
+    $('#qaFocus', el).onclick = () => App.navigate('fokus');
   }
 };

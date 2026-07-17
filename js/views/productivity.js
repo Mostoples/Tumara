@@ -1,34 +1,26 @@
 /* ============================================================
-   TUMARA — Produktivitas
-   Tab: Tugas · Catatan · Jadwal · Fokus (Pomodoro)
+   TUMARA — Produktivitas (Tugas · Catatan · Kebiasaan · Jadwal · Fokus)
+   Kini masing-masing halaman nav tersendiri — lihat js/app.js.
    ============================================================ */
 
 const Prod = {
-  tab: 'tugas',
   taskFilter: 'aktif',
   detailTaskId: null,   // tugas yang sedang dibuka di halaman detail (sisi siswa)
   _TASK_DKEY: 'tumara_siswa_task_detail',   // agar detail tugas tahan refresh
   noteQuery: '',
   selectedDay: new Date().getDay(), // 0=Minggu
 
+  // Tugas/Catatan/Kebiasaan/Jadwal/Fokus masing-masing halaman nav
+  // tersendiri (lihat js/app.js) — dibedakan langsung lewat App.route,
+  // jadi tak ada lagi tab-bar internal yang menggabungkannya dalam satu halaman.
   async render(el) {
-    el.innerHTML = `
-      <div class="tabs">
-        <button class="tab ${this.tab === 'tugas' ? 'active' : ''}" data-tab="tugas"><ion-icon name="checkbox-outline"></ion-icon>${tr('Tugas', 'Tasks')}</button>
-        <button class="tab ${this.tab === 'catatan' ? 'active' : ''}" data-tab="catatan"><ion-icon name="document-text-outline"></ion-icon>${tr('Catatan', 'Notes')}</button>
-        <button class="tab ${this.tab === 'kebiasaan' ? 'active' : ''}" data-tab="kebiasaan"><ion-icon name="repeat-outline"></ion-icon>${tr('Kebiasaan', 'Habits')}</button>
-        <button class="tab ${this.tab === 'jadwal' ? 'active' : ''}" data-tab="jadwal"><ion-icon name="calendar-outline"></ion-icon>${tr('Jadwal', 'Schedule')}</button>
-        <button class="tab ${this.tab === 'fokus' ? 'active' : ''}" data-tab="fokus"><ion-icon name="timer-outline"></ion-icon>${tr('Fokus', 'Focus')}</button>
-      </div>
-      <div id="prodBody"></div>`;
-
-    $$('.tab', el).forEach(t => t.onclick = () => { this.tab = t.dataset.tab; this.detailTaskId = null; localStorage.removeItem(this._TASK_DKEY); App.saveTab(this.tab); this.render(el); });
+    el.innerHTML = `<div id="prodBody"></div>`;
 
     const body = $('#prodBody', el);
-    if (this.tab === 'tugas') await this.renderTasks(body);
-    else if (this.tab === 'catatan') await this.renderNotes(body);
-    else if (this.tab === 'kebiasaan') await this.renderHabits(body);
-    else if (this.tab === 'jadwal') await this.renderSchedule(body);
+    if (App.route === 'tugas') await this.renderTasks(body);
+    else if (App.route === 'catatan') await this.renderNotes(body);
+    else if (App.route === 'kebiasaan') await this.renderHabits(body);
+    else if (App.route === 'jadwal') await this.renderSchedule(body);
     else this.renderPomo(body);
   },
 
@@ -831,6 +823,6 @@ const Prod = {
       p.mode = 'fokus';
       p.remaining = p.focusMin * 60;
     }
-    if (App.route === 'productivity' && this.tab === 'fokus') App.refresh();
+    if (App.route === 'fokus') App.refresh();
   }
 };

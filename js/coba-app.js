@@ -1,7 +1,14 @@
 /* ============================================================
-   TUMARA — App (router utama & shell)
-   Mengatur layar auth/onboarding/app, navigasi, tema,
-   dan pengingat minum.
+   TUMARA — Router jalur uji coba (coba-app.html)
+   ------------------------------------------------------------
+   Adaptasi js/app.js untuk pengguna uji coba (bukan siswa
+   sekolah): pakai TrialAuth/trial-db.js (project myosigid),
+   showAuth() ke register.html, tanpa pengecekan peran. Tidak ada
+   form onboarding — setelah pilih pekerjaan langsung masuk app;
+   data diri (usia/tinggi/berat) opsional lewat Profil bila mau
+   target kalori/air yang presisi (view sudah punya fallback
+   default). View fitur (Dashboard/Health/Prod/Fin/Ibadah/Ency/
+   Profile) SAMA persis dengan yang dipakai app.html — tidak diubah.
    ============================================================ */
 
 const App = {
@@ -9,25 +16,23 @@ const App = {
   _reminderId: null,
 
   TITLES: {
-    dashboard:  [() => tr('Beranda', 'Home'),          () => fmtDate(todayStr(), { weekday: true })],
-    tugas:      [() => tr('Tugas', 'Tasks'),           () => tr('Tugas dari guru & progresmu', 'Tasks from your teachers & your progress')],
-    catatan:    [() => tr('Catatan', 'Notes'),         () => tr('Ide & catatan pribadimu', 'Your personal notes & ideas')],
-    kebiasaan:  [() => tr('Kebiasaan', 'Habits'),      () => tr('Bangun kebiasaan baik, satu hari satu langkah', 'Build good habits, one day at a time')],
-    jadwal:     [() => tr('Jadwal', 'Schedule'),       () => tr('Jadwal kelas dari wali kelasmu', 'Class schedule from your homeroom teacher')],
-    fokus:      [() => tr('Fokus', 'Focus'),           () => tr('Timer Pomodoro untuk belajar fokus', 'Pomodoro timer for focused study')],
-    ibadah:     [() => tr('Ibadah', 'Worship'),        () => tr('Sholat, Al-Qur\'an, dzikir & zakat', 'Prayer, Qur\'an, dhikr & zakat')],
-    profile:    [() => tr('Profil', 'Profile'),        () => tr('Data diri & pengaturan aplikasi', 'Personal data & app settings')]
+    dashboard:    [() => tr('Beranda', 'Home'),                   () => fmtDate(todayStr(), { weekday: true })],
+    health:       [() => tr('Kesehatan', 'Health'),               () => tr('Tubuh sehat, semangat kuat 💪', 'Healthy body, strong spirit 💪')],
+    productivity: [() => tr('Produktivitas', 'Productivity'),     () => tr('Tugas, catatan, jadwal & fokus', 'Tasks, notes, schedule & focus')],
+    finance:      [() => tr('Keuangan', 'Finance'),               () => tr('Uang saku terpantau, nabung jalan terus', 'Allowance tracked, savings on track')],
+    ibadah:       [() => tr('Ibadah', 'Worship'),                 () => tr('Sholat, Al-Qur\'an, dzikir & zakat', 'Prayer, Qur\'an, dhikr & zakat')],
+    encyclopedia: [() => tr('Ensiklopedia', 'Encyclopedia'),      () => tr('Pengetahuan seputar sehat, belajar & uang', 'Knowledge on health, study & money')],
+    profile:      [() => tr('Profil', 'Profile'),                 () => tr('Data diri & pengaturan aplikasi', 'Personal data & app settings')]
   },
 
   VIEWS: {
-    dashboard: () => Dashboard,
-    tugas:     () => Prod,
-    catatan:   () => Prod,
-    kebiasaan: () => Prod,
-    jadwal:    () => Prod,
-    fokus:     () => Prod,
-    ibadah:    () => Ibadah,
-    profile:   () => Profile
+    dashboard:    () => Dashboard,
+    health:       () => Health,
+    productivity: () => Prod,
+    finance:      () => Fin,
+    ibadah:       () => Ibadah,
+    encyclopedia: () => Ency,
+    profile:      () => Profile
   },
 
   async init() {
@@ -40,34 +45,26 @@ const App = {
       return;
     }
     if (!DB.user) return this.showAuth();
-    // app.html hanya untuk siswa; admin & guru diarahkan ke halamannya.
-    const role = DB.user.role || 'siswa';
-    if (role !== 'siswa') { location.replace(roleHome(role)); return; }
+    if (!DB.user.pekerjaan) { location.replace('pilih-pekerjaan.html'); return; }
     this.afterAuth();
   },
 
-  /* ---------- pergantian layar ---------- */
-
-  // Halaman auth kini terpisah (auth.html)
   showAuth() {
-    location.replace('auth.html');
+    location.replace('register.html');
   },
 
   afterAuth() {
-    // Terapkan tema & bahasa yang tersimpan di akun (ikut akun lintas perangkat)
     if (DB.user.tema) this.setTheme(DB.user.tema);
     if (DB.user.bahasa && DB.user.bahasa !== I18N.lang) I18N.set(DB.user.bahasa, { save: false });
-    if (!DB.user.profileComplete) {
-      $('#appShell').classList.add('hidden');
-      $('#onboardScreen').classList.remove('hidden');
-      OnboardView.render();
-    } else {
-      this.showApp();
-    }
+    this.showApp();
+  },
+
+  _pekerjaanLabel(u) {
+    const job = (typeof JOBS !== 'undefined') ? JOBS.find(j => j.key === u.pekerjaan) : null;
+    return job ? tr(job.id, job.en) : (u.pekerjaan || u.email || '');
   },
 
   showApp() {
-    $('#onboardScreen').classList.add('hidden');
     $('#appShell').classList.remove('hidden');
 
     const u = DB.user;
@@ -77,17 +74,14 @@ const App = {
       <div class="avatar">${avatar}</div>
       <div style="min-width:0;">
         <div class="u-name">${esc(u.nama)}</div>
-        <div class="u-school">${esc(u.sekolah || u.kelasNama || (isInternalEmail(u.email) ? roleLabel(u.role) : (u.email || '')))}</div>
+        <div class="u-school">${esc(this._pekerjaanLabel(u))}</div>
       </div>`;
 
-    // navigasi (sidebar + bottom nav + menu kolom "lainnya")
     $$('.nav-link, .bnav-item, .bnav-sheet-item').forEach(a => a.onclick = () => this.navigate(a.dataset.route));
 
-    // Tombol tengah bottom-nav: buka/tutup menu route lainnya
     const moreBtn = $('#bnavMore');
     if (moreBtn) {
       moreBtn.onclick = (e) => { e.stopPropagation(); this.toggleMoreSheet(); };
-      // Tutup saat menyentuh area lain (pasang sekali saja)
       if (!this._moreSheetBound) {
         this._moreSheetBound = true;
         document.addEventListener('click', (e) => {
@@ -100,7 +94,6 @@ const App = {
       }
     }
 
-    // tema, bahasa & profil
     $('#themeToggle').onclick = () => this.toggleTheme();
     $('#topThemeBtn').onclick = () => this.toggleTheme();
     $('#topLangBtn').onclick = () => this.toggleLang();
@@ -109,18 +102,12 @@ const App = {
 
     this._observeTabs();
 
-    // Rute awal mengikuti URL hash (mis. #health atau #health/sleep) agar
-    // refresh tetap di halaman & tab yang sama, bukan selalu balik ke Beranda.
     const fromHash = (location.hash || '').replace(/^#/, '');
     const route0 = fromHash.split('/')[0];
     this.navigate(this.VIEWS[route0] ? fromHash : 'dashboard');
     if (u.reminderAir) this.startWaterReminder();
   },
 
-  /* ---------- auto-center tab aktif (mobile) ---------- */
-
-  // Setiap kali view dirender ulang (klik tab / navigate / refresh), geser
-  // tab bar yang overflow agar tab aktif berada di tengah — tak perlu geser manual.
   _observeTabs() {
     if (this._tabObserver) return;
     const view = $('#view');
@@ -133,7 +120,7 @@ const App = {
   _centerActiveTabs() {
     requestAnimationFrame(() => {
       $$('#view .tabs').forEach(bar => {
-        if (bar.scrollWidth <= bar.clientWidth + 4) return; // tidak overflow → biarkan
+        if (bar.scrollWidth <= bar.clientWidth + 4) return;
         const active = bar.querySelector('.tab.active');
         if (!active) return;
         const target = active.offsetLeft + active.offsetWidth / 2 - bar.clientWidth / 2;
@@ -142,25 +129,19 @@ const App = {
     });
   },
 
-  /* ---------- navigasi & render ---------- */
-
   navigate(routeSpec) {
-    // routeSpec bisa 'health' atau 'health/sleep' (rute + tab, dari URL hash saat refresh).
     let [route, tab] = String(routeSpec).split('/');
     if (!this.VIEWS[route]) { route = 'dashboard'; tab = undefined; }
     this.route = route;
 
     const view = this.VIEWS[route]();
-    // Bila tab diberikan (mis. dari hash saat refresh) & view mengenal konsep tab, pulihkan.
     if (tab && typeof view.tab !== 'undefined') view.tab = tab;
 
-    // Tulis hash: rute + tab aktif view (bila ada) agar bertahan saat refresh.
     this._writeHash(route, typeof view.tab !== 'undefined' ? view.tab : undefined);
 
     $$('.nav-link, .bnav-item, .bnav-sheet-item').forEach(a =>
       a.classList.toggle('active', a.dataset.route === route));
 
-    // Tandai tombol tengah bila route aktif ada di dalam menu "lainnya", lalu tutup menu.
     const moreBtn = $('#bnavMore');
     if (moreBtn) {
       const inSheet = !!$('#bnavSheet')?.querySelector(`.bnav-sheet-item[data-route="${route}"]`);
@@ -176,41 +157,32 @@ const App = {
     window.scrollTo({ top: 0 });
   },
 
-  // Buka/tutup menu kolom "lainnya" di bottom-nav (mobile).
-  // Tanpa argumen → toggle; toggleMoreSheet(true/false) → paksa buka/tutup.
   toggleMoreSheet(open) {
     const sheet = $('#bnavSheet'), btn = $('#bnavMore');
     if (!sheet || !btn) return;
     const show = open === undefined ? !sheet.classList.contains('open') : open;
     sheet.classList.toggle('open', show);
     btn.classList.toggle('open', show);
-    // Ikon grid (banyak bagian) ↔ silang (tutup)
     const icon = $('#bnavMoreIcon');
     if (icon) icon.setAttribute('name', show ? 'close' : 'apps');
   },
 
-  // Sinkronkan URL hash (tanpa menambah riwayat).
   _writeHash(route, tab) {
     const h = tab ? `${route}/${tab}` : route;
     if ((location.hash || '').replace(/^#/, '') !== h) history.replaceState(null, '', '#' + h);
   },
 
-  // Dipanggil view saat tab berpindah agar tab aktif ikut tersimpan di URL.
   saveTab(tab) {
     this._writeHash(this.route, tab);
   },
 
-  // render ulang view rute aktif (dipanggil view setelah simpan/hapus)
   refresh() {
     this.VIEWS[this.route]().render($('#view'));
   },
 
-  /* ---------- tema ---------- */
-
   setTheme(t) {
     document.documentElement.dataset.theme = t;
-    localStorage.setItem('tumara_theme', t); // cache agar tampilan awal tidak berkedip
-    // Simpan juga ke profil akun (Firestore) bila sudah login & berubah
+    localStorage.setItem('tumara_theme', t);
     if (DB.user && DB.user.tema !== t) DB.updateUser({ tema: t }).catch(() => {});
     const dark = t === 'dark';
     const icon = $('#themeIcon'), label = $('#themeLabel'), topIcon = $('#topThemeBtn ion-icon');
@@ -223,19 +195,12 @@ const App = {
     this.setTheme(document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark');
   },
 
-  /* ---------- bahasa ---------- */
-
   toggleLang() {
-    I18N.toggle(); // sekaligus tersimpan ke localStorage + profil akun
-    // Segarkan label tema & render ulang halaman aktif dalam bahasa baru
+    I18N.toggle();
     this.setTheme(document.documentElement.dataset.theme || 'light');
-    if (!$('#appShell').classList.contains('hidden')) this.navigate(this.route);
-    else if (!$('#onboardScreen').classList.contains('hidden')) OnboardView.render();
+    this.navigate(this.route);
   },
 
-  /* ---------- pengingat minum ---------- */
-
-  // Kirim notifikasi browser bila diizinkan; kembalikan true bila terkirim.
   notify(body, { title = 'Tumara 💧' } = {}) {
     if ('Notification' in window && Notification.permission === 'granted') {
       try {
@@ -251,7 +216,6 @@ const App = {
     const menit = DB.user?.reminderInterval || 60;
     this._reminderId = setInterval(() => {
       const pesan = tr('Waktunya minum 💧 Satu gelas dulu, yuk!', 'Time to hydrate 💧 Grab a glass of water!');
-      // Notifikasi browser bila diizinkan; jika tidak, tampilkan toast dalam app.
       if (!this.notify(pesan)) toast(pesan, 'info');
     }, menit * 60 * 1000);
   },

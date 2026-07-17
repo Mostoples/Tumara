@@ -3,11 +3,12 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Tumara — Aplikasi</title>
-  <meta name="description" content="Dasbor Tumara: kesehatan, produktivitas, dan keuangan dalam satu tempat.">
+  <title>Tumara — Coba Aplikasi</title>
+  <meta name="description" content="Coba Tumara: kesehatan, produktivitas, dan keuangan dalam satu tempat.">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:ital,wght@0,300;0,400;0,500;0,600;0,700;0,800;1,400&family=Amiri:wght@400;700&display=swap" rel="stylesheet">
+  <script>document.documentElement.dataset.theme = localStorage.getItem('tumara_theme') || 'light';</script>
   <link rel="stylesheet" href="css/style.css">
   <link rel="icon" type="image/png" href="assets/logo.png">
   <!-- PWA -->
@@ -19,16 +20,10 @@
   <link rel="apple-touch-icon" href="assets/icons/icon-192.png">
   <script type="module" src="https://cdn.jsdelivr.net/npm/ionicons@7.4.0/dist/ionicons/ionicons.esm.js"></script>
   <script nomodule src="https://cdn.jsdelivr.net/npm/ionicons@7.4.0/dist/ionicons/ionicons.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="js/version-check.js"></script>
   <script src="js/pwa.js"></script>
 </head>
 <body>
-
-  <!-- ============ LAYAR ONBOARDING ============ -->
-  <div id="onboardScreen" class="auth-screen hidden">
-    <div class="onboard-card" id="onboardCard"><!-- diisi oleh JS --></div>
-  </div>
 
   <!-- ============ SHELL APLIKASI ============ -->
   <div id="appShell" class="app-shell hidden">
@@ -44,12 +39,11 @@
 
       <nav class="sidebar-nav" id="sidebarNav">
         <a class="nav-link" data-route="dashboard"><ion-icon name="grid-outline"></ion-icon><span data-en="Home">Beranda</span></a>
-        <a class="nav-link" data-route="tugas"><ion-icon name="checkbox-outline"></ion-icon><span data-en="Tasks">Tugas</span></a>
-        <a class="nav-link" data-route="catatan"><ion-icon name="document-text-outline"></ion-icon><span data-en="Notes">Catatan</span></a>
-        <a class="nav-link" data-route="kebiasaan"><ion-icon name="repeat-outline"></ion-icon><span data-en="Habits">Kebiasaan</span></a>
-        <a class="nav-link" data-route="jadwal"><ion-icon name="calendar-outline"></ion-icon><span data-en="Schedule">Jadwal</span></a>
-        <a class="nav-link" data-route="fokus"><ion-icon name="timer-outline"></ion-icon><span data-en="Focus">Fokus</span></a>
+        <a class="nav-link" data-route="health"><ion-icon name="heart-outline"></ion-icon><span data-en="Health">Kesehatan</span></a>
+        <a class="nav-link" data-route="productivity"><ion-icon name="rocket-outline"></ion-icon><span data-en="Productivity">Produktivitas</span></a>
+        <a class="nav-link" data-route="finance"><ion-icon name="wallet-outline"></ion-icon><span data-en="Finance">Keuangan</span></a>
         <a class="nav-link" data-route="ibadah"><ion-icon name="moon-outline"></ion-icon><span data-en="Worship">Ibadah</span></a>
+        <a class="nav-link" data-route="encyclopedia"><ion-icon name="book-outline"></ion-icon><span data-en="Encyclopedia">Ensiklopedia</span></a>
         <a class="nav-link" data-route="profile"><ion-icon name="person-outline"></ion-icon><span data-en="Profile">Profil</span></a>
       </nav>
 
@@ -79,22 +73,21 @@
 
     <nav class="bottom-nav" id="bottomNav">
       <a class="bnav-item" data-route="dashboard"><ion-icon name="grid-outline"></ion-icon><span data-en="Home">Beranda</span></a>
-      <a class="bnav-item" data-route="tugas"><ion-icon name="checkbox-outline"></ion-icon><span data-en="Tasks">Tugas</span></a>
+      <a class="bnav-item" data-route="health"><ion-icon name="heart-outline"></ion-icon><span data-en="Health">Sehat</span></a>
 
       <!-- Tombol tengah: buka menu route lainnya (muncul sebagai kolom di atas) -->
       <button class="bnav-more" id="bnavMore" aria-label="Menu lainnya" title="Menu lainnya" data-en-title="More menu">
         <span class="bnav-more-fab"><ion-icon name="apps" id="bnavMoreIcon"></ion-icon></span>
       </button>
 
-      <a class="bnav-item" data-route="ibadah"><ion-icon name="moon-outline"></ion-icon><span data-en="Worship">Ibadah</span></a>
+      <a class="bnav-item" data-route="productivity"><ion-icon name="rocket-outline"></ion-icon><span data-en="Focus">Produktif</span></a>
       <a class="bnav-item" data-route="profile"><ion-icon name="person-outline"></ion-icon><span data-en="Profile">Profil</span></a>
 
       <!-- Menu kolom route lainnya -->
       <div class="bnav-sheet" id="bnavSheet">
-        <a class="bnav-sheet-item" data-route="catatan"><ion-icon name="document-text-outline"></ion-icon><span data-en="Notes">Catatan</span></a>
-        <a class="bnav-sheet-item" data-route="kebiasaan"><ion-icon name="repeat-outline"></ion-icon><span data-en="Habits">Kebiasaan</span></a>
-        <a class="bnav-sheet-item" data-route="jadwal"><ion-icon name="calendar-outline"></ion-icon><span data-en="Schedule">Jadwal</span></a>
-        <a class="bnav-sheet-item" data-route="fokus"><ion-icon name="timer-outline"></ion-icon><span data-en="Focus">Fokus</span></a>
+        <a class="bnav-sheet-item" data-route="finance"><ion-icon name="wallet-outline"></ion-icon><span data-en="Finance">Keuangan</span></a>
+        <a class="bnav-sheet-item" data-route="ibadah"><ion-icon name="moon-outline"></ion-icon><span data-en="Worship">Ibadah</span></a>
+        <a class="bnav-sheet-item" data-route="encyclopedia"><ion-icon name="book-outline"></ion-icon><span data-en="Encyclopedia">Ensiklopedia</span></a>
       </div>
     </nav>
   </div>
@@ -103,22 +96,20 @@
   <div id="modalRoot"></div>
   <div id="toastRoot" class="toast-root"></div>
 
-  <script src="js/firebase-config.js"></script>
+  <script src="js/firebase-config-trial.js"></script>
   <script src="js/i18n.js"></script>
   <script src="js/utils.js"></script>
-  <script src="js/supabase-storage.js"></script>
   <script src="js/calc.js"></script>
-  <script src="js/db.js"></script>
-  <script src="js/roles.js"></script>
-  <script src="js/views/auth.js"></script>
+  <script src="js/trial-auth.js"></script>
+  <script src="js/trial-db.js"></script>
+  <script src="js/views/job-select.js"></script>
   <script src="js/views/dashboard.js"></script>
+  <script src="js/views/health.js"></script>
   <script src="js/views/productivity.js"></script>
-  <!-- Keuangan bukan lagi halaman terpisah, tapi finance.js tetap dimuat:
-       profile.js memakai Fin.resetPin() untuk siswa lama yang masih
-       punya PIN Keuangan tersimpan. -->
   <script src="js/views/finance.js"></script>
   <script src="js/views/ibadah.js"></script>
+  <script src="js/views/encyclopedia.js"></script>
   <script src="js/views/profile.js"></script>
-  <script src="js/app.js"></script>
+  <script src="js/coba-app.js"></script>
 </body>
 </html>

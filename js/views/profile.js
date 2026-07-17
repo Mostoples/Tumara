@@ -25,13 +25,18 @@ const Profile = {
     const isDark = document.documentElement.dataset.theme === 'dark';
     const ed = this._editing;                      // mode edit data diri aktif?
     const dis = ed ? '' : 'disabled';              // atribut untuk menonaktifkan input
+    // Jalur uji coba (coba-app.html, lihat js/trial-auth.js) tidak punya
+    // kelas/NIS sekolah — sembunyikan field & teks yang khusus siswa sekolah.
+    const isTrial = typeof TrialAuth !== 'undefined';
 
     // Daftar kelas sekolah (untuk memilih/mengubah kelas siswa).
     let classes = [];
-    try {
-      classes = (await DB.gList('school_classes'))
-        .sort((a, b) => (a.urutan ?? 999999) - (b.urutan ?? 999999) || (a.nama || '').localeCompare(b.nama || ''));
-    } catch (_) { classes = []; }
+    if (!isTrial) {
+      try {
+        classes = (await DB.gList('school_classes'))
+          .sort((a, b) => (a.urutan ?? 999999) - (b.urutan ?? 999999) || (a.nama || '').localeCompare(b.nama || ''));
+      } catch (_) { classes = []; }
+    }
 
     el.innerHTML = `
       <!-- HEADER PROFIL -->
@@ -99,6 +104,7 @@ const Profile = {
                 ${Calc.AKTIVITAS.map(a => `<option value="${a.key}" ${a.key === (u.aktivitas || 'ringan') ? 'selected' : ''}>${a.label}</option>`).join('')}
               </select>
             </div>
+            ${isTrial ? '' : `
             <div class="grid grid-2 keep-2" style="gap:12px;">
               <div class="field">
                 <label>${tr('Kelas', 'Class')}</label>
@@ -117,7 +123,7 @@ const Profile = {
             <div class="field">
               <label>${tr('Asal sekolah', 'School')} <span style="font-weight:500;color:var(--text-3)">${tr('(opsional)', '(optional)')}</span></label>
               <input type="text" class="input" id="pfSekolah" placeholder="${tr('mis. SMAN 1 Bandung', 'e.g. Bandung High School 1')}" value="${esc(u.sekolah || '')}" ${dis}>
-            </div>
+            </div>`}
             ${ed ? `<button type="submit" class="btn btn-primary btn-block"><ion-icon name="checkmark"></ion-icon> ${tr('Simpan &amp; Hitung Ulang Target', 'Save &amp; Recalculate Targets')}</button>` : ''}
           </form>
         </div>
@@ -181,7 +187,9 @@ const Profile = {
                 <ion-icon name="key-outline" style="font-size:1.2rem;color:var(--text-3);"></ion-icon>
                 <div class="sr-text">
                   <div class="sr-title">${tr('Nama masuk &amp; kata sandi', 'Sign-in name &amp; password')}</div>
-                  <div class="sr-sub">${tr('Diatur oleh admin sekolah. Lupa NIS? Hubungi admin/wali kelasmu.', 'Managed by the school admin. Forgot your NIS? Contact your admin/homeroom teacher.')}</div>
+                  <div class="sr-sub">${isTrial
+                    ? tr('Akun terhubung ke email/Google yang kamu pakai mendaftar.', 'Your account is linked to the email/Google you signed up with.')
+                    : tr('Diatur oleh admin sekolah. Lupa NIS? Hubungi admin/wali kelasmu.', 'Managed by the school admin. Forgot your NIS? Contact your admin/homeroom teacher.')}</div>
                 </div>
                 <ion-icon name="lock-closed-outline" style="color:var(--text-3);"></ion-icon>
               </div>
@@ -251,9 +259,10 @@ const Profile = {
       // Kelas — penautan ke roster guru. NIS TIDAK ikut disimpan: itu kata
       // sandi akun (ditetapkan admin), jadi field-nya hanya untuk dibaca.
       const kelasSel = $('#pfKelas', el);
+      const sekolahInput = $('#pfSekolah', el);
       const patch = {
         usia, jenisKelamin: jk, tinggi, berat, aktivitas,
-        sekolah: $('#pfSekolah', el).value.trim(),
+        ...(sekolahInput ? { sekolah: sekolahInput.value.trim() } : {}),
         targetKalori: tdee, targetAir: air.gelas
       };
       if (kelasSel) {

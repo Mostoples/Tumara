@@ -185,6 +185,18 @@ const DB = (() => {
       return JSON.parse(localStorage.getItem(key) || '[]');
     },
 
+    // Guru: tulis/koreksi satu dokumen di subkoleksi siswa tertentu (mis. ibadah_daily
+    // per tanggal), dipakai saat siswa lupa mencentang sendiri. Upsert, sama seperti set().
+    async setStudentData(studentUid, coll, id, item) {
+      const key = `tumara_data_${studentUid}_${coll}`;
+      const arr = JSON.parse(localStorage.getItem(key) || '[]');
+      const i = arr.findIndex(x => x.id === id);
+      if (i === -1) arr.push({ ...item, id });
+      else arr[i] = { ...arr[i], ...item, id };
+      localStorage.setItem(key, JSON.stringify(arr));
+      return arr[i === -1 ? arr.length - 1 : i];
+    },
+
     async add(coll, item) {
       const arr = this._read(coll);
       const rec = { id: uid(), ...item };
@@ -598,6 +610,15 @@ const DB = (() => {
       return snap.docs.map(d => ({ id: d.id, ...d.data() }));
     },
 
+    // Guru: tulis/koreksi satu dokumen di subkoleksi siswa tertentu (mis. ibadah_daily
+    // per tanggal), dipakai saat siswa lupa mencentang sendiri. Butuh Security Rules
+    // yang mengizinkan guru menulis subkoleksi itu (lihat firestore.rules).
+    async setStudentData(studentUid, coll, id, item) {
+      const { F, db } = this.fb;
+      await F.setDoc(F.doc(db, 'users', studentUid, coll, id), this._clean(item), { merge: true });
+      return { id, ...item };
+    },
+
     async add(coll, item) {
       const { F } = this.fb;
       const id = uid();
@@ -791,6 +812,8 @@ const DB = (() => {
 
     // Guru: baca subkoleksi siswa tertentu (untuk melihat ibadah/data siswa)
     listStudentData: (studentUid, coll) => adapter.listStudentData(studentUid, coll),
+    // Guru: tulis/koreksi satu dokumen di subkoleksi siswa tertentu (mis. ibadah_daily)
+    setStudentData: (studentUid, coll, id, item) => adapter.setStudentData(studentUid, coll, id, item),
 
     list: c => adapter.list(c),
     add: (c, i) => adapter.add(c, i),

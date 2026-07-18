@@ -718,6 +718,14 @@ ion-icon { pointer-events: none; flex-shrink: 0; }
 .job-card:hover { transform: translateY(-3px); box-shadow: var(--shadow); border-color: var(--brand); }
 .job-card:active { transform: scale(.97); }
 .job-card.selected { border-color: var(--brand); box-shadow: 0 0 0 3px var(--brand-soft); }
+/* Terkunci karena "Pelajar / Mahasiswa" sudah dipilih — lihat JOB_STUDENT_KEY
+   di js/views/job-select.js. pointer-events:none supaya :hover/:active tak ikut jalan. */
+.job-card.disabled { opacity: .4; cursor: not-allowed; pointer-events: none; }
+
+.job-lock-hint {
+  text-align: center; color: var(--text-3); font-size: .82rem;
+  margin: 14px auto 0; max-width: 420px; line-height: 1.5;
+}
 
 .job-ic {
   width: 64px; height: 64px; border-radius: 50%;
@@ -2065,6 +2073,33 @@ ion-icon { pointer-events: none; flex-shrink: 0; }
 .ib-ya    { display: inline-flex; align-items: center; gap: 4px; color: var(--brand-dark); font-weight: 700; }
 .ib-tidak { display: inline-flex; align-items: center; gap: 4px; color: var(--text-3); font-weight: 700; }
 [data-theme="dark"] .ib-ya { color: #34d399; }
+
+/* Tombol koreksi guru (tabel harian): klik untuk membalik status Ikut/Belum
+   pada tanggal yang sedang dipantau — dipakai saat siswa lupa mencentang sendiri. */
+.ib-toggle-btn {
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 5px 11px; border-radius: 999px; border: 1px solid transparent;
+  font-family: inherit; font-size: .8rem; cursor: pointer; transition: filter .15s, transform .1s;
+}
+.ib-toggle-btn.ib-ya    { background: var(--brand-soft); }
+.ib-toggle-btn.ib-tidak { background: var(--surface-3); border-color: var(--border); }
+.ib-toggle-btn:hover    { filter: brightness(.97); }
+.ib-toggle-btn:active   { transform: scale(.96); }
+.ib-toggle-btn:disabled { opacity: .5; cursor: wait; }
+
+/* Rekap bulanan di layar (bukan cuma PDF) — kolom tanggal 1-31, 2 baris per
+   siswa (Dhuha & Dzuhur), persentase di akhir. Sama bentuknya dengan PDF Rekap. */
+.ib-month-table { min-width: 900px; }
+.ib-month-table th, .ib-month-table td { padding: 3px 4px; font-size: .68rem; text-align: center; white-space: nowrap; }
+.ib-month-table td.ib-month-nama { text-align: left; font-size: .8rem; font-weight: 700; padding: 5px 10px; }
+.ib-month-table td.ib-month-lb { text-align: left; font-size: .68rem; color: var(--text-3); padding-left: 6px; }
+.ib-month-table td.ib-month-off, .ib-month-table th.ib-month-off { background: var(--surface-3); }
+.ib-month-table td.ib-month-libur, .ib-month-table th.ib-month-libur { background: var(--surface-2); }
+.ib-month-table td.ib-month-yes { color: var(--brand-dark); font-weight: 800; }
+[data-theme="dark"] .ib-month-table td.ib-month-yes { color: #34d399; }
+.ib-month-table td.ib-month-no { color: var(--danger); font-weight: 800; }
+.ib-month-table td.ib-month-pct { font-weight: 800; }
+.ib-month-table th.ib-col-today, .ib-month-table td.ib-col-today { background: var(--brand-soft); }
 
 /* Detail satu siswa. */
 .ib-det-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }

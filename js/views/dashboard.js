@@ -34,6 +34,19 @@ const Dashboard = {
     return DB.user?.pekerjaan ? this._renderUmum(el) : this._renderSiswa(el);
   },
 
+  // Tile menu tambahan yang cuma tampil untuk pekerjaan tertentu — supaya
+  // menu strip terasa dikaitkan dengan pekerjaan yang dipilih, bukan generik
+  // sama untuk semua orang. Saat ini baru "Kelas" untuk Guru (lihat
+  // js/views/kelas-guru.js); tambahkan entri baru di sini kalau modul serupa
+  // dibuat untuk pekerjaan lain.
+  _menuUmum(user) {
+    const list = user?.pekerjaanList?.length ? user.pekerjaanList : (user?.pekerjaan ? [user.pekerjaan] : []);
+    const extra = list.includes('guru') ? [
+      { route: 'kelas', icon: 'school', color: 'rose', label: () => tr('Kelas', 'Class'), sub: () => tr('Murid, absensi, nilai & jurnal', 'Students, attendance, grades & journal') }
+    ] : [];
+    return [...this._MENU_UMUM, ...extra];
+  },
+
   /* ============ SISWA (app.html) — tidak diubah ============ */
 
   async _renderSiswa(el) {
@@ -181,7 +194,7 @@ const Dashboard = {
       <div class="hero-card">
         <div>
           <div class="hero-greet">${greeting()}, ${esc((user.nama || '').split(' ')[0])}! 👋</div>
-          <div class="hero-date">${fmtDate(todayStr(), { weekday: true })}</div>
+          <div class="hero-date">${fmtDate(todayStr(), { weekday: true })}${typeof App !== 'undefined' && App._pekerjaanLabel ? ` · ${esc(App._pekerjaanLabel(user))}` : ''}</div>
           <p class="hero-msg">${Calc.balanceMessage(score.total)}</p>
         </div>
         <div class="score-ring">
@@ -197,7 +210,7 @@ const Dashboard = {
            grid ini satu-satunya jalan ke semua halaman fitur, terutama di mobile. -->
       <div class="section-head"><h2>${tr('Menu', 'Menu')}</h2></div>
       <div class="menu-strip">
-        ${this._MENU_UMUM.map(m => `
+        ${this._menuUmum(user).map(m => `
           <button class="menu-strip-item" data-goto="${m.route}">
             <span class="msi-icon msi-${m.color}"><ion-icon name="${m.icon}"></ion-icon></span>
             <span class="msi-body"><b>${m.label()}</b><span>${m.sub()}</span></span>

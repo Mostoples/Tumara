@@ -838,6 +838,10 @@ const Fin = {
             <span class="input-unit">Rp</span>
           </div>
         </div>
+        <div class="field">
+          <label>${tr('Keterangan', 'Note')} <span style="font-weight:500;color:var(--text-3)">${tr('(opsional)', '(optional)')}</span></label>
+          <input type="text" class="input" id="mKet" placeholder="${tr('mis. dari THR / hasil jualan', 'e.g. from bonus / sales proceeds')}">
+        </div>
         <label style="display:flex;align-items:center;gap:10px;font-size:.85rem;font-weight:600;color:var(--text-2);cursor:pointer;margin:4px 0 18px;">
           <input type="checkbox" id="mCatatTx" checked style="width:17px;height:17px;accent-color:var(--fin);">
           ${tr('Catat sebagai transaksi pengeluaran (kategori Tabungan)', 'Log as an expense transaction (Savings category)')}
@@ -847,12 +851,14 @@ const Fin = {
         $('#mSave', m).onclick = async () => {
           const jumlah = +$('#mJumlah', m).value;
           if (!jumlah || jumlah <= 0) return toast(tr('Masukkan jumlah yang valid.', 'Enter a valid amount.'), 'warning');
+          const ket = $('#mKet', m).value.trim();
           const total = goal.terkumpul + jumlah;
           await DB.update('goals', goal.id, { terkumpul: total });
           if ($('#mCatatTx', m).checked) {
             await DB.add('transactions', {
               tanggal: todayStr(), tipe: 'keluar', jumlah,
-              kategori: 'Tabungan', catatan: tr(`Menabung: ${goal.nama}`, `Saving up: ${goal.nama}`)
+              kategori: 'Tabungan',
+              catatan: ket || tr(`Menabung: ${goal.nama}`, `Saving up: ${goal.nama}`)
             });
           }
           closeModal();
@@ -871,6 +877,8 @@ const Fin = {
     const all = await DB.list('transactions');
     const txBulan = all.filter(t => (t.tanggal || '').startsWith(this.month));
     const keluarBulan = txBulan.filter(t => t.tipe === 'keluar');
+    const masukBulan = txBulan.filter(t => t.tipe === 'masuk');
+    const totalMasuk = masukBulan.reduce((s, t) => s + t.jumlah, 0);
 
     // bar chart: pengeluaran 7 hari terakhir (berbasis hari ini)
     const hari7 = [];
@@ -902,6 +910,7 @@ const Fin = {
         <input type="month" class="input" id="rpMonth" value="${this.month}" style="max-width:180px;">
         <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
           ${terbesar ? `<span class="badge badge-amber">${tr('Total pengeluaran:', 'Total spending:')} ${fmtRpM(totalKeluar)}</span>` : ''}
+          <button class="btn btn-sm" id="printLaporan"><ion-icon name="print-outline"></ion-icon> ${tr('Cetak Laporan', 'Print Report')}</button>
           <button class="btn btn-sm" id="exportCsv"><ion-icon name="download-outline"></ion-icon> ${tr('Ekspor CSV', 'Export CSV')}</button>
         </div>
       </div>
@@ -948,6 +957,38 @@ const Fin = {
       </div>`;
 
     $('#rpMonth', el).onchange = e => { this.month = e.target.value || monthStr(); App.refresh(); };
+    $('#printLaporan', el).onclick = () => {
+      if (!txBulan.length) {
+        toast(tr('Belum ada transaksi bulan ini untuk dicetak.', 'No transactions this month to print.'), 'warning');
+        return;
+      }
+      const judulBulan = `${BULAN[+this.month.slice(5) - 1]} ${this.month.slice(0, 4)}`;
+      const txRow = t => `<tr>
+        <td class="nowrap">${fmtDate(t.tanggal, { short: true })}</td>
+        <td>${t.tipe === 'masuk' ? tr('Pemasukan', 'Income') : tr('Pengeluaran', 'Expense')}</td>
+        <td>${esc(this._katLabel(t.tipe, t.kategori))}</td>
+        <td class="nowrap" style="text-align:right;">${t.tipe === 'masuk' ? '+' : '−'}${fmtRp(t.jumlah)}</td>
+        <td>${esc(t.catatan || '')}</td>
+      </tr>`;
+      const rows = txBulan.slice().sort((a, b) => (a.tanggal || '') < (b.tanggal || '') ? -1 : 1);
+
+      printHTML(`${tr('Laporan Keuangan', 'Finance Report')} ${judulBulan}`, `
+        <h1 style="text-align:center;">${tr('LAPORAN KEUANGAN', 'FINANCE REPORT')}</h1>
+        <div class="sub" style="text-align:center;font-size:11px;color:#333;margin-bottom:14px;">${esc(DB.user?.nama || '')} · ${judulBulan}</div>
+        <table style="margin-bottom:14px;">
+          <tbody>
+            <tr><td style="font-weight:bold;">${tr('Total Pemasukan', 'Total Income')}</td><td style="text-align:right;">${fmtRp(totalMasuk)}</td></tr>
+            <tr><td style="font-weight:bold;">${tr('Total Pengeluaran', 'Total Expenses')}</td><td style="text-align:right;">${fmtRp(totalKeluar)}</td></tr>
+            <tr><td style="font-weight:bold;">${tr('Selisih', 'Net')}</td><td style="text-align:right;font-weight:bold;">${fmtRp(totalMasuk - totalKeluar)}</td></tr>
+          </tbody>
+        </table>
+        <table>
+          <thead><tr>
+            <th>${tr('Tanggal', 'Date')}</th><th>${tr('Tipe', 'Type')}</th><th>${tr('Kategori', 'Category')}</th><th>${tr('Jumlah', 'Amount')}</th><th>${tr('Keterangan', 'Note')}</th>
+          </tr></thead>
+          <tbody>${rows.map(txRow).join('')}</tbody>
+        </table>`);
+    };
     $('#exportCsv', el).onclick = () => {
       if (!txBulan.length) {
         toast(tr('Belum ada transaksi bulan ini untuk diekspor.', 'No transactions this month to export.'), 'warning');

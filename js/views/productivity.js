@@ -70,9 +70,23 @@ const Prod = {
 
   /* ============ TAB: HABIT TRACKER ============ */
 
+  // Saran kebiasaan berdasarkan pekerjaan (JOB_PRESETS di job-select.js),
+  // digabung dari semua pekerjaan yang dipilih, dikurangi yang sudah ditambah
+  // (dicocokkan lewat nama, apa adanya tanpa normalisasi — cukup untuk saran).
+  _jobHabitSuggestions(existingHabits) {
+    if (typeof JOB_PRESETS === 'undefined') return [];
+    const list = DB.user?.pekerjaanList?.length ? DB.user.pekerjaanList : (DB.user?.pekerjaan ? [DB.user.pekerjaan] : []);
+    const existingNames = new Set(existingHabits.map(h => h.nama));
+    const seen = new Set();
+    return list.flatMap(k => JOB_PRESETS[k]?.kebiasaan || [])
+      .map(s => ({ emoji: s.e, nama: s.n() }))
+      .filter(s => !existingNames.has(s.nama) && !seen.has(s.nama) && seen.add(s.nama));
+  },
+
   async renderHabits(el) {
     const [habits, logs] = await Promise.all([DB.list('habits'), DB.list('habit_logs')]);
     const doneSet = new Set(logs.map(l => l.habitId + '|' + l.tanggal));
+    const saran = this._jobHabitSuggestions(habits);
 
     // 7 hari terakhir (kolom), hari ini di paling kanan
     const days = [];
@@ -89,6 +103,11 @@ const Prod = {
         <div style="font-size:.88rem;color:var(--text-3);font-weight:600;">${tr('Bangun rutinitas positif — centang tiap hari 🔥', 'Build positive routines — check off each day 🔥')}</div>
         <button class="btn btn-prod btn-sm" id="addHabit"><ion-icon name="add"></ion-icon> ${tr('Kebiasaan Baru', 'New Habit')}</button>
       </div>
+
+      ${saran.length ? `
+        <div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:16px;">
+          ${saran.map(s => `<button class="chip" data-saran="${esc(s.nama)}" data-emoji="${s.emoji}">${s.emoji} ${esc(s.nama)}</button>`).join('')}
+        </div>` : ''}
 
       ${habits.length ? `
         <div class="table-wrap">
@@ -117,6 +136,11 @@ const Prod = {
         </div>`}`;
 
     $('#addHabit', el).onclick = () => this._habitModal();
+    $$('[data-saran]', el).forEach(b => b.onclick = async () => {
+      await DB.add('habits', { nama: b.dataset.saran, emoji: b.dataset.emoji });
+      toast(tr('Kebiasaan ditambahkan 🔥', 'Habit added 🔥'));
+      App.refresh();
+    });
     $$('[data-hb]', el).forEach(b => b.onclick = async () => {
       const habitId = b.dataset.hb, tanggal = b.dataset.d, key = habitId + '|' + tanggal;
       const existing = logs.find(l => l.habitId === habitId && l.tanggal === tanggal);
@@ -320,6 +344,7 @@ const Prod = {
                     ${t.guruNama ? `<span class="badge badge-gray"><ion-icon name="person-outline"></ion-icon> ${esc(t.guruNama)}</span>` : ''}
                     ${taskAttachments(t).length ? `<span class="badge badge-gray"><ion-icon name="attach-outline"></ion-icon> ${tr('Lampiran', 'Attachment')}</span>` : ''}
                     ${sub ? `<span class="badge badge-green"><ion-icon name="checkmark-done-outline"></ion-icon> ${tr('Terkumpul', 'Submitted')}</span>` : ''}
+                    ${sub && sub.nilai !== undefined && sub.nilai !== null && sub.nilai !== '' ? `<span class="badge badge-purple"><ion-icon name="ribbon-outline"></ion-icon> ${tr('Nilai', 'Grade')} ${esc(String(sub.nilai))}</span>` : ''}
                   </div>
                   <div style="font-size:.72rem;color:var(--brand);margin-top:5px;font-weight:600;"><ion-icon name="eye-outline" style="vertical-align:-2px;"></ion-icon> ${tr('Ketuk untuk detail', 'Tap for detail')}</div>
                 </div>
@@ -469,9 +494,10 @@ const Prod = {
       <div style="border:1px solid var(--border);border-radius:12px;padding:14px;margin-bottom:16px;">
         <div style="font-weight:700;font-size:.95rem;margin-bottom:10px;"><ion-icon name="cloud-upload-outline" style="vertical-align:-2px;"></ion-icon> ${tr('Pengumpulanmu', 'Your submission')}</div>
         ${sub ? `
-          <div style="display:flex;align-items:center;gap:8px;font-size:.82rem;color:var(--text-2);margin-bottom:10px;">
+          <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:.82rem;color:var(--text-2);margin-bottom:10px;">
             <span class="badge badge-green"><ion-icon name="checkmark-done-outline"></ion-icon> ${tr('Terkumpul', 'Submitted')}</span>
             <span style="color:var(--text-3);">${tr(`${subFiles.length} file`, `${subFiles.length} file(s)`)}${sub.submittedAt ? ' · ' + fmtDate(sub.submittedAt, { short: true }) : ''}</span>
+            ${sub.nilai !== undefined && sub.nilai !== null && sub.nilai !== '' ? `<span class="badge badge-purple"><ion-icon name="ribbon-outline"></ion-icon> ${tr('Nilai', 'Grade')} ${esc(String(sub.nilai))}</span>` : `<span class="badge badge-gray">${tr('Belum dinilai', 'Not graded yet')}</span>`}
           </div>
           <div style="display:flex;flex-direction:column;gap:8px;margin-bottom:10px;">
             ${subFiles.map(f => f.isPdf
@@ -603,13 +629,24 @@ const Prod = {
     });
   },
 
+  // Saran kategori berdasarkan pekerjaan yang dipilih user (lihat JOB_PRESETS
+  // di js/views/job-select.js) — supaya bahkan sebelum pernah menambah tugas
+  // apapun, kolom Kategori sudah menyarankan istilah relevan ke pekerjaannya
+  // (mis. "Kelas/Koreksi/RPP" utk Guru, "Stok/Kas/Piutang" utk Pedagang).
+  // Digabung dari SEMUA pekerjaan yang dipilih (bisa lebih dari satu).
+  _jobKategoriPreset() {
+    if (typeof JOB_PRESETS === 'undefined') return [];
+    const list = DB.user?.pekerjaanList?.length ? DB.user.pekerjaanList : (DB.user?.pekerjaan ? [DB.user.pekerjaan] : []);
+    return list.flatMap(k => JOB_PRESETS[k]?.kategori || []);
+  },
+
   // `allTasks` (daftar tugas yang sudah ada, dari pemanggil) dipakai untuk
   // menyusun saran kategori/label lewat <datalist> — supaya "Kerja"/"Pribadi"
   // yang sudah pernah diketik muncul sebagai saran, bukan sekadar teks bebas
   // yang mudah beda ejaan tiap kali (mis. "Kerja" vs "kerja" vs "Kantor").
   openTaskModal(task = null, allTasks = []) {
     const uniq = arr => [...new Set(arr.filter(Boolean))].sort();
-    const kategoriOpts = uniq(allTasks.map(t => t.mapel));
+    const kategoriOpts = uniq([...this._jobKategoriPreset(), ...allTasks.map(t => t.mapel)]);
     const labelOpts = uniq(allTasks.map(t => t.label));
 
     openModal({

@@ -38,9 +38,11 @@ service cloud.firestore {
         allow read, write: if request.auth != null && (request.auth.uid == uid || isAdmin());
       }
 
-      // Guru boleh MEMBACA subkoleksi ibadah siswa (ibadah_daily, quran_log, hafalan) untuk pemantauan.
+      // Guru boleh membaca & MENGOREKSI ibadah_daily (mis. siswa lupa mencentang
+      // sendiri) — satu-satunya subkoleksi ibadah yang guru boleh tulis; quran_log
+      // & hafalan tetap read-only (dicatat/dinilai lewat alur lain).
       match /ibadah_daily/{id} {
-        allow read: if isGuru();
+        allow read, write: if isGuru();
       }
       match /quran_log/{id} {
         allow read: if isGuru();
@@ -117,12 +119,16 @@ service cloud.firestore {
     // Pengumpulan tugas siswa (id = "{taskId}_{studentId}"). Yang disimpan di
     // sini hanya METADATA + URL file; file-nya (foto/PDF) ada di Supabase.
     // Guru boleh membaca semua (memantau kelasnya); siswa hanya miliknya.
-    // Siswa hanya boleh menulis/menimpa pengumpulan atas namanya sendiri.
+    // Siswa membuat/menimpa pengumpulan atas namanya sendiri; guru hanya boleh
+    // update (dipakai untuk mengisi field `nilai` di halaman detail tugas),
+    // tidak boleh membuat pengumpulan atas nama siswa.
     match /class_submissions/{id} {
       allow read: if isGuru()
         || (request.auth != null && resource.data.studentId == request.auth.uid);
-      allow create, update: if request.auth != null
+      allow create: if request.auth != null
         && request.resource.data.studentId == request.auth.uid;
+      allow update: if isGuru()
+        || (request.auth != null && request.resource.data.studentId == request.auth.uid);
       allow delete: if isGuru()
         || (request.auth != null && resource.data.studentId == request.auth.uid);
     }

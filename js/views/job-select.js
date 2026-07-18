@@ -17,6 +17,24 @@
 // Mahasiswa", bukan "Pelajar/Mahasiswa") — tanpa spasi, browser tak selalu
 // mau memenggal baris tepat di garis miring, jadi di kartu sempit (HP kecil)
 // katanya malah terpotong paksa di tengah kata (mis. "Mahasis-wa").
+// Siswa/mahasiswa cuma boleh merangkap Freelance (kerja sampingan lepas jam
+// kuliah/sekolah) — pekerjaan tetap lain (Guru, Karyawan, dll.) dikunci selama
+// "Pelajar / Mahasiswa" masih terpilih. Dipakai job-select.js & profile.js
+// (_pekerjaanModal) supaya aturannya konsisten di kedua tempat.
+const JOB_STUDENT_KEY = 'pelajar';
+const JOB_STUDENT_ALLOWED_KEY = 'freelancer';
+// true = kartu ini harus dikunci/disabled karena "Pelajar / Mahasiswa" sedang terpilih.
+function jobIsLocked(key, selectedSet) {
+  return selectedSet.has(JOB_STUDENT_KEY) && key !== JOB_STUDENT_KEY && key !== JOB_STUDENT_ALLOWED_KEY;
+}
+// Dipanggil segera setelah "Pelajar / Mahasiswa" ditambahkan ke set terpilih —
+// melepas centang semua pekerjaan lain selain Freelance.
+function jobLockToStudent(selectedSet) {
+  if (!selectedSet.has(JOB_STUDENT_KEY)) return selectedSet;
+  [...selectedSet].forEach(k => { if (k !== JOB_STUDENT_KEY && k !== JOB_STUDENT_ALLOWED_KEY) selectedSet.delete(k); });
+  return selectedSet;
+}
+
 const JOBS = [
   { key: 'guru', ic: 'school-outline', tone: 'health', id: 'Guru', en: 'Teacher' },
   { key: 'entrepreneur', ic: 'trending-up-outline', tone: 'fin', id: 'Entrepreneur', en: 'Entrepreneur' },
@@ -31,6 +49,27 @@ const JOBS = [
   { key: 'pengemudi', ic: 'car-outline', tone: 'health', id: 'Pengemudi / Ojol', en: 'Driver' },
   { key: 'lainnya', ic: 'ellipsis-horizontal-outline', tone: 'fin', id: 'Dan lain-lain', en: 'Other', isNew: true }
 ];
+
+// Personalisasi ringan per pekerjaan — dipakai js/views/productivity.js (saran
+// kategori tugas & kebiasaan) dan js/views/dashboard.js (chip pekerjaan di
+// beranda), supaya Produktivitas tidak generik sama untuk semua orang seperti
+// sebelumnya, tanpa perlu bikin modul terpisah untuk tiap satu dari 12 pilihan.
+// `kategori`: saran datalist di form Tugas Baru (lihat Prod.openTaskModal).
+// `kebiasaan`: saran chip cepat-tambah di tab Kebiasaan (lihat Prod.renderHabits).
+const JOB_PRESETS = {
+  guru:          { kategori: ['Kelas', 'Koreksi', 'RPP'],              kebiasaan: [{ e: '📝', n: () => tr('Siapkan materi besok', 'Prepare tomorrow\'s material') }, { e: '✅', n: () => tr('Koreksi tugas siswa', 'Grade student work') }] },
+  entrepreneur:  { kategori: ['Usaha', 'Marketing', 'Investor'],        kebiasaan: [{ e: '💰', n: () => tr('Cek arus kas harian', 'Check daily cash flow') }, { e: '📊', n: () => tr('Tinjau target usaha', 'Review business targets') }] },
+  irt:           { kategori: ['Rumah', 'Belanja', 'Anak'],              kebiasaan: [{ e: '🍳', n: () => tr('Rencana menu harian', 'Plan daily menu') }, { e: '🧹', n: () => tr('Bersih-bersih rumah', 'Clean the house') }] },
+  pelajar:       { kategori: ['Kuliah', 'Tugas Kuliah', 'Organisasi'],  kebiasaan: [{ e: '📚', n: () => tr('Belajar 30 menit', 'Study for 30 minutes') }, { e: '📖', n: () => tr('Baca materi kuliah', 'Read course material') }] },
+  karyawan:      { kategori: ['Kerja', 'Meeting', 'Laporan'],           kebiasaan: [{ e: '📋', n: () => tr('Buat to-do besok', 'Plan tomorrow\'s to-do') }, { e: '📧', n: () => tr('Cek & balas email', 'Check & reply email') }] },
+  pns:           { kategori: ['Dinas', 'Laporan', 'Rapat'],             kebiasaan: [{ e: '📄', n: () => tr('Selesaikan laporan', 'Finish the report') }, { e: '🗂️', n: () => tr('Rapikan berkas', 'Organize files') }] },
+  nakes:         { kategori: ['Shift', 'Pasien', 'Jaga Malam'],         kebiasaan: [{ e: '💊', n: () => tr('Cek jadwal shift', 'Check shift schedule') }, { e: '🩺', n: () => tr('Update rekam pasien', 'Update patient records') }] },
+  freelancer:    { kategori: ['Klien', 'Invoice', 'Deadline'],          kebiasaan: [{ e: '🧾', n: () => tr('Kirim invoice', 'Send invoice') }, { e: '💼', n: () => tr('Follow up klien', 'Follow up with clients') }] },
+  'tani-nelayan':{ kategori: ['Panen', 'Bibit/Pakan', 'Hasil Jual'],    kebiasaan: [{ e: '🌾', n: () => tr('Cek kondisi lahan/laut', 'Check field/sea condition') }, { e: '💧', n: () => tr('Rawat tanaman/ternak', 'Tend crops/livestock') }] },
+  pedagang:      { kategori: ['Stok', 'Kas', 'Piutang'],                kebiasaan: [{ e: '📦', n: () => tr('Cek stok barang', 'Check inventory') }, { e: '💵', n: () => tr('Rekap kas harian', 'Recap daily cash') }] },
+  pengemudi:     { kategori: ['Setoran', 'Servis Kendaraan', 'Rute'],   kebiasaan: [{ e: '⛽', n: () => tr('Cek kondisi kendaraan', 'Check vehicle condition') }, { e: '💵', n: () => tr('Catat setoran harian', 'Log daily earnings') }] },
+  lainnya:       { kategori: [], kebiasaan: [] }
+};
 
 const JobSelectView = {
   _selected: null,   // Set<string> — key JOBS yang dipilih (di luar "lainnya"), state lokal sebelum disimpan
@@ -65,7 +104,7 @@ const JobSelectView = {
         </div>
         <div class="job-grid">
           ${KARTU.map(j => `
-            <div class="job-card ${this._selected.has(j.key) ? 'selected' : ''}" data-key="${j.key}">
+            <div class="job-card ${this._selected.has(j.key) ? 'selected' : ''} ${jobIsLocked(j.key, this._selected) ? 'disabled' : ''}" data-key="${j.key}">
               ${j.isNew ? `<span class="job-new">${tr('Baru', 'New')}</span>` : ''}
               <div class="job-ic" style="background:var(--${j.tone}-soft);color:var(--${j.tone});">
                 <ion-icon name="${j.ic}"></ion-icon>
@@ -73,6 +112,7 @@ const JobSelectView = {
               <div class="job-label">${tr(j.id, j.en)}</div>
             </div>`).join('')}
         </div>
+        ${this._selected.has(JOB_STUDENT_KEY) ? `<p class="job-lock-hint">${tr('Sebagai Pelajar / Mahasiswa, kamu hanya bisa menambah Freelancer sebagai pekerjaan kedua.', 'As a Student, you can only add Freelancer as a second job.')}</p>` : ''}
         <div class="field" style="max-width:420px;margin:22px auto 0;">
           <label>${tr('Pekerjaan lain (opsional)', 'Other job (optional)')}</label>
           <input type="text" class="input" id="jobCustomInput" maxlength="60" placeholder="${tr('mis. Programmer, Content Creator, dll.', 'e.g. Programmer, Content Creator, etc.')}" value="${esc(this._custom)}">
@@ -83,9 +123,15 @@ const JobSelectView = {
       </div>`;
 
     $$('.job-card').forEach(card => card.onclick = () => {
-      if (card.classList.contains('busy')) return;
+      if (card.classList.contains('busy') || card.classList.contains('disabled')) return;
       const key = card.dataset.key;
       this._selected.has(key) ? this._selected.delete(key) : this._selected.add(key);
+      if (key === JOB_STUDENT_KEY) {
+        // Barusan menyalakan/mematikan "Pelajar / Mahasiswa" — render ulang
+        // penuh supaya kartu lain langsung terkunci/terbuka sesuai aturan.
+        jobLockToStudent(this._selected);
+        return this.render(this._user);
+      }
       card.classList.toggle('selected');
     });
 

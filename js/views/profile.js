@@ -40,16 +40,23 @@ const Profile = {
     const selected = new Set(known);
     const KARTU = JOBS.filter(j => j.key !== 'lainnya');
 
+    // Kartu + hint kunci dirender ulang tiap kali "Pelajar / Mahasiswa"
+    // ditoggle, supaya aturan "cuma boleh + Freelancer" sinkron dengan
+    // job-select.js (lihat JOB_STUDENT_KEY di js/views/job-select.js).
+    const kartuHTML = () => `
+      <div class="job-grid" style="grid-template-columns:repeat(3,1fr);gap:10px;">
+        ${KARTU.map(j => `
+          <div class="job-card ${selected.has(j.key) ? 'selected' : ''} ${jobIsLocked(j.key, selected) ? 'disabled' : ''}" data-key="${j.key}" style="padding:16px 6px 12px;border-radius:16px;">
+            <div class="job-ic" style="width:42px;height:42px;background:var(--${j.tone}-soft);color:var(--${j.tone});"><ion-icon name="${j.ic}" style="font-size:1.2rem;"></ion-icon></div>
+            <div class="job-label" style="font-size:.72rem;padding:5px 8px;">${tr(j.id, j.en)}</div>
+          </div>`).join('')}
+      </div>
+      ${selected.has(JOB_STUDENT_KEY) ? `<p class="job-lock-hint">${tr('Sebagai Pelajar / Mahasiswa, kamu hanya bisa menambah Freelancer sebagai pekerjaan kedua.', 'As a Student, you can only add Freelancer as a second job.')}</p>` : ''}`;
+
     openModal({
       title: tr('Ubah Pekerjaan', 'Change Job'),
       body: `
-        <div class="job-grid" style="grid-template-columns:repeat(3,1fr);gap:10px;">
-          ${KARTU.map(j => `
-            <div class="job-card ${selected.has(j.key) ? 'selected' : ''}" data-key="${j.key}" style="padding:16px 6px 12px;border-radius:16px;">
-              <div class="job-ic" style="width:42px;height:42px;background:var(--${j.tone}-soft);color:var(--${j.tone});"><ion-icon name="${j.ic}" style="font-size:1.2rem;"></ion-icon></div>
-              <div class="job-label" style="font-size:.72rem;padding:5px 8px;">${tr(j.id, j.en)}</div>
-            </div>`).join('')}
-        </div>
+        <div id="mgKartu">${kartuHTML()}</div>
         <div class="field" style="margin-top:16px;">
           <label>${tr('Pekerjaan lain (opsional)', 'Other job (optional)')}</label>
           <input type="text" class="input" id="mgCustomJob" maxlength="60" placeholder="${tr('mis. Programmer, Content Creator, dll.', 'e.g. Programmer, Content Creator, etc.')}" value="${esc(custom)}">
@@ -58,11 +65,18 @@ const Profile = {
           <ion-icon name="checkmark"></ion-icon> ${tr('Simpan', 'Save')}
         </button>`,
       onMount: m => {
-        $$('.job-card', m).forEach(card => card.onclick = () => {
+        const bindKartu = () => $$('.job-card', m).forEach(card => card.onclick = () => {
+          if (card.classList.contains('disabled')) return;
           const key = card.dataset.key;
           selected.has(key) ? selected.delete(key) : selected.add(key);
+          if (key === JOB_STUDENT_KEY) {
+            jobLockToStudent(selected);
+            $('#mgKartu', m).innerHTML = kartuHTML();
+            return bindKartu();
+          }
           card.classList.toggle('selected');
         });
+        bindKartu();
         $('#mgSavePekerjaan', m).onclick = async () => {
           const customVal = $('#mgCustomJob', m).value.trim();
           const list = [...selected, ...(customVal ? [customVal] : [])];
@@ -70,6 +84,7 @@ const Profile = {
           await DB.updateUser({ pekerjaan: list[0], pekerjaanList: list });
           closeModal();
           toast(tr('Pekerjaan diperbarui ✅', 'Job updated ✅'));
+          App._syncJobNav?.();
           App.refresh();
         };
       }

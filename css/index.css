@@ -161,11 +161,14 @@ body {
   border-radius: var(--radius); box-shadow: var(--shadow);
 }
 .nav-mobile.open { display: flex; }
-.nav-mobile a {
+/* Selector langsung (>) — bukan descendant biasa — supaya tidak ikut menimpa
+   warna tombol .btn-grad/.btn-ghost di dalam .nm-cta (anak tak langsung),
+   yang warnanya sendiri sudah diatur oleh .btn-grad/.btn-ghost (mis. putih). */
+.nav-mobile > a {
   padding: 11px 14px; border-radius: 12px;
   color: var(--text-2); text-decoration: none; font-weight: 600; font-size: .92rem;
 }
-.nav-mobile a:hover { background: var(--bg); color: var(--brand-dark); }
+.nav-mobile > a:hover { background: var(--bg); color: var(--brand-dark); }
 .nav-mobile .nm-cta { display: flex; gap: 10px; margin-top: 10px; }
 .nav-mobile .nm-cta .btn { flex: 1; }
 

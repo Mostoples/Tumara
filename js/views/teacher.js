@@ -1324,8 +1324,8 @@ const Teacher = {
             <button class="btn btn-sm" id="printHadir" style="margin-bottom:1px;">
               <ion-icon name="grid-outline"></ion-icon> ${tr('PDF Daftar Hadir', 'Attendance PDF')}
             </button>` : ''}
-          <span class="hd-hint">${tr('Memakai bulan ini: jurnal tercetak 31 baris tanggal; daftar hadir memakai kolom tanggal 1-31 untuk mapel yang kamu ampu (kosong di tanggal tanpa pertemuan) + blok tanda tangan.',
-                                      "Uses this month: the journal prints 31 date rows; the attendance sheet uses date columns 1-31 for your subject (blank on dates without a meeting) + a signature block.")}</span>
+          <span class="hd-hint">${tr('Memakai bulan ini: jurnal tercetak satu baris per pertemuan yang sudah diisi (plus beberapa baris kosong untuk ditulis tangan); daftar hadir memakai kolom tanggal 1-31 untuk mapel yang kamu ampu (kosong di tanggal tanpa pertemuan) + blok tanda tangan.',
+                                      "Uses this month: the journal prints one row per meeting already entered (plus a few blank rows for handwriting); the attendance sheet uses date columns 1-31 for your subject (blank on dates without a meeting) + a signature block.")}</span>
         </div>` : ''}
 
       <div class="ts-note">
@@ -1397,13 +1397,14 @@ const Teacher = {
     // Kelas, lalu tabel per pertemuan. Kolom Ketercapaian & Tanda Tangan sengaja
     // dibiarkan kosong — diisi tangan setelah dicetak, seperti form aslinya.
     $('#printJurnal', el) && ($('#printJurnal', el).onclick = () => {
-      /* Formnya selalu berisi 31 baris tanggal — satu baris untuk tiap tanggal
-         di bulan yang dipilih, bukan hanya tanggal yang sudah ada jurnalnya.
-         Guru mungkin mengajar seminggu sekali, jadi sisa barisnya dibiarkan
-         kosong dan bisa diisi tangan setelah dicetak. */
+      /* Satu baris per jurnal yang sudah diisi (bukan satu baris per tanggal
+         kalender) — persis seperti buku jurnal kertas: tiap kali guru mengisi
+         satu pertemuan, itu langsung jadi satu baris berikutnya. Beberapa baris
+         kosong ditambahkan di akhir untuk pertemuan lain di bulan itu yang mau
+         ditulis tangan. */
       const bulan = this.hadirBulan || todayStr().slice(0, 7);
       const [thn, bln] = bulan.split('-').map(Number);
-      const jmlHari = new Date(thn, bln, 0).getDate();   // 28–31: batas tanggal nyata
+      const jsBulan = jurnalUrut().filter(j => (j.tanggal || '').slice(0, 7) === bulan);
 
       const kop = Kop.html({
         judul: tr('JURNAL GURU', 'TEACHING JOURNAL'),
@@ -1417,54 +1418,59 @@ const Teacher = {
       // Lebar kolom dikunci: uraian materi mendapat porsi terbesar (seperti form
       // aslinya), kolom angka dibuat sempit agar tidak memakan ruang.
       const cols = `<colgroup>
-        <col style="width:5%"><col style="width:17%"><col style="width:7%"><col style="width:34%">
-        <col style="width:9%"><col style="width:8%"><col style="width:9%"><col style="width:11%">
+        <col style="width:4%"><col style="width:13%"><col style="width:6%"><col style="width:27%">
+        <col style="width:8%"><col style="width:7%"><col style="width:7%"><col style="width:11%"><col style="width:17%">
       </colgroup>`;
       const th = `<tr>
-        <th>${tr('Tgl', 'Date')}</th>
+        <th>${tr('No', 'No')}</th>
         <th>${tr('Hari, tanggal', 'Day, date')}</th>
-        <th>${tr('Pert. ke', 'Meeting')}</th>
-        <th>${tr('Judul / Materi & Kegiatan', 'Title / Material & Activities')}</th>
+        <th>${tr('Jam Ke', 'Period')}</th>
+        <th>${tr('Standar Kompetensi / Kompetensi Dasar / Elemen / CP / Uraian Singkat', 'Standard/Basic Competency / Element / CP / Brief Description')}</th>
         <th>${tr('Jumlah Siswa', 'Total')}</th>
         <th>${tr('Hadir', 'Present')}</th>
         <th>${tr('Tidak Hadir', 'Absent')}</th>
-        <th>${tr('Ket. / Tanda Tangan', 'Notes / Signature')}</th>
+        <th>${tr('Prosentase Ketercapaian', 'Achievement %')}</th>
+        <th>${tr('Ket. / Tanda Tangan Siswa', 'Notes / Student Signature')}</th>
       </tr>`;
 
-      const body = Array.from({ length: 31 }, (_, i) => {
-        const d = i + 1;
-        // Tanggal yang tidak ada di bulan ini (mis. 30–31 Februari) tetap dicetak
-        // agar barisnya selalu 31, tapi diarsir supaya tak terisi keliru.
-        if (d > jmlHari) {
-          return `<tr class="jr-off"><td class="center">${d}</td><td colspan="7"></td></tr>`;
-        }
-        const iso = `${bulan}-${String(d).padStart(2, '0')}`;
-        // Satu tanggal bisa punya lebih dari satu jurnal (mengajar 2 jam berbeda).
-        const js = jurnalUrut().filter(j => j.tanggal === iso);
-        const gab = (f) => js.map(f).filter(v => v !== '' && v != null).join('<br>');
-        const tidakHadir = j => (j.hadir != null && jmlSiswa ? Math.max(0, jmlSiswa - j.hadir) : null);
-        return `<tr>
-          <td class="center">${d}</td>
-          <td class="nowrap">${fmtDate(iso, { weekday: true })}</td>
-          <td class="center">${gab(j => j.pertemuan ?? '')}</td>
-          <td>${js.map(j => `<b>${esc(j.judul || '')}</b>${j.materi ? `<div style="white-space:pre-wrap;">${esc(j.materi)}</div>` : ''}`).join('<hr>')}</td>
-          <td class="center">${js.length ? (jmlSiswa || '') : ''}</td>
-          <td class="center">${gab(j => j.hadir ?? '')}</td>
-          <td class="center">${gab(j => tidakHadir(j) ?? '')}</td>
+      const tidakHadir = j => (j.hadir != null && jmlSiswa ? Math.max(0, jmlSiswa - j.hadir) : '');
+      const isiRows = jsBulan.map((j, i) => `<tr>
+          <td class="center">${i + 1}</td>
+          <td class="nowrap">${j.tanggal ? fmtDate(j.tanggal, { weekday: true }) : ''}</td>
+          <td class="center">${j.pertemuan ?? ''}</td>
+          <td><b>${esc(j.judul || '')}</b>${j.materi ? `<div style="white-space:pre-wrap;">${esc(j.materi)}</div>` : ''}</td>
+          <td class="center">${jmlSiswa || ''}</td>
+          <td class="center">${j.hadir ?? ''}</td>
+          <td class="center">${tidakHadir(j)}</td>
           <td></td>
-        </tr>`;
-      }).join('');
+          <td></td>
+        </tr>`).join('');
+      // Baris kosong tambahan di akhir — supaya guru masih bisa menulis tangan
+      // pertemuan lain di bulan itu tanpa perlu cetak ulang. Sel dipisah satu
+      // per kolom (BUKAN colspan) supaya sekat & lebar kolomnya sama persis
+      // dengan baris terisi di atasnya, cuma tanpa isi.
+      const BARIS_KOSONG = 8;
+      const kosongRows = Array.from({ length: BARIS_KOSONG }, (_, i) => `<tr>
+          <td class="center">${jsBulan.length + i + 1}</td>
+          <td></td>
+          <td></td>
+          <td></td>
+          <td></td>
+          <td></td>
+          <td></td>
+          <td></td>
+          <td></td>
+        </tr>`).join('');
 
       printHTML(`Jurnal ${activeCls?.nama || ''} ${bulan}`, `
         <style>
-          /* Baris tanggal dibuat cukup tinggi supaya bisa ditulisi tangan. */
+          /* Baris dibuat cukup tinggi supaya bisa ditulisi tangan. */
           table td{height:26px;}
-          .jr-off td{background:#eaeaea;-webkit-print-color-adjust:exact;print-color-adjust:exact;}
         </style>
-        ${kop}<table>${cols}<thead>${th}</thead><tbody>${body}</tbody></table>
+        ${kop}<table style="table-layout:fixed;">${cols}<thead>${th}</thead><tbody>${isiRows}${kosongRows}</tbody></table>
         <p class="muted" style="margin-top:8px;">
-          ${tr('Baris kosong = belum ada jurnal pada tanggal itu (boleh diisi tangan). Kotak berarsir = tanggal yang tidak ada di bulan ini.',
-               'An empty row = no journal on that date (may be filled in by hand). Shaded boxes = dates that do not exist in this month.')}
+          ${tr('Baris kosong di bagian bawah bisa diisi tangan untuk pertemuan lain di bulan ini.',
+               'The blank rows at the bottom may be filled in by hand for other meetings this month.')}
         </p>`);
     });
 
@@ -2072,15 +2078,21 @@ const Teacher = {
     const tasks = (await DB.gListWhere('class_tasks', 'classId', this.classId))
       .sort((a, b) => prioUrut(a.prioritas) - prioUrut(b.prioritas)
                    || (a.tenggat || '9999-99-99').localeCompare(b.tenggat || '9999-99-99'));
-    // Sekali baca semua pengumpulan kelas ini → hitung jumlah per tugas.
+    // Sekali baca semua pengumpulan kelas ini → hitung jumlah per tugas + yang sudah dinilai.
     const subs = await DB.gListWhere('class_submissions', 'classId', this.classId);
-    const subCount = {};
-    subs.forEach(s => { subCount[s.taskId] = (subCount[s.taskId] || 0) + 1; });
+    const subCount = {}, gradedCount = {};
+    subs.forEach(s => {
+      subCount[s.taskId] = (subCount[s.taskId] || 0) + 1;
+      if (s.nilai !== undefined && s.nilai !== null && s.nilai !== '') gradedCount[s.taskId] = (gradedCount[s.taskId] || 0) + 1;
+    });
 
     // Halaman DETAIL tugas (bukan modal) — dibuka dengan mengetuk item tugas.
     if (this.detailTaskId) {
       const dt = tasks.find(x => x.id === this.detailTaskId);
-      if (dt) return this._renderTugasDetail(el, activeCls, dt, subs.filter(s => s.taskId === dt.id));
+      if (dt) {
+        const students = await this._students(this.classId);
+        return this._renderTugasDetail(el, activeCls, dt, subs.filter(s => s.taskId === dt.id), students);
+      }
       this.detailTaskId = null; this._saveDetail();   // tugas sudah tidak ada → jatuh ke daftar
     }
 
@@ -2104,6 +2116,7 @@ const Teacher = {
                   ${prioBadge(t.prioritas)}
                   ${nAtt ? `<span class="badge badge-gray"><ion-icon name="attach-outline"></ion-icon> ${tr('Lampiran', 'Attachment')} (${nAtt})</span>` : ''}
                   <span class="badge badge-gray"><ion-icon name="documents-outline"></ion-icon> ${tr('Pengumpulan', 'Submissions')} (${subCount[t.id] || 0})</span>
+                  ${subCount[t.id] ? `<span class="badge badge-green"><ion-icon name="checkmark-done-outline"></ion-icon> ${tr('Dinilai', 'Graded')} (${gradedCount[t.id] || 0}/${subCount[t.id]})</span>` : ''}
                   ${t.guruNama ? `<span style="font-size:.72rem;color:var(--text-3);">${esc(t.guruNama)}</span>` : ''}
                 </div>
                 <div style="font-size:.72rem;color:var(--prod);margin-top:5px;font-weight:600;"><ion-icon name="eye-outline" style="vertical-align:-2px;"></ion-icon> ${tr('Ketuk untuk lihat detail & pengumpulan', 'Tap to view detail & submissions')}</div>
@@ -2139,10 +2152,17 @@ const Teacher = {
   // Halaman guru: detail tugas + daftar pengumpulan siswa dengan preview foto.
   // Dirender sebagai HALAMAN (bukan modal) di dalam tab Tugas Kelas; keluar
   // lewat tombol "Kembali" yang mengosongkan detailTaskId.
-  _renderTugasDetail(el, cls, t, subs) {
+  _renderTugasDetail(el, cls, t, subs, students = []) {
     const rows = subs.slice().sort((a, b) => (a.studentNama || '').localeCompare(b.studentNama || ''));
     const owner = t.guruId === DB.user.id;
     const atts = taskAttachments(t);
+    // Laporan pengumpulan: siapa saja sudah/belum, dibandingkan dengan roster kelas —
+    // bukan cuma daftar yang sudah mengumpulkan (client minta lihat siapa yang BELUM juga).
+    const subByStudent = new Map(subs.map(s => [s.studentId, s]));
+    const belum = students.filter(s => !subByStudent.has(s.id))
+      .sort((a, b) => (a.nama || '').localeCompare(b.nama || ''));
+    const sudah = students.filter(s => subByStudent.has(s.id))
+      .sort((a, b) => (a.nama || '').localeCompare(b.nama || ''));
     const infoBadges = [
       t.mapel ? `<span class="badge badge-purple">${esc(t.mapel)}</span>` : '',
       t.tenggat ? `<span class="badge badge-gray"><ion-icon name="calendar-outline"></ion-icon> ${fmtDate(t.tenggat, { short: true })}</span>` : '',
@@ -2175,10 +2195,20 @@ const Teacher = {
             : `<img src="${esc(a.url)}" data-viewsrc="${esc(a.url)}" loading="lazy" style="max-height:220px;max-width:100%;width:auto;height:auto;align-self:flex-start;object-fit:contain;border-radius:10px;border:1px solid var(--border);cursor:zoom-in;display:block;">`).join('')}
         </div>` : ''}
 
-      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;margin-bottom:12px;">
         <div style="font-weight:700;font-size:1rem;"><ion-icon name="documents-outline" style="vertical-align:-2px;"></ion-icon> ${tr('Pengumpulan', 'Submissions')}</div>
-        <span class="badge badge-gray">${rows.length}</span>
+        <div style="display:flex;align-items:center;gap:8px;">
+          <span class="badge badge-gray">${students.length ? `${rows.length}/${students.length}` : rows.length}</span>
+          ${students.length ? `<button class="btn btn-sm" id="dtPrintLaporan"><ion-icon name="print-outline"></ion-icon> ${tr('Cetak Laporan', 'Print Report')}</button>` : ''}
+        </div>
       </div>
+
+      ${students.length ? `
+        <div style="font-size:.78rem;color:var(--text-3);margin-bottom:14px;font-weight:600;">
+          ${belum.length
+            ? tr(`Belum mengumpulkan (${belum.length}): `, `Not yet submitted (${belum.length}): `) + belum.map(s => esc(s.nama)).join(', ')
+            : tr('Semua siswa sudah mengumpulkan 🎉', 'All students have submitted 🎉')}
+        </div>` : ''}
 
       ${rows.length ? `
         <div style="display:flex;flex-direction:column;gap:12px;">
@@ -2191,11 +2221,15 @@ const Teacher = {
                   <div style="font-size:.72rem;color:var(--text-3);">${tr(`${fs.length} file`, `${fs.length} file(s)`)}${s.submittedAt ? ' · ' + fmtDate(s.submittedAt, { short: true }) : ''}</div>
                 </div>
               </div>
-              <div style="display:flex;flex-direction:column;gap:8px;">
+              <div style="display:flex;flex-direction:column;gap:8px;margin-bottom:10px;">
                 ${fs.map(f => f.isPdf
                   ? `<a href="${esc(f.url)}" target="_blank" rel="noopener" class="btn btn-ghost btn-sm btn-block"><ion-icon name="document-text-outline"></ion-icon> ${esc(f.name || 'PDF')}</a>`
                   : `<img src="${esc(f.url)}" data-viewsrc="${esc(f.url)}" loading="lazy" style="width:100%;max-height:320px;object-fit:contain;border-radius:8px;background:var(--bg-2);cursor:zoom-in;display:block;">`).join('')}
               </div>
+              <label style="display:flex;align-items:center;gap:8px;font-size:.78rem;color:var(--text-3);font-weight:600;">
+                ${tr('Nilai', 'Grade')}
+                <input class="input nilai-input" type="number" min="0" max="100" data-sub="${s.id}" value="${s.nilai ?? ''}" placeholder="—" style="width:80px;">
+              </label>
             </div>`; }).join('')}
         </div>` : `
         <div class="card empty-state"><ion-icon name="documents-outline"></ion-icon>
@@ -2205,6 +2239,39 @@ const Teacher = {
 
     $('#tBackTugas', el).onclick = () => { this.detailTaskId = null; this._saveDetail(); this.render(this._el); };
     $$('[data-viewsrc]', el).forEach(im => im.onclick = () => openImageViewer(im.dataset.viewsrc));
+
+    // Nilai per pengumpulan → simpan (debounce), sama seperti pola di tab Penilaian.
+    let nilaiT;
+    $$('.nilai-input', el).forEach(inp => inp.oninput = () => {
+      let val = inp.value === '' ? '' : clamp(+inp.value, 0, 100);
+      if (val !== '' && String(val) !== inp.value) inp.value = val;
+      clearTimeout(nilaiT);
+      nilaiT = setTimeout(() => DB.gUpdate('class_submissions', inp.dataset.sub, { nilai: val === '' ? null : val }), 400);
+    });
+    $('#dtPrintLaporan', el) && ($('#dtPrintLaporan', el).onclick = () => {
+      const roster = students.slice().sort((a, b) => (a.nama || '').localeCompare(b.nama || ''));
+      const body = roster.map((s, i) => {
+        const sub = subByStudent.get(s.id);
+        return `<tr>
+          <td class="center">${i + 1}</td>
+          <td>${esc(s.nama || '')}</td>
+          <td class="center nowrap">${esc(s.nis || '-')}</td>
+          <td class="center">${sub ? tr('Sudah', 'Submitted') : tr('Belum', 'Not yet')}</td>
+          <td class="center nowrap">${sub?.submittedAt ? fmtDate(sub.submittedAt, { short: true }) : '-'}</td>
+        </tr>`;
+      }).join('');
+      printHTML(`${tr('Laporan Pengumpulan', 'Submission Report')} — ${t.judul}`, `
+        <h1 style="text-align:center;font-size:16px;">${tr('LAPORAN PENGUMPULAN TUGAS', 'TASK SUBMISSION REPORT')}</h1>
+        <div class="sub" style="text-align:center;font-size:11px;color:#333;margin-bottom:4px;">${esc(t.judul)}${t.mapel ? ' · ' + esc(t.mapel) : ''}</div>
+        <div class="sub" style="text-align:center;font-size:11px;color:#333;margin-bottom:10px;">${esc(cls?.nama || '')}${t.tenggat ? ' · ' + tr('Tenggat', 'Due') + ': ' + fmtDate(t.tenggat, { short: true }) : ''}</div>
+        <p class="muted" style="margin-bottom:8px;"><b>${tr('Rekap', 'Summary')}:</b> ${tr('Sudah mengumpulkan', 'Submitted')} ${sudah.length} · ${tr('Belum mengumpulkan', 'Not yet')} ${belum.length} · ${tr('Total', 'Total')} ${students.length} ${tr('siswa', 'students')}</p>
+        <table>
+          <thead><tr>
+            <th style="width:6%;">No</th><th>${tr('Nama Siswa', 'Student Name')}</th><th style="width:14%;">NIS</th><th style="width:14%;">${tr('Status', 'Status')}</th><th style="width:20%;">${tr('Waktu Kumpul', 'Submitted At')}</th>
+          </tr></thead>
+          <tbody>${body}</tbody>
+        </table>`);
+    });
     if (owner) {
       $('#dtEdit', el).onclick = () => this._tugasKelasModal(t);
       $('#dtDel', el).onclick = async () => {
@@ -2728,6 +2795,10 @@ const Teacher = {
         <div class="card empty-state"><ion-icon name="people-outline"></ion-icon>
           <div class="es-title">${tr('Kelas ini belum punya siswa', 'This class has no students')}</div>
         </div>` : `
+        <div class="disclaimer" style="margin-bottom:14px;"><ion-icon name="information-circle"></ion-icon><span>${tr(
+          'Ibadah dicentang mandiri oleh siswa lewat app-nya sendiri. Guru cuma memantau — tapi bisa mengoreksi dengan mengetuk tombol "Ikut/Belum" di tabel bila siswa lupa mencentang.',
+          'Worship is checked off by students themselves in their own app. Teachers only monitor — but can correct it by tapping the "Yes/No" button in the table if a student forgot to check it.')}</span></div>
+
         <div class="ib-ringkas" id="ibRingkas"></div>
 
         <div class="table-wrap" style="margin-top:14px;">
@@ -2760,6 +2831,9 @@ const Teacher = {
           ${Kop.btnHTML('kopIbadah')}
           <span class="hd-hint">${tr('Berapa siswa ikut & tidak ikut Dhuha/Dzuhur, per tanggal, lengkap dengan persentasenya.',
                                       'How many students joined or missed Dhuha/Dhuhr, per date, with percentages.')}</span>
+        </div>
+        <div class="table-wrap" id="ibadahBulananWrap" style="margin-top:14px;">
+          <div class="portal-loading"><div class="spinner"></div></div>
         </div>`}
     `;
 
@@ -2771,6 +2845,7 @@ const Teacher = {
     }
     $('#ibBulan', el) && ($('#ibBulan', el).onchange = e => {
       this.ibadahBulan = e.target.value || todayStr().slice(0, 7);
+      this.render(this._el);
     });
     $('#printIbadah', el) && ($('#printIbadah', el).onclick = () => this._printRekapIbadah(activeCls, students));
     $('#csvIbadah', el) && ($('#csvIbadah', el).onclick = () => this._csvRekapIbadah(activeCls, students));
@@ -2779,6 +2854,7 @@ const Teacher = {
     if (students.length) {
       // Muat data pertama kali
       await this._loadStudentsIbadahData(students, this.ibadahDate);
+      this._loadIbadahBulananTable(students, this.ibadahBulan);
 
       // Auto-refresh polling setiap 10 detik untuk update real-time
       this._ibadahPollTimer = setInterval(async () => {
@@ -2821,6 +2897,16 @@ const Teacher = {
     return daily.find(d => d.tanggal === tanggal)?.done || {};
   },
 
+  // Guru mengoreksi/menandai ibadah siswa (mis. lupa mencentang sendiri di app-nya).
+  // Baca status terkini dulu supaya toggle tidak menimpa ibadah lain di tanggal
+  // yang sama (Dhuha vs Dzuhur tersimpan dalam satu map `done`).
+  async _toggleIbadahGuru(studentUid, key, tanggal) {
+    const done = await this._ibadahSiswa(studentUid, tanggal);
+    done[key] = !done[key];
+    await DB.setStudentData(studentUid, 'ibadah_daily', tanggal, { tanggal, done });
+    toast(done[key] ? tr('Ditandai ikut ✅', 'Marked as attended ✅') : tr('Ditandai belum ikut.', 'Marked as not attended.'));
+  },
+
   async _loadStudentsIbadahData(students, tanggal) {
     const listHtml = [];
     const csvRows = [[tr('No', 'No'), tr('Nama', 'Name'), 'NIS',
@@ -2846,9 +2932,12 @@ const Teacher = {
 
       this.IBADAH.forEach(ib => { if (done[ib.key]) ikut[ib.key]++; });
 
-      const sel = ib => done[ib.key]
-        ? `<span class="ib-ya"><ion-icon name="checkmark-circle"></ion-icon> ${tr('Ikut', 'Yes')}</span>`
-        : `<span class="ib-tidak"><ion-icon name="close-circle"></ion-icon> ${tr('Belum', 'No')}</span>`;
+      // Tombol (bukan span statis) — guru bisa mengoreksi langsung di sini bila
+      // siswa lupa mencentang sendiri di app-nya. Klik = toggle & simpan seketika.
+      const sel = ib => `<button type="button" class="ib-toggle-btn ${done[ib.key] ? 'ib-ya' : 'ib-tidak'}"
+          data-toggle-ib="${s.userId || s.id}" data-ib-key="${ib.key}">
+          <ion-icon name="${done[ib.key] ? 'checkmark-circle' : 'close-circle'}"></ion-icon> ${done[ib.key] ? tr('Ikut', 'Yes') : tr('Belum', 'No')}
+        </button>`;
 
       listHtml.push(`
         <tr>
@@ -2908,6 +2997,23 @@ const Teacher = {
       document.querySelectorAll('[data-detailib]').forEach(b => {
         b.onclick = () => this._detailIbadahModal(b.dataset.detailib, b.dataset.sname, tanggal);
       });
+
+      // Koreksi manual guru — klik tombol Ikut/Belum untuk membalik status
+      // siswa pada tanggal yang sedang dipantau (mis. siswa lupa mencentang sendiri).
+      document.querySelectorAll('[data-toggle-ib]').forEach(b => {
+        b.onclick = async () => {
+          if (b.disabled) return;
+          b.disabled = true;
+          try {
+            await this._toggleIbadahGuru(b.dataset.toggleIb, b.dataset.ibKey, tanggal);
+            await this._loadStudentsIbadahData(students, tanggal);
+            this._loadIbadahBulananTable(students, this.ibadahBulan);
+          } catch (err) {
+            b.disabled = false;
+            toast(err.message || tr('Gagal menyimpan.', 'Failed to save.'), 'error');
+          }
+        };
+      });
     }
 
     const exp = document.getElementById('exportIbadah');
@@ -2941,6 +3047,63 @@ const Teacher = {
       } catch (_) { /* siswa tanpa data → kotaknya kosong */ }
     }
     return { thn, bln, jmlHari, hari, nyata, data };
+  },
+
+  // Rekap bulanan LANGSUNG DI LAYAR (bukan cuma lewat PDF) — kolom tanggal 1-31
+  // seperti daftar hadir, 2 baris per siswa (Dhuha & Dzuhur), persentase di akhir.
+  async _loadIbadahBulananTable(students, bulan) {
+    const wrap = document.getElementById('ibadahBulananWrap');
+    if (!wrap) return;
+    if (!students.length) { wrap.innerHTML = ''; return; }
+
+    const { thn, bln, hari, nyata, data } = await this._rekapIbadah(students, bulan);
+    const hariSekolah = hari.filter(d => nyata(d) && students.some(s => data[s.id][d]));
+    const hariIni = todayStr();
+    const isToday = d => nyata(d) && `${bulan}-${String(d).padStart(2, '0')}` === hariIni;
+    const isLibur = d => nyata(d) && new Date(thn, bln - 1, d).getDay() === 0;
+
+    const rekap = (sid, key) => {
+      if (!hariSekolah.length) return null;
+      const ya = hariSekolah.filter(d => data[sid][d]?.[key]).length;
+      return { ya, n: hariSekolah.length, pct: Math.round(ya / hariSekolah.length * 100) };
+    };
+
+    const body = students.map((s, i) => this.IBADAH.map((ib, k) => {
+      const r = rekap(s.id, ib.key);
+      return `<tr>
+        ${k === 0 ? `
+          <td class="center" rowspan="2">${i + 1}</td>
+          <td class="ib-month-nama" rowspan="2">${esc(s.nama)}</td>` : ''}
+        <td class="ib-month-lb">${ib.emoji} ${tr(ib.id, ib.en)}</td>
+        ${hari.map(d => {
+          if (!nyata(d)) return `<td class="ib-month-off"></td>`;
+          const rec = data[s.id][d];
+          const v = rec ? (rec[ib.key] ? '✓' : '✗') : '';
+          const cls = v === '✓' ? 'ib-month-yes' : v === '✗' ? 'ib-month-no' : '';
+          return `<td class="${cls}${isLibur(d) ? ' ib-month-libur' : ''}${isToday(d) ? ' ib-col-today' : ''}">${v}</td>`;
+        }).join('')}
+        <td class="center ib-month-pct">${r ? `${r.pct}%<div style="font-size:.6rem;font-weight:500;color:var(--text-3);">${r.ya}/${r.n}</div>` : '–'}</td>
+      </tr>`;
+    }).join('')).join('');
+
+    wrap.innerHTML = `
+      <table class="data-table ib-month-table">
+        <thead>
+          <tr>
+            <th rowspan="2">No</th>
+            <th rowspan="2">${tr('Nama', 'Name')}</th>
+            <th rowspan="2">${tr('Ibadah', 'Worship')}</th>
+            <th colspan="${hari.length}">${tr('Tanggal', 'Date')}</th>
+            <th rowspan="2">%</th>
+          </tr>
+          <tr>${hari.map(d => `<th class="${!nyata(d) ? 'ib-month-off' : isLibur(d) ? 'ib-month-libur' : ''}${isToday(d) ? ' ib-col-today' : ''}">${nyata(d) ? d : ''}</th>`).join('')}</tr>
+        </thead>
+        <tbody>${body}</tbody>
+      </table>
+      <div style="font-size:.72rem;color:var(--text-3);padding:8px 10px;">
+        ${tr(`✓ = ikut · ✗ = tidak ikut · kotak kosong = belum ada catatan. Persentase dihitung dari ${hariSekolah.length} hari sekolah bulan ini (hari yang ada catatannya).`,
+             `✓ = attended · ✗ = missed · empty box = no record yet. Percentages are based on the ${hariSekolah.length} school days this month (days with records).`)}
+      </div>`;
   },
 
   async _printRekapIbadah(cls, students) {

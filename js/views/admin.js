@@ -57,8 +57,13 @@ const AdminView = {
       return;
     }
 
-    const counts = { admin: 0, guru: 0, siswa: 0 };
-    users.forEach(u => { counts[u.role || 'siswa'] = (counts[u.role || 'siswa'] || 0) + 1; });
+    // Siswa alumni dihitung terpisah dari siswa aktif (bukan dobel-hitung).
+    const counts = { admin: 0, guru: 0, siswa: 0, alumni: 0 };
+    users.forEach(u => {
+      const key = (u.role || 'siswa') === 'siswa' && u.alumni ? 'alumni' : (u.role || 'siswa');
+      counts[key] = (counts[key] || 0) + 1;
+    });
+    const eligibleAlumni = users.filter(u => this._alumniEligible(u));
 
     el.innerHTML = `
       ${this._switcher()}
@@ -67,14 +72,19 @@ const AdminView = {
           <h1>${tr('Kelola Akun', 'Manage Accounts')}</h1>
           <p>${tr('Buat & atur akun guru dan siswa sekolahmu.', 'Create & manage teacher and student accounts.')}</p>
         </div>
-        <button class="btn btn-primary" id="addUser"><ion-icon name="person-add-outline"></ion-icon> ${tr('Buat Akun', 'Create Account')}</button>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;">
+          <button class="btn" id="resetAlumni" title="${tr('Cek siswa yang sudah genap 1 tahun sejak angkatannya, lalu tandai mereka Alumni', 'Check students who have reached 1 year since their intake, then mark them Alumni')}">
+            <ion-icon name="school-outline"></ion-icon> ${tr('Proses Alumni', 'Process Alumni')}${eligibleAlumni.length ? ` <span class="badge badge-amber">${eligibleAlumni.length}</span>` : ''}
+          </button>
+          <button class="btn btn-primary" id="addUser"><ion-icon name="person-add-outline"></ion-icon> ${tr('Buat Akun', 'Create Account')}</button>
+        </div>
       </div>
 
       <div class="grid grid-4 stat-grid">
         <div class="card stat-mini"><div class="sm-num">${users.length}</div><div class="sm-label">${tr('Total Akun', 'Total Accounts')}</div></div>
         <div class="card stat-mini"><div class="sm-num" style="color:var(--prod)">${counts.admin || 0}</div><div class="sm-label">Admin</div></div>
         <div class="card stat-mini"><div class="sm-num" style="color:var(--brand)">${counts.guru || 0}</div><div class="sm-label">${tr('Guru', 'Teachers')}</div></div>
-        <div class="card stat-mini"><div class="sm-num" style="color:var(--info)">${counts.siswa || 0}</div><div class="sm-label">${tr('Siswa', 'Students')}</div></div>
+        <div class="card stat-mini"><div class="sm-num" style="color:var(--info)">${counts.siswa || 0}</div><div class="sm-label">${tr('Siswa Aktif', 'Active Students')}</div></div>
       </div>
 
       <div style="display:flex;gap:10px;margin:20px 0 16px;flex-wrap:wrap;align-items:center;">
@@ -83,7 +93,7 @@ const AdminView = {
           <button class="suffix-btn"><ion-icon name="search-outline"></ion-icon></button>
         </div>
         <div style="display:flex;gap:8px;flex-wrap:wrap;">
-          ${['all', 'guru', 'siswa', 'admin'].map(f => `<button class="chip ${this.filter === f ? 'active' : ''}" data-filter="${f}">${f === 'all' ? tr('Semua', 'All') : roleLabel(f)}</button>`).join('')}
+          ${['all', 'guru', 'siswa', 'alumni', 'admin'].map(f => `<button class="chip ${this.filter === f ? 'active' : ''}" data-filter="${f}">${f === 'all' ? tr('Semua', 'All') : f === 'alumni' ? `${tr('Alumni', 'Alumni')} (${counts.alumni || 0})` : roleLabel(f)}</button>`).join('')}
         </div>
       </div>
 
@@ -91,6 +101,7 @@ const AdminView = {
 
     this._bindSwitcher(el);
     $('#addUser', el).onclick = () => this._userModal();
+    $('#resetAlumni', el).onclick = () => this._prosesAlumniModal(el);
 
     /* Mencari TIDAK me-render ulang halaman: kotak search-nya sendiri tak
        disentuh, jadi fokus & kursor tetap di tempat (dulu input-nya ikut
@@ -140,10 +151,16 @@ const AdminView = {
   },
 
   // Menyaring akun sesuai kotak pencarian + chip peran (dari data di memori).
+  // Chip 'siswa' = siswa AKTIF saja (alumni disembunyikan); chip 'alumni' =
+  // kebalikannya. Keduanya bukan role Firestore sungguhan — alumni tetap
+  // role:'siswa', cuma ditandai field `alumni`.
   _filterUsers() {
     const q = this.query.trim().toLowerCase();
     const shown = (this._users || []).filter(u => {
-      if (this.filter !== 'all' && (u.role || 'siswa') !== this.filter) return false;
+      const role = u.role || 'siswa';
+      if (this.filter === 'alumni') { if (!(role === 'siswa' && u.alumni)) return false; }
+      else if (this.filter === 'siswa') { if (role !== 'siswa' || u.alumni) return false; }
+      else if (this.filter !== 'all' && role !== this.filter) return false;
       if (!q) return true;
       return (u.nama || '').toLowerCase().includes(q) || (u.email || '').toLowerCase().includes(q)
         || (u.nis || '').toLowerCase().includes(q)
@@ -156,13 +173,43 @@ const AdminView = {
     });
   },
 
+  // Tombol "Proses Alumni": cari siswa yang genap 1 tahun sejak angkatannya
+  // (_alumniEligible), lalu — setelah admin konfirmasi — tandai semuanya
+  // `alumni:true` sekaligus. Akun & datanya TETAP ADA (tidak dihapus), cuma
+  // disembunyikan dari roster aktif (listStudents/listStudentsByClass) dan
+  // baru kelihatan lagi lewat chip "Alumni" di halaman ini. Bisa dibatalkan
+  // kapan saja lewat tombol kembalikan (data-unalumni) di baris alumni.
+  async _prosesAlumniModal(el) {
+    const eligible = (this._users || []).filter(u => this._alumniEligible(u));
+    if (!eligible.length) {
+      return toast(tr('Belum ada siswa yang memenuhi syarat jadi alumni saat ini.', 'No students currently qualify to become alumni.'), 'warning');
+    }
+    const daftar = eligible.map(u => `${u.nama}${u.kelas ? ` (${u.kelas})` : ''}`).join(', ');
+    if (!await confirmDialog(
+      tr(`${eligible.length} siswa sudah genap 1 tahun sejak angkatannya dan akan ditandai Alumni: ${daftar}. Akun & datanya tetap ada, cuma dipisah dari daftar siswa aktif — bisa dikembalikan kapan saja. Lanjutkan?`,
+         `${eligible.length} student(s) have reached 1 year since intake and will be marked Alumni: ${daftar}. Their accounts & data stay intact, just separated from the active roster — reversible anytime. Continue?`),
+      { okText: tr('Jadikan Alumni', 'Mark as Alumni') })) return;
+
+    const btn = $('#resetAlumni', el);
+    if (btn) btn.disabled = true;
+    let sukses = 0;
+    for (const u of eligible) {
+      try { await DB.adminUpdateUser(u.id, { alumni: true, alumniPada: new Date().toISOString() }); sukses++; }
+      catch (_) { /* lanjut ke siswa berikutnya, jangan hentikan seluruh proses */ }
+    }
+    toast(tr(`${sukses} siswa dipindah jadi alumni 🎓`, `${sukses} student(s) marked as alumni 🎓`));
+    this.render(this._el);
+  },
+
   // Gambar ulang HANYA daftar akun (#uList) + pasang lagi tombol barisnya.
   _paintUsers(el) {
     const list = $('#uList', el);
     if (!list) return;
     const shown = this._filterUsers();
 
-    const roleBadge = r => {
+    const roleBadge = u => {
+      if ((u.role || 'siswa') === 'siswa' && u.alumni) return `<span class="badge badge-gray">${tr('Alumni', 'Alumni')}</span>`;
+      const r = u.role || 'siswa';
       const map = { admin: 'badge-purple', guru: 'badge-green', siswa: 'badge-blue' };
       return `<span class="badge ${map[r] || 'badge-gray'}">${roleLabel(r)}</span>`;
     };
@@ -191,9 +238,10 @@ const AdminView = {
                   <b>${esc(u.nama || '-')}</b>
                 </div></td>
                 <td data-label="${tr('Masuk dengan', 'Signs in with')}" style="color:var(--text-3);">${esc(this._loginId(u))}</td>
-                <td data-label="${tr('Peran', 'Role')}">${roleBadge(u.role || 'siswa')}</td>
-                <td data-label="${tr('Detail', 'Detail')}" style="color:var(--text-3);font-size:.82rem;">${esc(this._mapelTeks(u) || u.kelas || u.sekolah || '-')}</td>
+                <td data-label="${tr('Peran', 'Role')}">${roleBadge(u)}</td>
+                <td data-label="${tr('Detail', 'Detail')}" style="color:var(--text-3);font-size:.82rem;">${esc(this._mapelTeks(u) || u.kelas || u.sekolah || '-')}${u.alumni && u.angkatan ? ` · ${tr('Angkatan', 'Intake')} ${esc(this._fmtAngkatan(u.angkatan))}` : ''}</td>
                 <td data-label="${tr('Aksi', 'Actions')}" style="text-align:right;white-space:nowrap;">
+                  ${(u.role || 'siswa') === 'siswa' && u.alumni ? `<button class="mini-icon-btn" data-unalumni="${u.id}" title="${tr('Kembalikan jadi siswa aktif', 'Restore to active student')}"><ion-icon name="arrow-undo-outline"></ion-icon></button>` : ''}
                   <button class="mini-icon-btn" data-edit="${u.id}" title="${tr('Ubah', 'Edit')}"><ion-icon name="create-outline"></ion-icon></button>
                   <button class="mini-icon-btn danger" data-del="${u.id}" title="${(u.role || 'siswa') === 'admin' ? tr('Akun admin tidak bisa dihapus', 'Admin accounts cannot be deleted') : tr('Hapus', 'Delete')}" ${u.id === DB.user.id || (u.role || 'siswa') === 'admin' ? 'disabled' : ''}><ion-icon name="trash-outline"></ion-icon></button>
                 </td>
@@ -208,6 +256,14 @@ const AdminView = {
       </div>`;
 
     $$('[data-edit]', list).forEach(b => b.onclick = () => this._userModal((this._users || []).find(u => u.id === b.dataset.edit)));
+    $$('[data-unalumni]', list).forEach(b => b.onclick = async () => {
+      const u = (this._users || []).find(x => x.id === b.dataset.unalumni);
+      try {
+        await DB.adminUpdateUser(u.id, { alumni: false });
+        toast(tr(`"${u.nama}" dikembalikan jadi siswa aktif.`, `"${u.nama}" restored to active student.`));
+        this.render(this._el);
+      } catch (e) { toast(e.message, 'error'); }
+    });
     $$('[data-del]', list).forEach(b => b.onclick = async () => {
       const u = (this._users || []).find(x => x.id === b.dataset.del);
       if ((u.role || 'siswa') === 'admin') return toast(tr('Akun admin tidak bisa dihapus.', 'Admin accounts cannot be deleted.'), 'warning');
@@ -297,6 +353,24 @@ const AdminView = {
       const el = $(`#${id}`, scope);
       if (el) el.oninput = () => { el.value = this._cleanNis(el.value); };
     });
+  },
+
+  // 'YYYY-MM' → "Juli 2026" buat ditampilkan di tabel/CSV.
+  _fmtAngkatan(v) {
+    if (!v) return '';
+    const [y, m] = String(v).split('-').map(Number);
+    return y && m ? `${BULAN[m - 1]} ${y}` : v;
+  },
+
+  // Siswa dianggap SIAP jadi alumni kalau hari ini sudah lewat genap 1 tahun
+  // sejak bulan+tahun angkatannya (field `angkatan`, 'YYYY-MM' — diisi admin
+  // lewat _studentModal). Yang sudah alumni atau belum diisi angkatannya
+  // tidak ikut dihitung.
+  _alumniEligible(u) {
+    if ((u.role || 'siswa') !== 'siswa' || u.alumni || !u.angkatan) return false;
+    const [y, m] = String(u.angkatan).split('-').map(Number);
+    if (!y || !m) return false;
+    return new Date() >= new Date(y + 1, m - 1, 1);
   },
 
   async renderClasses(el) {
@@ -393,6 +467,7 @@ const AdminView = {
                 <thead><tr>
                   <th style="width:44px;">No</th><th>${tr('Nama Siswa', 'Student Name')}</th>
                   <th>Username</th><th>${tr('NIS (kata sandi)', 'NIS (password)')}</th><th>NISN</th>
+                  <th>${tr('Angkatan', 'Intake')}</th>
                   <th style="text-align:right;">${tr('Aksi', 'Actions')}</th>
                 </tr></thead>
                 <tbody>
@@ -403,6 +478,7 @@ const AdminView = {
                       <td data-label="Username" style="color:var(--text-3);">${esc(this._loginId(s))}</td>
                       <td data-label="NIS" style="color:var(--text-3);">${esc(s.nis || '-')}</td>
                       <td data-label="NISN" style="color:var(--text-3);">${esc(s.nisn || '-')}</td>
+                      <td data-label="${tr('Angkatan', 'Intake')}" style="color:var(--text-3);">${esc(this._fmtAngkatan(s.angkatan) || '-')}</td>
                       <td data-label="${tr('Aksi', 'Actions')}" style="text-align:right;white-space:nowrap;">
                         <button class="mini-icon-btn" data-edits="${s.id}" title="${tr('Ubah', 'Edit')}"><ion-icon name="create-outline"></ion-icon></button>
                         <button class="mini-icon-btn danger" data-dels="${s.id}" title="${tr('Hapus akun', 'Delete account')}"><ion-icon name="trash-outline"></ion-icon></button>
@@ -454,8 +530,8 @@ const AdminView = {
     });
     const expBtn = $('#exportRoster', el);
     if (expBtn && siswa.length) expBtn.onclick = () => {
-      const rows = [[tr('No', 'No'), tr('Nama', 'Name'), 'Username', 'NIS', 'NISN']];
-      siswa.forEach((s, i) => rows.push([i + 1, s.nama, this._loginId(s), s.nis || '', s.nisn || '']));
+      const rows = [[tr('No', 'No'), tr('Nama', 'Name'), 'Username', 'NIS', 'NISN', tr('Angkatan', 'Intake')]];
+      siswa.forEach((s, i) => rows.push([i + 1, s.nama, this._loginId(s), s.nis || '', s.nisn || '', s.angkatan || '']));
       downloadCSV(rows, `siswa_${(active.nama || 'kelas').replace(/\s+/g, '_')}.csv`);
     };
   },
@@ -542,6 +618,10 @@ const AdminView = {
           <label>NISN <span style="font-weight:500;color:var(--text-3)">${tr('— bukan sandi/username, cuma pengisi kolom NISN di PDF daftar hadir (opsional, maks 20 angka)', "— not a password/username, just fills the NISN column on the attendance PDF (optional, max 20 digits)")}</span></label>
           <input type="text" class="input" id="mNisn" inputmode="numeric" maxlength="20" placeholder="${tr('Nomor Induk Siswa Nasional', 'National Student ID number')}" value="${esc(student?.nisn || '')}">
         </div>
+        <div class="field">
+          <label>${tr('Angkatan (bulan & tahun masuk)', 'Intake (month & year)')} <span style="font-weight:500;color:var(--text-3)">${tr('— opsional; dipakai buat cek otomatis kapan siswa memenuhi syarat jadi alumni (1 tahun sejak bulan ini)', "— optional; used to auto-check when a student qualifies to become alumni (1 year after this month)")}</span></label>
+          <input type="month" class="input" id="mAngkatan" value="${esc(student?.angkatan || '')}">
+        </div>
         <button class="btn btn-primary btn-block" id="mSave"><ion-icon name="checkmark"></ion-icon> ${editing ? tr('Simpan Perubahan', 'Save Changes') : tr('Buat Akun Siswa', 'Create Student Account')}</button>`,
       onMount: m => {
         this._bindNis(m);
@@ -553,8 +633,9 @@ const AdminView = {
           const btn = $('#mSave', m); btn.disabled = true;
           try {
             const nisn = this._cleanNis($('#mNisn', m).value);
+            const angkatan = $('#mAngkatan', m).value || '';
             if (editing) {
-              await DB.adminUpdateUser(student.id, { nama, nisn }); // username & NIS tetap
+              await DB.adminUpdateUser(student.id, { nama, nisn, angkatan }); // username & NIS tetap
               closeModal();
               toast(tr('Data siswa diperbarui.', 'Student updated.'));
               this.render(this._el);
@@ -567,7 +648,7 @@ const AdminView = {
 
             await DB.adminCreateUser({
               nama, username, password: nis, role: 'siswa',
-              extra: { nis, nisn, kelasId: cls.id, kelasNama: cls.nama, kelas: cls.nama }
+              extra: { nis, nisn, angkatan, kelasId: cls.id, kelasNama: cls.nama, kelas: cls.nama }
             });
             closeModal();
             this._createdInfoModal(nama, username, nis, 'siswa');

@@ -14,8 +14,8 @@
       Email/Password.
    2. Cloud Firestore → buat database.
    3. Firestore Rules mengizinkan pengguna membaca/menulis
-      dokumennya sendiri di koleksi `trial_users` (nama koleksi
-      internal — lihat catatan di firestore-umum.rules).
+      dokumennya sendiri di koleksi `users` (lihat
+      firestore-umum.rules).
    ============================================================ */
 
 const UMUM_FIREBASE_CONFIG = {

@@ -10,6 +10,7 @@
 const Ibadah = {
   tab: 'hari',   // 'hari' | 'sholat' | 'kalender' | 'quran' | 'dzikir' | 'panduan' | 'zakat' | 'catatan'
   kalGeser: 0,   // pergeseran bulan kalender dari bulan ini (0 = bulan berjalan)
+  tableGeser: 0, // pergeseran bulan tabel checklist "Hari Ini" jalur umum (0 = bulan berjalan)
   _lastDate: null,          // tanggal (lokal) saat render terakhir — untuk deteksi pergantian hari
   _dayInterval: null,       // interval pengecek pergantian hari
   _dayWatchInstalled: false,// penanda agar watcher hanya dipasang sekali
@@ -133,9 +134,10 @@ const Ibadah = {
     this._lastDate = todayStr();
     this._watchDayChange(el);
 
-    // Sensor kompas & GPS hanya hidup selama tab Sholat & Kiblat terbuka.
+    // Sensor kompas, GPS & hitung mundur hanya hidup selama tab Sholat & Kiblat terbuka.
     this._stopCompass();
     this._stopGeoWatch();
+    this._stopSholatCountdown();
 
     el.innerHTML = `
       <div class="tabs">
@@ -204,7 +206,49 @@ const Ibadah = {
      Jadwal sholat (Aladhan API + GPS), hitung mundur waktu berikutnya,
      arah kiblat, dan tanggal Hijriyah. */
 
-  _sholatCache: null,
+  _sholatCache: null,   // { key: 'YYYY-MM-DD@lat,lng', data } — 1 entri, cukup utk hari & lokasi terakhir
+  _sholatInterval: null,
+
+  _stopSholatCountdown() {
+    if (this._sholatInterval != null) clearInterval(this._sholatInterval);
+    this._sholatInterval = null;
+  },
+
+  // Kunci cache dibulatkan ke 2 desimal (~1.1 km) — perpindahan sekecil itu
+  // tak mengubah jadwal sholat, jadi tak perlu memicu fetch ulang.
+  _sholatCacheKey(lat, lng) {
+    return `${todayStr()}@${lat.toFixed(2)},${lng.toFixed(2)}`;
+  },
+
+  PRAYER_ORDER: [['Fajr', 'Subuh', '🌅'], ['Dhuhr', 'Dzuhur', '☀️'], ['Asr', 'Ashar', '🌤️'], ['Maghrib', 'Maghrib', '🌇'], ['Isha', 'Isya', '🌙']],
+
+  // Hitung sholat berikutnya + hitung mundurnya dari `times` (objek Aladhan timings).
+  _nextPrayer(times) {
+    const toMin = t => { const [h, m] = t.split(':').map(Number); return h * 60 + m; };
+    const now = new Date();
+    const nowMin = now.getHours() * 60 + now.getMinutes();
+    let found = this.PRAYER_ORDER.find(([k]) => toMin(times[k].slice(0, 5)) > nowMin);
+    if (!found) found = this.PRAYER_ORDER[0]; // besok subuh
+    const nextName = tr(found[1], found[0]);
+    const nextTime = times[found[0]].slice(0, 5);
+    let diff = toMin(nextTime) - nowMin; if (diff < 0) diff += 1440;
+    const countdown = `${Math.floor(diff / 60)} ${tr('jam', 'h')} ${diff % 60} ${tr('mnt', 'm')}`;
+    return { nextName, nextTime, countdown };
+  },
+
+  // Perbarui blok "Berikutnya" tanpa render ulang seluruh tab (biar kompas
+  // & pemantau GPS yang sedang berjalan tak ikut ter-restart tiap tik).
+  _startSholatCountdown(el, times) {
+    this._stopSholatCountdown();
+    if (!times) return;
+    const tick = () => {
+      const nameEl = $('#nextName', el), timeEl = $('#nextTime', el), cdEl = $('#nextCountdown', el);
+      if (!nameEl) return this._stopSholatCountdown();   // elemen sudah tak ada (pindah tab)
+      const { nextName, nextTime, countdown } = this._nextPrayer(times);
+      nameEl.textContent = nextName; timeEl.textContent = nextTime; cdEl.textContent = countdown;
+    };
+    this._sholatInterval = setInterval(tick, 30000);
+  },
 
   async renderSholat(el) {
     const loc = DB.user?.lokasi; // {lat, lng, kota}
@@ -218,37 +262,25 @@ const Ibadah = {
 
     const render = (data, err) => {
       const times = data?.timings;
-      const order = [['Fajr', 'Subuh', '🌅'], ['Dhuhr', 'Dzuhur', '☀️'], ['Asr', 'Ashar', '🌤️'], ['Maghrib', 'Maghrib', '🌇'], ['Isha', 'Isya', '🌙']];
       // waktu berikutnya
-      let nextName = '', nextTime = '', countdown = '';
-      if (times) {
-        const now = new Date();
-        const toMin = t => { const [h, m] = t.split(':').map(Number); return h * 60 + m; };
-        const nowMin = now.getHours() * 60 + now.getMinutes();
-        let found = order.find(([k]) => toMin(times[k].slice(0, 5)) > nowMin);
-        if (!found) found = order[0]; // besok subuh
-        nextName = tr(found[1], found[0]);
-        nextTime = times[found[0]].slice(0, 5);
-        let diff = toMin(nextTime) - nowMin; if (diff < 0) diff += 1440;
-        countdown = `${Math.floor(diff / 60)} ${tr('jam', 'h')} ${diff % 60} ${tr('mnt', 'm')}`;
-      }
+      const { nextName, nextTime, countdown } = times ? this._nextPrayer(times) : { nextName: '', nextTime: '', countdown: '' };
 
       el.innerHTML = `
         <div class="card" style="background:linear-gradient(135deg,#0e7490,#0891b2);color:#fff;">
           <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap;">
             <div>
               <div style="font-size:.78rem;opacity:.85;font-weight:700;text-transform:uppercase;letter-spacing:.04em;">${tr('Jadwal Sholat', 'Prayer Times')}</div>
-              <div style="font-size:.95rem;font-weight:700;margin-top:3px;"><ion-icon name="location-outline" style="vertical-align:-2px;"></ion-icon> ${esc(loc?.kota || data?.meta?.timezone || tr('Lokasimu', 'Your location'))}</div>
+              <div style="font-size:.95rem;font-weight:700;margin-top:3px;"><ion-icon name="location-outline" style="vertical-align:-2px;"></ion-icon> ${esc(loc?.kota || tr('Lokasimu', 'Your location'))}</div>
               ${hijri ? `<div style="font-size:.82rem;opacity:.9;margin-top:2px;">📅 ${esc(hijri)} H</div>` : ''}
             </div>
             ${times ? `<div style="text-align:right;">
               <div style="font-size:.75rem;opacity:.85;font-weight:600;">${tr('Berikutnya', 'Next')}</div>
-              <div style="font-size:1.3rem;font-weight:800;">${nextName} ${nextTime}</div>
-              <div style="font-size:.8rem;opacity:.9;">${tr('dalam', 'in')} ${countdown}</div>
+              <div style="font-size:1.3rem;font-weight:800;"><span id="nextName">${nextName}</span> <span id="nextTime">${nextTime}</span></div>
+              <div style="font-size:.8rem;opacity:.9;">${tr('dalam', 'in')} <span id="nextCountdown">${countdown}</span></div>
             </div>` : ''}
           </div>
           ${times ? `<div style="display:flex;gap:8px;margin-top:16px;flex-wrap:wrap;">
-            ${order.map(([k, id, e]) => `<div style="flex:1;min-width:64px;text-align:center;background:rgba(255,255,255,.14);border-radius:12px;padding:10px 4px;">
+            ${this.PRAYER_ORDER.map(([k, id, e]) => `<div style="flex:1;min-width:64px;text-align:center;background:rgba(255,255,255,.14);border-radius:12px;padding:10px 4px;">
               <div style="font-size:1.1rem;">${e}</div><div style="font-size:.72rem;opacity:.9;font-weight:600;">${tr(id, k)}</div><div style="font-weight:800;font-size:.95rem;">${times[k].slice(0, 5)}</div>
             </div>`).join('')}
           </div>` : `<p style="margin-top:12px;opacity:.92;font-size:.87rem;">${esc(err || tr('Aktifkan lokasi untuk melihat jadwal sholat.', 'Enable location to see prayer times.'))}</p>`}
@@ -262,7 +294,7 @@ const Ibadah = {
         <div class="card">
           <div class="card-title"><ion-icon name="compass" style="color:#0891b2"></ion-icon>${tr('Arah Kiblat', 'Qibla Direction')}</div>
           ${loc ? `
-            <div style="display:flex;align-items:center;gap:24px;flex-wrap:wrap;justify-content:center;margin-top:12px;">
+            <div class="qibla-panel">
               <div class="qibla-compass">
                 <!-- mawar kompas: ikut berputar agar N benar-benar menunjuk utara -->
                 <div class="qibla-rose" id="qiblaRose">
@@ -274,17 +306,17 @@ const Ibadah = {
                 <!-- jarum: berputar mengelilingi pusat, 🕋 di ujungnya -->
                 <div class="qibla-dial" id="qiblaNeedle"><span class="qibla-kaaba">🕋</span></div>
               </div>
-              <div style="text-align:center;">
-                <div style="font-size:2rem;font-weight:800;color:#0891b2;" id="qiblaDeg">${this._qiblaBearing(loc.lat, loc.lng).toFixed(1)}°</div>
-                <div style="font-size:.8rem;color:var(--text-3);">${tr('dari Utara sejati (searah jarum jam)', 'from true North (clockwise)')}</div>
-                <div style="font-size:.78rem;color:var(--text-3);margin-top:8px;" id="qiblaMeta">
+              <div class="qibla-info">
+                <div class="qibla-deg" id="qiblaDeg">${this._qiblaBearing(loc.lat, loc.lng).toFixed(1)}°</div>
+                <div class="qibla-sub">${tr('dari Utara sejati (searah jarum jam)', 'from true North (clockwise)')}</div>
+                <div class="qibla-meta" id="qiblaMeta">
                   ${tr('Arah HP', 'Device facing')}: <b id="qiblaHeading">—</b> ·
                   ${tr('Ka\'bah', 'Kaaba')} <b>${Math.round(this._kaabaDistance(loc.lat, loc.lng)).toLocaleString('id-ID')} km</b>
                 </div>
-                <div style="font-size:.75rem;color:var(--text-3);margin-top:2px;" id="qiblaPos">
+                <div class="qibla-pos" id="qiblaPos">
                   📍 ${loc.lat.toFixed(5)}, ${loc.lng.toFixed(5)}
                 </div>
-                <div id="qiblaHint" style="font-size:.78rem;color:var(--text-3);margin-top:8px;max-width:230px;">${tr('Pegang HP mendatar, lalu putar badanmu sampai 🕋 tepat di atas.', 'Hold the phone flat, then turn until 🕋 is exactly at the top.')}</div>
+                <div class="qibla-hint" id="qiblaHint">${tr('Pegang HP mendatar, lalu putar badanmu sampai 🕋 tepat di atas.', 'Hold the phone flat, then turn until 🕋 is exactly at the top.')}</div>
               </div>
             </div>
 
@@ -312,14 +344,27 @@ const Ibadah = {
         <div class="disclaimer" style="margin-top:16px;"><ion-icon name="information-circle"></ion-icon><span>${tr('Jadwal & arah dihitung otomatis dari lokasimu (sumber: Aladhan, metode Kemenag). Selalu cocokkan dengan jadwal masjid setempat.', 'Times & direction are computed from your location (source: Aladhan, Kemenag method). Always cross-check with your local mosque.')}</span></div>`;
 
       this._bindSholat(el, loc);
+      this._startSholatCountdown(el, times);
     };
 
-    // pakai cache lokasi bila ada, jika tidak minta GPS otomatis sekali
-    if (loc) {
-      const data = await this._fetchTimes(loc.lat, loc.lng);
-      render(data, data ? '' : tr('Gagal memuat jadwal (offline?). Coba lagi.', 'Failed to load times (offline?). Try again.'));
+    if (!loc) { render(null, ''); return; }
+
+    // Pakai cache (hari + lokasi yang sama) dulu supaya tab ini tak selalu
+    // memanggil Aladhan ulang tiap dibuka/di-render ulang.
+    const key = this._sholatCacheKey(loc.lat, loc.lng);
+    if (this._sholatCache?.key === key) { render(this._sholatCache.data, ''); return; }
+
+    const data = await this._fetchTimes(loc.lat, loc.lng);
+    if (data) {
+      this._sholatCache = { key, data };
+      render(data, '');
+    } else if (this._sholatCache) {
+      // Offline / API down → tampilkan cache terakhir yang ada (walau beda
+      // hari/lokasi) daripada kartu kosong, dengan catatan jelas bahwa itu bukan data terkini.
+      render(this._sholatCache.data, '');
+      toast(tr('Gagal memuat jadwal terbaru (offline?) — menampilkan jadwal tersimpan terakhir.', 'Failed to load the latest times (offline?) — showing the last saved schedule.'), 'warning');
     } else {
-      render(null, '');
+      render(null, tr('Gagal memuat jadwal (offline?). Coba lagi.', 'Failed to load times (offline?). Try again.'));
     }
   },
 
@@ -359,15 +404,32 @@ const Ibadah = {
     return this._jarakKm(lat, lng, this.KAABA.lat, this.KAABA.lng);
   },
 
+  // Format tanggal yang dipakai API Aladhan: DD-MM-YYYY. Satu tempat, dipakai
+  // oleh SEMUA pemanggil supaya tak ada dua format berbeda ke endpoint yang sama.
+  _aladhanDateStr(d = new Date()) {
+    const p = n => String(n).padStart(2, '0');
+    return `${p(d.getDate())}-${p(d.getMonth() + 1)}-${d.getFullYear()}`;
+  },
+
   async _fetchTimes(lat, lng) {
     try {
-      const d = new Date();
-      const ds = `${String(d.getDate()).padStart(2, '0')}-${String(d.getMonth() + 1).padStart(2, '0')}-${d.getFullYear()}`;
-      const res = await fetch(`https://api.aladhan.com/v1/timings/${ds}?latitude=${lat}&longitude=${lng}&method=20`);
+      const res = await fetch(`https://api.aladhan.com/v1/timings/${this._aladhanDateStr()}?latitude=${lat}&longitude=${lng}&method=20`);
       if (!res.ok) return null;
       const json = await res.json();
       return json.data;
     } catch (_) { return null; }
+  },
+
+  // Nama kota dari koordinat (reverse geocoding) — BigDataCloud, gratis & tanpa
+  // API key. Aladhan TIDAK menyediakan nama kota (field `meta.timezone`-nya
+  // cuma zona waktu, mis. "Asia/Jakarta" — memakainya sebagai "kota" salah).
+  async _reverseGeocode(lat, lng) {
+    try {
+      const res = await fetch(`https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=${lat}&longitude=${lng}&localityLanguage=id`);
+      if (!res.ok) return '';
+      const j = await res.json();
+      return j.city || j.locality || j.principalSubdivision || '';
+    } catch (_) { return ''; }
   },
 
   _bindSholat(el, loc) {
@@ -376,11 +438,7 @@ const Ibadah = {
       toast(tr('Meminta lokasi…', 'Requesting location…'), 'info');
       navigator.geolocation.getCurrentPosition(async pos => {
         const lat = pos.coords.latitude, lng = pos.coords.longitude;
-        let kota = '';
-        try {
-          const r = await fetch(`https://api.aladhan.com/v1/timings/${new Date().getDate()}-${new Date().getMonth() + 1}-${new Date().getFullYear()}?latitude=${lat}&longitude=${lng}&method=20`);
-          const j = await r.json(); kota = j?.data?.meta?.timezone || '';
-        } catch (_) {}
+        const kota = await this._reverseGeocode(lat, lng);
         await DB.updateUser({ lokasi: { lat, lng, kota, akurasi: Math.round(pos.coords.accuracy || 0) } });
         toast(tr('Lokasi diperbarui 📍', 'Location updated 📍'));
         App.refresh();
@@ -398,13 +456,22 @@ const Ibadah = {
           <p style="font-size:.83rem;color:var(--text-3);margin-bottom:12px;">${tr('Masukkan koordinat kotamu (cari di Google Maps → klik kanan → koordinat).', 'Enter your city coordinates (find on Google Maps → right-click → coordinates).')}</p>
           <div class="field"><label>${tr('Nama kota', 'City name')}</label><input type="text" class="input" id="mKota" placeholder="${tr('mis. Bandung', 'e.g. Bandung')}" value="${esc(loc?.kota || '')}"></div>
           <div class="grid grid-2 keep-2" style="gap:12px;">
-            <div class="field"><label>Latitude</label><input type="number" class="input" id="mLat" step="any" placeholder="-6.9" value="${loc?.lat ?? ''}"></div>
-            <div class="field"><label>Longitude</label><input type="number" class="input" id="mLng" step="any" placeholder="107.6" value="${loc?.lng ?? ''}"></div>
+            <div class="field"><label>Latitude</label><input type="number" class="input" id="mLat" step="any" placeholder="mis -6.9" value="${loc?.lat ?? ''}"></div>
+            <div class="field"><label>Longitude</label><input type="number" class="input" id="mLng" step="any" placeholder="mis. 107.6" value="${loc?.lng ?? ''}"></div>
           </div>
           <button class="btn btn-primary btn-block" id="mSave"><ion-icon name="checkmark"></ion-icon> ${tr('Simpan', 'Save')}</button>`,
         onMount: m => { $('#mSave', m).onclick = async () => {
-          const lat = +$('#mLat', m).value, lng = +$('#mLng', m).value;
-          if (!lat || !lng) return toast(tr('Isi latitude & longitude.', 'Enter latitude & longitude.'), 'warning');
+          // Validasi lewat string mentah (bukan `!lat`/`!lng`) — kalau tidak,
+          // latitude 0 (mis. Pontianak, hampir persis di garis khatulistiwa)
+          // salah dianggap "kosong" karena `!0 === true` di JavaScript.
+          const latStr = $('#mLat', m).value.trim(), lngStr = $('#mLng', m).value.trim();
+          const lat = +latStr, lng = +lngStr;
+          if (latStr === '' || lngStr === '' || Number.isNaN(lat) || Number.isNaN(lng)) {
+            return toast(tr('Isi latitude & longitude.', 'Enter latitude & longitude.'), 'warning');
+          }
+          if (lat < -90 || lat > 90 || lng < -180 || lng > 180) {
+            return toast(tr('Koordinat tidak valid (latitude -90..90, longitude -180..180).', 'Invalid coordinates (latitude -90..90, longitude -180..180).'), 'warning');
+          }
           await DB.updateUser({ lokasi: { lat, lng, kota: $('#mKota', m).value.trim() } });
           closeModal(); toast(tr('Lokasi disimpan 📍', 'Location saved 📍')); App.refresh();
         }; }
@@ -446,8 +513,13 @@ const Ibadah = {
 
   // Sudut hadap perangkat: 0–360, searah jarum jam dari utara.
   _headingOf(e) {
-    // iOS: sudah berupa arah kompas dari utara.
-    if (typeof e.webkitCompassHeading === 'number') return e.webkitCompassHeading;
+    // iOS: sudah berupa arah kompas dari utara, TAPI hanya benar saat HP
+    // dipegang portrait — Safari tidak ikut mengoreksinya saat layar diputar
+    // ke landscape, jadi dikompensasi manual sama seperti jalur Android di bawah.
+    if (typeof e.webkitCompassHeading === 'number') {
+      const layar = window.orientation || 0;   // iOS lama: -90 / 0 / 90 / 180
+      return (e.webkitCompassHeading + layar + 360) % 360;
+    }
     if (e.alpha == null) return null;
     if (e.type !== 'deviceorientationabsolute' && e.absolute !== true) return null;
     // Layar yang diputar (landscape) menggeser acuan sensor → dikompensasi.
@@ -879,17 +951,19 @@ const Ibadah = {
     });
   },
 
-  /* ---------- util data harian ---------- */
-  async _today() {
+  /* ---------- util data harian (tanggal bebas, dipakai tabel checklist umum) ---------- */
+  async _recordFor(tanggal) {
     const all = await DB.list('ibadah_daily');
-    return all.find(d => d.tanggal === todayStr()) || { tanggal: todayStr(), done: {} };
+    return all.find(d => d.tanggal === tanggal) || { tanggal, done: {} };
   },
-  async _saveToday(done) {
+  async _saveDoneFor(tanggal, done) {
     const all = await DB.list('ibadah_daily');
-    const ex = all.find(d => d.tanggal === todayStr());
+    const ex = all.find(d => d.tanggal === tanggal);
     if (ex) return DB.update('ibadah_daily', ex.id, { done });
-    return DB.set('ibadah_daily', todayStr(), { tanggal: todayStr(), done });
+    return DB.set('ibadah_daily', tanggal, { tanggal, done });
   },
+  async _today() { return this._recordFor(todayStr()); },
+  async _saveToday(done) { return this._saveDoneFor(todayStr(), done); },
 
   /* ============ TAB: HARI INI ============ */
 
@@ -949,51 +1023,107 @@ const Ibadah = {
     });
   },
 
-  // Jalur UMUM — checklist amalan dikelompokkan per waktu sholat, sepenuhnya
-  // bisa diedit/ditambah/dihapus per individu (lihat KELOMPOK_IBADAH/_checklist()).
+  // Jalur UMUM — checklist amalan dikelompokkan per waktu sholat, ditampilkan
+  // sebagai TABEL (baris = amalan, kolom = tanggal sebulan) persis format
+  // spreadsheet rekap ibadah: ketuk sel untuk centang ✓ / silang ✗, geser
+  // bulan lewat ‹ ›. Sepenuhnya bisa diedit/ditambah/dihapus per individu
+  // (lihat KELOMPOK_IBADAH/_checklist()).
   async _renderTodayUmum(el, done) {
     const items = await this._checklist();
     const total = items.length;
     const selesai = items.filter(i => done[i.id]).length;
     const pct = total ? Math.round(selesai / total * 100) : 0;
 
-    const rowCheck = i => `
-      <div class="list-item">
-        <button class="task-check ${done[i.id] ? 'done' : ''}" data-toggle="${i.id}"><ion-icon name="checkmark"></ion-icon></button>
-        <div style="flex:1;min-width:0;font-weight:700;font-size:.88rem;" class="${done[i.id] ? 'task-title-done' : ''}">${esc(i.label)}</div>
-        <button class="mini-icon-btn" data-editchk="${i.id}"><ion-icon name="create-outline"></ion-icon></button>
-        <button class="mini-icon-btn danger" data-delchk="${i.id}"><ion-icon name="trash-outline"></ion-icon></button>
-      </div>`;
+    const kini = new Date();
+    const tampil = new Date(kini.getFullYear(), kini.getMonth() + this.tableGeser, 1);
+    const thn = tampil.getFullYear(), bln = tampil.getMonth();
+    const jmlHari = new Date(thn, bln + 1, 0).getDate();
+    const hariIni = todayStr();
+    const bulanKey = `${thn}-${String(bln + 1).padStart(2, '0')}`;
 
-    // Item dengan `pilihan` (mis. Sholat Dhuha) → pilih jumlah rakaat, bukan
-    // centang tunggal. Klik angka yang sama sekali lagi = batalkan pilihan.
-    const rowPilihan = i => `
-      <div class="list-item" style="align-items:flex-start;flex-wrap:wrap;">
-        <div style="flex:1;min-width:140px;">
-          <div class="${done[i.id] ? 'task-title-done' : ''}" style="font-weight:700;font-size:.88rem;">${esc(i.label)}</div>
-          <div style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap;">
-            ${i.pilihan.map(n => `<button class="btn btn-sm ${done[i.id] === n ? 'btn-primary' : ''}" data-rakaat="${i.id}" data-val="${n}">${n} ${esc(i.satuan || '')}</button>`).join('')}
-          </div>
-        </div>
-        <button class="mini-icon-btn" data-editchk="${i.id}"><ion-icon name="create-outline"></ion-icon></button>
-        <button class="mini-icon-btn danger" data-delchk="${i.id}"><ion-icon name="trash-outline"></ion-icon></button>
-      </div>`;
+    const allDaily = await DB.list('ibadah_daily');
+    const doneByDate = {};
+    allDaily.forEach(d => { if ((d.tanggal || '').startsWith(bulanKey)) doneByDate[d.tanggal] = d.done || {}; });
 
-    const row = i => (i.pilihan ? rowPilihan(i) : rowCheck(i));
+    const dates = [];
+    for (let t = 1; t <= jmlHari; t++) dates.push(`${bulanKey}-${String(t).padStart(2, '0')}`);
 
-    const groupCard = g => {
-      const its = items.filter(i => i.kelompok === g.key);
-      return `
-        <div class="card" style="margin-top:14px;">
-          <div class="section-head" style="margin:0 0 10px;">
-            <h2 style="font-size:.95rem;">${g.emoji} ${tr(g.id, g.en)}</h2>
-            <button class="btn btn-sm" data-addchk="${g.key}"><ion-icon name="add"></ion-icon> ${tr('Tambah', 'Add')}</button>
-          </div>
-          <div style="display:flex;flex-direction:column;gap:8px;">
-            ${its.length ? its.map(row).join('') : `<div style="font-size:.82rem;color:var(--text-3);padding:6px 2px;">${tr('Belum ada item.', 'No items yet.')}</div>`}
-          </div>
-        </div>`;
+    // Item biasa: kosong → ✓ selesai → ✗ tidak dikerjakan → kosong lagi.
+    // Item ber-`pilihan` (mis. Sholat Dhuha): kosong → 2 → 4 → 6 → 8 → ✗ tidak
+    // dikerjakan → kosong lagi.
+    const cellSymbol = (i, tgl) => {
+      const val = (doneByDate[tgl] || {})[i.id];
+      if (i.pilihan) return val === false ? '✗' : (val ? String(val) : '');
+      if (val === true) return '✓';
+      if (val === false) return '✗';
+      return '';
     };
+    const cellClass = (i, tgl) => {
+      const val = (doneByDate[tgl] || {})[i.id];
+      if (i.pilihan) return val === false ? 'ib-cell-no' : (val ? 'ib-cell-on' : '');
+      if (val === true) return 'ib-cell-yes';
+      if (val === false) return 'ib-cell-no';
+      return '';
+    };
+
+    // Persentase sebulan per amalan — kolom terakhir tabel. Penyebutnya
+    // hanya tanggal yang SUDAH LEWAT (≤ hari ini): bulan berjalan → sejauh
+    // tanggal hari ini, bulan lampau → sebulan penuh, bulan depan → tak ada
+    // (tampil "–"). Item ber-`pilihan` (mis. Dhuha) dihitung "selesai" bila
+    // ada rakaat terisi (angka apa pun), bukan cuma ✓; ✗ eksplisit maupun
+    // sel kosong dianggap belum.
+    const dayCountForPct = dates.filter(tgl => tgl <= hariIni).length;
+    const isDone = (i, tgl) => {
+      const val = (doneByDate[tgl] || {})[i.id];
+      return i.pilihan ? (val !== undefined && val !== false) : val === true;
+    };
+    const pctFor = i => {
+      if (!dayCountForPct) return null;
+      const ya = dates.filter(tgl => tgl <= hariIni && isDone(i, tgl)).length;
+      return Math.round(ya / dayCountForPct * 100);
+    };
+
+    const pctCell = i => {
+      const p = pctFor(i);
+      return `<td class="center" style="font-weight:800;font-size:.78rem;">${p === null ? '–' : p + '%'}</td>`;
+    };
+
+    const rowHtml = i => `
+      <tr>
+        <td class="sticky-col"><span style="font-weight:600;font-size:.8rem;">${esc(i.label)}</span></td>
+        ${dates.map(tgl => `
+          <td class="center ${cellClass(i, tgl)} ${tgl === hariIni ? 'ib-col-today' : ''}">
+            <button class="ib-cell-btn" data-cell="${i.id}" data-date="${tgl}" data-pilihan="${i.pilihan ? i.pilihan.join(',') : ''}" ${tgl > hariIni ? 'disabled' : ''}>${cellSymbol(i, tgl)}</button>
+          </td>`).join('')}
+        ${pctCell(i)}
+      </tr>`;
+
+    // Baris judul kelompok waktu — di DALAM tabel yang sama (bukan kartu
+    // terpisah per waktu), supaya seluruh checklist jadi satu lembar
+    // menerus persis spreadsheet acuan. Tombol "Kelola" menempel di sel
+    // nama kelompok (sticky-col) sendiri, bersebelahan dengan labelnya.
+    // colspan +1 supaya baris ini tetap merentang sampai kolom % di ujung.
+    const groupHeaderRow = g => `
+      <tr class="ib-group-row">
+        <td class="sticky-col">
+          <div style="display:flex;align-items:center;justify-content:space-between;gap:6px;">
+            <span>${g.emoji} ${tr(g.id, g.en)}</span>
+            <button class="mini-icon-btn" data-managegrp="${g.key}" title="${tr('Kelola amalan', 'Manage items')}" style="width:24px;height:24px;flex-shrink:0;"><ion-icon name="options-outline" style="font-size:.85rem;"></ion-icon></button>
+          </div>
+        </td>
+        <td colspan="${dates.length + 1}"></td>
+      </tr>`;
+
+    const emptyRow = () => `
+      <tr>
+        <td class="sticky-col" style="color:var(--text-3);font-style:italic;font-weight:500;">${tr('Belum ada item', 'No items yet')}</td>
+        <td colspan="${dates.length + 1}"></td>
+      </tr>`;
+
+    const bodyRows = this.KELOMPOK_IBADAH.map(g => {
+      const its = items.filter(i => i.kelompok === g.key);
+      return groupHeaderRow(g) + (its.length ? its.map(rowHtml).join('') : emptyRow());
+    }).join('');
 
     el.innerHTML = `
       <div class="card" style="background:linear-gradient(135deg,#0e7490,#0891b2);color:#fff;">
@@ -1010,36 +1140,138 @@ const Ibadah = {
         </div>
       </div>
 
-      ${this.KELOMPOK_IBADAH.map(groupCard).join('')}
+      <div class="section-head" style="margin-top:20px;">
+        <h2>${BULAN[bln]} ${thn}</h2>
+        <div style="display:flex;gap:6px;">
+          <button class="btn btn-sm" id="dlPdf"><ion-icon name="download-outline"></ion-icon> ${tr('Unduh PDF', 'Download PDF')}</button>
+          <button class="mini-icon-btn" id="tblPrev"><ion-icon name="chevron-back-outline"></ion-icon></button>
+          ${this.tableGeser !== 0 ? `<button class="btn btn-sm" id="tblNow">${tr('Bulan ini', 'This month')}</button>` : ''}
+          <button class="mini-icon-btn" id="tblNext"><ion-icon name="chevron-forward-outline"></ion-icon></button>
+        </div>
+      </div>
+
+      <div class="card" style="margin-top:14px;padding:0;overflow:hidden;">
+        <div class="table-wrap" style="border:none;border-radius:0;">
+          <table class="data-table ib-table">
+            <thead><tr>
+              <th class="sticky-col" style="min-width:150px;">${tr('Amalan', 'Item')}</th>
+              ${dates.map(tgl => `<th class="center ${tgl === hariIni ? 'ib-col-today' : ''}" style="min-width:32px;">${+tgl.slice(-2)}</th>`).join('')}
+              <th class="center" style="min-width:52px;" title="${tr('Persentase bulan ini', "This month's percentage")}">%</th>
+            </tr></thead>
+            <tbody>${bodyRows}</tbody>
+          </table>
+        </div>
+      </div>
 
       <div class="disclaimer" style="margin-top:20px;">
         <ion-icon name="bulb-outline"></ion-icon>
-        <span>${tr('Centang tiap kali selesai mengerjakannya. Ketuk ✏️ untuk mengganti nama, 🗑️ untuk menghapus, atau "Tambah" untuk menambah amalanmu sendiri di tiap waktu. 🌱',
-               'Check items off as you complete them. Tap ✏️ to rename, 🗑️ to delete, or "Add" to add your own item under each prayer time. 🌱')}</span>
+        <span>${tr('Ketuk sel: kosong → ✓ selesai → ✗ tidak dikerjakan → kosong lagi (Sholat Dhuha: kosong → 2 → 4 → 6 → 8 rakaat → ✗ tidak dikerjakan → kosong lagi). Geser tabel ke samping untuk tanggal lain, tombol ‹ › untuk bulan lain. Ketuk "Kelola" untuk ubah/hapus/menambah amalanmu sendiri di tiap waktu. 🌱',
+               'Tap a cell: blank → ✓ done → ✗ missed → blank again (Dhuha: blank → 2 → 4 → 6 → 8 rakaat → ✗ missed → blank again). Scroll the table sideways for other dates, ‹ › for other months. Tap "Manage" to rename/delete/add your own items under each prayer time. 🌱')}</span>
       </div>`;
 
-    $$('[data-toggle]', el).forEach(b => b.onclick = async () => {
-      const key = b.dataset.toggle;
-      const nd = { ...done, [key]: !done[key] };
-      await this._saveToday(nd);
+    $('#tblPrev', el).onclick = () => { this.tableGeser--; this._renderTodayUmum(el, done); };
+    $('#tblNext', el).onclick = () => { this.tableGeser++; this._renderTodayUmum(el, done); };
+    $('#tblNow', el) && ($('#tblNow', el).onclick = () => { this.tableGeser = 0; this._renderTodayUmum(el, done); });
+
+    // Unduh PDF — tabel yang sama (baris/kolom/kolom % nya) tapi versi
+    // statis (sel jadi teks, bukan tombol) lewat printHTML() (js/utils.js),
+    // yang membuka jendela cetak berisi tombol "Cetak / Simpan PDF".
+    $('#dlPdf', el).onclick = () => {
+      const pdfRow = i => {
+        const p = pctFor(i);
+        return `<tr>
+          <td class="ib-lb">${esc(i.label)}</td>
+          ${dates.map(tgl => `<td class="center${tgl > hariIni ? ' muted' : ''}">${esc(cellSymbol(i, tgl) || '')}</td>`).join('')}
+          <td class="center" style="font-weight:bold;">${p === null ? '–' : p + '%'}</td>
+        </tr>`;
+      };
+      const pdfGroupRow = g => `<tr class="grp"><td colspan="${dates.length + 2}">${g.emoji} ${esc(tr(g.id, g.en))}</td></tr>`;
+      const pdfEmptyRow = () => `<tr><td colspan="${dates.length + 2}" class="muted">${tr('Belum ada item', 'No items yet')}</td></tr>`;
+      const pdfBody = this.KELOMPOK_IBADAH.map(g => {
+        const its = items.filter(i => i.kelompok === g.key);
+        return pdfGroupRow(g) + (its.length ? its.map(pdfRow).join('') : pdfEmptyRow());
+      }).join('');
+
+      printHTML(`${tr('Checklist Ibadah Dan Amalan', 'Worship Checklist')} ${BULAN[bln]} ${thn}`, `
+        <style>
+          @page{size:A4 landscape;margin:10mm;}
+          h1{font-size:16px;text-align:center;margin-bottom:2px;}
+          .sub{text-align:center;font-size:11px;color:#333;margin-bottom:10px;}
+          table.ib-print th,table.ib-print td{font-size:9px;padding:3px 4px;}
+          table.ib-print td.ib-lb{text-align:left;white-space:nowrap;}
+          table.ib-print tr.grp td{background:#eee;font-weight:bold;text-align:left;-webkit-print-color-adjust:exact;print-color-adjust:exact;}
+        </style>
+        <h1>${tr('CHECKLIST IBADAH DAN AMALAN', 'WORSHIP CHECKLIST & DEEDS')}</h1>
+        <div class="sub">${esc(DB.user?.nama || '')} · ${BULAN[bln]} ${thn}</div>
+        <table class="ib-print">
+          <thead><tr>
+            <th style="text-align:left;">${tr('Amalan', 'Item')}</th>
+            ${dates.map(tgl => `<th>${+tgl.slice(-2)}</th>`).join('')}
+            <th>%</th>
+          </tr></thead>
+          <tbody>${pdfBody}</tbody>
+        </table>`);
+    };
+
+    $$('[data-cell]', el).forEach(b => b.onclick = async () => {
+      if (b.disabled) return;
+      const id = b.dataset.cell, tgl = b.dataset.date;
+      const pilihan = b.dataset.pilihan ? b.dataset.pilihan.split(',').map(Number) : null;
+      const cur = (doneByDate[tgl] || {})[id];
+
+      let next;
+      if (pilihan) {
+        // kosong → pilihan[0] → … → pilihan terakhir → ✗ (tidak dikerjakan) → kosong lagi.
+        if (cur === false) next = undefined;
+        else if (!cur) next = pilihan[0];
+        else {
+          const idx = pilihan.indexOf(cur);
+          next = idx === -1 ? undefined : (idx === pilihan.length - 1 ? false : pilihan[idx + 1]);
+        }
+      } else {
+        next = (cur !== true && cur !== false) ? true : (cur === true ? false : undefined);
+      }
+
+      const nd = { ...(doneByDate[tgl] || {}) };
+      if (next === undefined) delete nd[id]; else nd[id] = next;
+      await this._saveDoneFor(tgl, nd);
       App.refresh();
     });
-    $$('[data-rakaat]', el).forEach(b => b.onclick = async () => {
-      const id = b.dataset.rakaat, val = +b.dataset.val;
-      const nd = { ...done, [id]: done[id] === val ? 0 : val };
-      await this._saveToday(nd);
-      App.refresh();
-    });
-    $$('[data-addchk]', el).forEach(b => b.onclick = () => this._checklistModal(b.dataset.addchk));
-    $$('[data-editchk]', el).forEach(b => b.onclick = () => {
-      const item = items.find(i => i.id === b.dataset.editchk);
-      this._checklistModal(item.kelompok, item);
-    });
-    $$('[data-delchk]', el).forEach(b => b.onclick = async () => {
-      if (!await confirmDialog(tr('Hapus item checklist ini?', 'Delete this checklist item?'), { danger: true, okText: tr('Hapus', 'Delete') })) return;
-      await DB.remove('ibadah_checklist', b.dataset.delchk);
-      toast(tr('Item dihapus', 'Item deleted'));
-      App.refresh();
+    $$('[data-managegrp]', el).forEach(b => b.onclick = () => this._manageGroupModal(b.dataset.managegrp, items));
+  },
+
+  // Daftar amalan satu kelompok waktu + ubah/hapus/tambah — dipanggil dari
+  // tombol "Kelola" di header tabel (lihat _renderTodayUmum → groupCard).
+  _manageGroupModal(groupKey, items) {
+    const g = this.KELOMPOK_IBADAH.find(x => x.key === groupKey);
+    const its = items.filter(i => i.kelompok === groupKey);
+    openModal({
+      title: tr(`Kelola Amalan — ${g ? g.id : ''}`, `Manage Items — ${g ? g.en : ''}`),
+      body: `
+        <div style="display:flex;flex-direction:column;gap:8px;">
+          ${its.length ? its.map(i => `
+            <div class="list-item">
+              <div style="flex:1;min-width:0;font-weight:700;font-size:.88rem;">${esc(i.label)}${i.pilihan ? ` <span style="font-weight:500;color:var(--text-3);font-size:.78rem;">(${i.pilihan.join('/')} ${esc(i.satuan || '')})</span>` : ''}</div>
+              <button class="mini-icon-btn" data-mgedit="${i.id}"><ion-icon name="create-outline"></ion-icon></button>
+              <button class="mini-icon-btn danger" data-mgdel="${i.id}"><ion-icon name="trash-outline"></ion-icon></button>
+            </div>`).join('') : `<div style="font-size:.82rem;color:var(--text-3);">${tr('Belum ada item.', 'No items yet.')}</div>`}
+        </div>
+        <button class="btn btn-primary btn-block" id="mgAdd" style="margin-top:16px;"><ion-icon name="add"></ion-icon> ${tr('Tambah Item Baru', 'Add New Item')}</button>`,
+      onMount: m => {
+        $('#mgAdd', m).onclick = () => { closeModal(); this._checklistModal(groupKey); };
+        $$('[data-mgedit]', m).forEach(b => b.onclick = () => {
+          const item = its.find(i => i.id === b.dataset.mgedit);
+          closeModal();
+          this._checklistModal(groupKey, item);
+        });
+        $$('[data-mgdel]', m).forEach(b => b.onclick = async () => {
+          if (!await confirmDialog(tr('Hapus item checklist ini?', 'Delete this checklist item?'), { danger: true, okText: tr('Hapus', 'Delete') })) return;
+          await DB.remove('ibadah_checklist', b.dataset.mgdel);
+          closeModal();
+          toast(tr('Item dihapus', 'Item deleted'));
+          App.refresh();
+        });
+      }
     });
   },
 

@@ -404,6 +404,11 @@ ion-icon { pointer-events: none; flex-shrink: 0; }
 .input::placeholder, .textarea::placeholder { color: var(--text-3); }
 .textarea { resize: vertical; min-height: 110px; line-height: 1.6; }
 .select { appearance: none; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%2398a2b3' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 14px center; padding-right: 40px; cursor: pointer; }
+/* Panah dropdown dipatok #98a2b3 (nilai --text-3 tema TERANG) karena
+   background-image data-URI tak bisa membaca var(); tema gelap butuh
+   data-URI kedua dgn warna --text-3 gelap (#64748b) biar tetap sama
+   redup/kontrasnya seperti di tema terang, bukan cuma "kelihatan". */
+[data-theme="dark"] .select { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%2364748b' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E"); }
 
 .input-group { position: relative; }
 .input-group .input { padding-right: 46px; }
@@ -702,6 +707,9 @@ ion-icon { pointer-events: none; flex-shrink: 0; }
 
 .job-card {
   position: relative;
+  min-width: 0;   /* biar kolom grid bisa menyempit — tanpa ini label nowrap
+                     memaksa kartu (& kolomnya) lebih lebar dari layar, jadi
+                     kolom kanan terpotong di HP sempit (lihat .job-label). */
   background: var(--surface); border: 1px solid var(--border); border-radius: 22px;
   padding: 26px 14px 20px; text-align: center; cursor: pointer;
   display: flex; flex-direction: column; align-items: center; gap: 14px;
@@ -719,13 +727,27 @@ ion-icon { pointer-events: none; flex-shrink: 0; }
 
 .job-label {
   background: var(--grad-brand); color: #fff; font-weight: 700; font-size: .85rem;
-  padding: 7px 16px; border-radius: 99px; white-space: nowrap;
+  padding: 7px 14px; border-radius: 99px;
+  /* Bukan nowrap: label panjang (mis. "Pelajar/Mahasiswa", "Tenaga Kesehatan")
+     boleh pecah 2 baris di kartu sempit, alih-alih memaksa kartu melebar
+     sampai terpotong keluar layar. */
+  white-space: normal; max-width: 100%; line-height: 1.3; word-break: break-word;
 }
 
 .job-new {
   position: absolute; top: -8px; right: -6px;
   background: var(--danger); color: #fff; font-size: .68rem; font-weight: 800;
   padding: 3px 9px; border-radius: 99px; box-shadow: var(--shadow-sm);
+}
+
+@media (max-width: 480px) {
+  .job-screen { padding: 72px 14px 40px; }
+  .job-head h1 { font-size: 1.4rem; }
+  .job-grid { gap: 10px; }
+  .job-card { padding: 20px 8px 16px; gap: 10px; border-radius: 18px; }
+  .job-ic { width: 52px; height: 52px; }
+  .job-ic ion-icon { font-size: 1.5rem; }
+  .job-label { font-size: .76rem; padding: 6px 10px; }
 }
 
 /* Onboarding */
@@ -806,7 +828,10 @@ ion-icon { pointer-events: none; flex-shrink: 0; }
 .msi-amber  { background: linear-gradient(135deg, #f59e0b, #fbbf24); }
 .msi-rose   { background: linear-gradient(135deg, #f43f5e, #fb7185); }
 .msi-body { min-width: 0; }
-.msi-body b { display: block; font-size: .88rem; font-weight: 700; }
+/* color eksplisit: <button> TIDAK mewarisi color dari body (UA default-nya
+   sendiri, buttontext), jadi tanpa ini judulnya bisa gelap/nyaris tak
+   kelihatan di atas .menu-strip-item yang latarnya var(--surface) gelap. */
+.msi-body b { display: block; font-size: .88rem; font-weight: 700; color: var(--text); }
 .msi-body span { display: block; font-size: .76rem; color: var(--text-3); margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 @media (max-width: 640px) {
@@ -1418,11 +1443,58 @@ ion-icon { pointer-events: none; flex-shrink: 0; }
 .data-table input.cell-input:focus { outline: none; border-color: var(--brand); }
 
 /* Kolom nama yang menempel di kiri. Background wajib opaque agar sel lain
-   tidak menembus saat tabel digeser, jadi hover baris harus di-mirror di sini. */
+   tidak menembus saat tabel digeser, jadi hover baris harus di-mirror di sini.
+   thead memakai lapisan ganda (warna solid + gradient warna bawaan) karena
+   var(--brand-soft) sendiri semi-transparan — dipakai polos, angka kolom
+   lain yang tergeser di baliknya akan tembus terlihat saat digeser. */
 .data-table .sticky-col { position: sticky; left: 0; z-index: 1; background: var(--surface); }
-.data-table thead .sticky-col { z-index: 3; background: var(--brand-soft); }
+.data-table thead .sticky-col {
+  z-index: 3; background-color: var(--surface);
+  background-image: linear-gradient(var(--brand-soft), var(--brand-soft));
+}
 .data-table tbody tr:hover .sticky-col,
 .data-table tbody tr:focus-within .sticky-col { background: var(--surface-2); }
+
+/* Tabel checklist ibadah (jalur umum) — SATU tabel gabungan untuk semua
+   waktu sholat (bukan kartu terpisah per waktu), baris = amalan, kolom =
+   tanggal sebulan, garis-garis sel penuh ala spreadsheet. Sel kompak
+   (padding kecil) & tombol sel diberi warna sesuai status: kosong /
+   ✓ selesai / ✗ tidak dikerjakan / angka rakaat (Dhuha). */
+.data-table.ib-table th,
+.data-table.ib-table td { border: 1px solid var(--border); }
+.data-table.ib-table th:not(.sticky-col),
+.data-table.ib-table td:not(.sticky-col) { padding: 4px 2px; }
+.data-table.ib-table th.ib-col-today { background: var(--brand-soft); }
+.data-table.ib-table td.ib-col-today { box-shadow: inset 0 0 0 1.5px var(--brand); }
+
+/* Baris judul kelompok waktu (Subuh/Dhuha/…) di dalam tabel yang sama —
+   menonjol lewat latar brand-soft & huruf tebal, tombol "Kelola" nempel
+   kanan di sel yang sama (colspan penuh kolom tanggal). */
+.data-table.ib-table tr.ib-group-row td {
+  background: var(--brand-soft); font-weight: 800; font-size: .84rem;
+  color: var(--brand-dark);
+}
+[data-theme="dark"] .data-table.ib-table tr.ib-group-row td { color: #34d399; }
+.data-table.ib-table tr.ib-group-row td.sticky-col,
+.data-table.ib-table tr.ib-group-row:hover td.sticky-col {
+  background-color: var(--surface);
+  background-image: linear-gradient(var(--brand-soft), var(--brand-soft));
+}
+.ib-cell-btn {
+  width: 30px; height: 30px; border: none; background: transparent; border-radius: 8px;
+  cursor: pointer; font-weight: 800; font-size: .82rem; color: var(--text-3);
+  transition: background .15s, color .15s;
+}
+.ib-cell-btn:hover:not(:disabled) { background: var(--surface-2); }
+.ib-cell-btn:disabled { cursor: not-allowed; opacity: .3; }
+.data-table.ib-table td.ib-cell-yes { background: var(--brand-soft); }
+.data-table.ib-table td.ib-cell-yes .ib-cell-btn { color: var(--brand-dark); }
+.data-table.ib-table td.ib-cell-no { background: var(--danger-soft); }
+.data-table.ib-table td.ib-cell-no .ib-cell-btn { color: var(--danger); }
+.data-table.ib-table td.ib-cell-on { background: var(--brand-soft); }
+.data-table.ib-table td.ib-cell-on .ib-cell-btn { font-size: .68rem; color: var(--brand-dark); }
+[data-theme="dark"] .data-table.ib-table td.ib-cell-yes .ib-cell-btn,
+[data-theme="dark"] .data-table.ib-table td.ib-cell-on .ib-cell-btn { color: #34d399; }
 
 /* Kotak kredensial akun baru */
 .cred-box { display: flex; flex-direction: column; gap: 10px; }
@@ -1560,7 +1632,23 @@ ion-icon { pointer-events: none; flex-shrink: 0; }
 }
 .mood-chip span { font-size: .62rem; font-weight: 700; color: var(--text-3); }
 
-/* Kompas kiblat */
+/* Kompas kiblat — kompas di kolom tetap (kiri), info di kolom sisa lebar
+   (kanan), rata kiri supaya paragraf panjang (hint/peringatan akurasi) tidak
+   membungkus jadi tangga sempit seperti saat rata tengah. Di layar sempit
+   ditumpuk & dirata-tengahkan. */
+.qibla-panel { display: flex; align-items: center; gap: 24px; margin-top: 12px; }
+.qibla-info { flex: 1; min-width: 0; text-align: left; }
+.qibla-info .qibla-deg { font-size: 2rem; font-weight: 800; color: #0891b2; line-height: 1.1; }
+.qibla-info .qibla-sub { font-size: .8rem; color: var(--text-3); margin-top: 2px; }
+.qibla-info .qibla-meta,
+.qibla-info .qibla-pos,
+.qibla-info .qibla-hint { font-size: .78rem; color: var(--text-3); margin-top: 8px; }
+.qibla-info .qibla-pos { margin-top: 6px; font-size: .75rem; }
+@media (max-width: 520px) {
+  .qibla-panel { flex-direction: column; text-align: center; }
+  .qibla-info { text-align: center; }
+}
+
 .qibla-compass {
   width: 130px; height: 130px; border-radius: 50%; position: relative;
   border: 3px solid var(--border); background: radial-gradient(circle, var(--surface), var(--surface-2));

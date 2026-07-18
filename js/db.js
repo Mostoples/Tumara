@@ -94,17 +94,19 @@ const DB = (() => {
       return this._users().map(u => { const { passHash, ...safe } = u; return safe; });
     },
 
-    // Daftar akun siswa (dipakai guru untuk memilih anggota kelas).
+    // Daftar akun siswa AKTIF (dipakai guru untuk memilih anggota kelas).
+    // Alumni (u.alumni===true) sengaja tak ikut — mereka sudah bukan siswa
+    // aktif lagi, cuma kelihatan di tab Alumni admin (AdminView.adminListUsers).
     async listStudents() {
       return this._users()
-        .filter(u => (u.role || 'siswa') === 'siswa')
+        .filter(u => (u.role || 'siswa') === 'siswa' && !u.alumni)
         .map(u => { const { passHash, ...safe } = u; return safe; });
     },
 
-    // Siswa yang sudah login & memilih kelas ini (kelasId) saat onboarding.
+    // Siswa AKTIF yang sudah login & memilih kelas ini (kelasId) saat onboarding.
     async listStudentsByClass(classId) {
       return this._users()
-        .filter(u => (u.role || 'siswa') === 'siswa' && u.kelasId === classId)
+        .filter(u => (u.role || 'siswa') === 'siswa' && !u.alumni && u.kelasId === classId)
         .map(u => { const { passHash, ...safe } = u; return safe; });
     },
 
@@ -441,23 +443,28 @@ const DB = (() => {
       return snap.docs.map(d => ({ id: d.id, ...d.data() }));
     },
 
-    // Daftar akun siswa saja (dipakai guru untuk memilih anggota kelas).
-    // Security Rules mengizinkan guru membaca dokumen ber-role 'siswa'.
+    // Daftar akun siswa AKTIF saja (dipakai guru untuk memilih anggota kelas).
+    // Security Rules mengizinkan guru membaca dokumen ber-role 'siswa'. Filter
+    // alumni dilakukan di klien (bukan `where('alumni','==',false)`) karena
+    // dokumen siswa lama tak punya field `alumni` sama sekali — query
+    // kesetaraan Firestore tak pernah cocok dengan field yang tak ada, jadi
+    // query begitu diam-diam menyembunyikan SEMUA siswa lama.
     async listStudents() {
       const { F, db } = this.fb;
       const qy = F.query(F.collection(db, 'users'), F.where('role', '==', 'siswa'));
       const snap = await F.getDocs(qy);
-      return snap.docs.map(d => ({ id: d.id, ...d.data() }));
+      return snap.docs.map(d => ({ id: d.id, ...d.data() })).filter(u => !u.alumni);
     },
 
-    // Siswa yang sudah login & memilih kelas ini (kelasId) saat onboarding.
+    // Siswa AKTIF yang sudah login & memilih kelas ini (kelasId) saat onboarding.
     // Butuh composite index Firestore (role asc, kelasId asc) — Firebase akan
-    // menautkan pembuatannya otomatis saat query pertama dijalankan.
+    // menautkan pembuatannya otomatis saat query pertama dijalankan. Alumni
+    // difilter di klien — lihat alasan di listStudents() di atas.
     async listStudentsByClass(classId) {
       const { F, db } = this.fb;
       const qy = F.query(F.collection(db, 'users'), F.where('role', '==', 'siswa'), F.where('kelasId', '==', classId));
       const snap = await F.getDocs(qy);
-      return snap.docs.map(d => ({ id: d.id, ...d.data() }));
+      return snap.docs.map(d => ({ id: d.id, ...d.data() })).filter(u => !u.alumni);
     },
 
     // Buat akun baru TANPA menendang admin dari sesinya, dengan memakai

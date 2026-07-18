@@ -214,6 +214,40 @@ const Prod = {
     return DB.user?.pekerjaan ? this._renderTasksUmum(el) : this._renderTasksSiswa(el);
   },
 
+  // Pengingat tenggat tugas (dipakai jalur Umum — lihat App.startTaskReminder
+  // di js/umum-app.js). Tugas siswa (class_tasks) TIDAK ikut discan di sini:
+  // koleksi pribadi `tasks` hanya dipakai jalur Umum, jadi buat siswa fungsi
+  // ini otomatis tak menemukan apa-apa.
+  //
+  // Sekali per hari kalender per tugas: id yang sudah diberitahu hari ini
+  // disimpan di localStorage supaya tak memberi tahu berulang tiap interval
+  // (mis. tiap 30 mnt) selama tugas itu belum selesai/lewat tenggatnya.
+  _TASK_REMINDER_KEY: 'tumara_task_reminded',
+  async checkTaskReminders() {
+    const tasks = await DB.list('tasks');
+    const due = tasks.filter(t => t.status !== 'selesai' && t.tenggat && daysUntil(t.tenggat) <= 0);
+    if (!due.length) return;
+
+    let sudah = {};
+    try { sudah = JSON.parse(localStorage.getItem(this._TASK_REMINDER_KEY) || '{}'); } catch (_) { sudah = {}; }
+    const hariIni = todayStr();
+    if (sudah._tanggal !== hariIni) sudah = { _tanggal: hariIni };   // hari baru → reset penanda
+
+    const belumDiberitahu = due.filter(t => !sudah[t.id]);
+    if (!belumDiberitahu.length) return;
+
+    const judulSingkat = belumDiberitahu.slice(0, 3).map(t => t.judul).join(', ');
+    const sisa = belumDiberitahu.length - 3;
+    const pesan = tr(
+      `${belumDiberitahu.length} tugas jatuh tempo/terlambat: ${judulSingkat}${sisa > 0 ? ` +${sisa} lainnya` : ''}`,
+      `${belumDiberitahu.length} task(s) due/overdue: ${judulSingkat}${sisa > 0 ? ` +${sisa} more` : ''}`
+    );
+    if (!App.notify(pesan, { title: tr('Tugas jatuh tempo 📌', 'Task due 📌'), tag: 'tumara-task' })) toast(pesan, 'warning');
+
+    due.forEach(t => { sudah[t.id] = true; });   // tandai SEMUA yg due hari ini, bukan cuma yg baru
+    localStorage.setItem(this._TASK_REMINDER_KEY, JSON.stringify(sudah));
+  },
+
   // Empty-state bila siswa belum mengatur kelasnya (kelasId) — tugas & jadwal
   // datang dari kelas, jadi butuh kelas dulu.
   _needKelas() {
@@ -374,7 +408,7 @@ const Prod = {
         </div>`}`;
 
     $$('[data-filter]', el).forEach(c => c.onclick = () => { this.taskFilter = c.dataset.filter; App.refresh(); });
-    $('#addTask', el).onclick = () => this.openTaskModal();
+    $('#addTask', el).onclick = () => this.openTaskModal(null, tasks);
     $$('[data-toggle]', el).forEach(b => b.onclick = async () => {
       const t = tasks.find(x => x.id === b.dataset.toggle);
       const done = t.status !== 'selesai';
@@ -393,7 +427,7 @@ const Prod = {
       }
       App.refresh();
     });
-    $$('[data-edit]', el).forEach(b => b.onclick = () => this.openTaskModal(tasks.find(x => x.id === b.dataset.edit)));
+    $$('[data-edit]', el).forEach(b => b.onclick = () => this.openTaskModal(tasks.find(x => x.id === b.dataset.edit), tasks));
     $$('[data-del]', el).forEach(b => b.onclick = async () => {
       if (!await confirmDialog(tr('Hapus tugas ini?', 'Delete this task?'), { danger: true, okText: tr('Hapus', 'Delete') })) return;
       await DB.remove('tasks', b.dataset.del);
@@ -569,7 +603,15 @@ const Prod = {
     });
   },
 
-  openTaskModal(task = null) {
+  // `allTasks` (daftar tugas yang sudah ada, dari pemanggil) dipakai untuk
+  // menyusun saran kategori/label lewat <datalist> — supaya "Kerja"/"Pribadi"
+  // yang sudah pernah diketik muncul sebagai saran, bukan sekadar teks bebas
+  // yang mudah beda ejaan tiap kali (mis. "Kerja" vs "kerja" vs "Kantor").
+  openTaskModal(task = null, allTasks = []) {
+    const uniq = arr => [...new Set(arr.filter(Boolean))].sort();
+    const kategoriOpts = uniq(allTasks.map(t => t.mapel));
+    const labelOpts = uniq(allTasks.map(t => t.label));
+
     openModal({
       title: task ? tr('Ubah Tugas', 'Edit Task') : tr('Tugas Baru', 'New Task'),
       body: `
@@ -580,11 +622,13 @@ const Prod = {
         <div class="grid grid-2 keep-2" style="gap:12px;">
           <div class="field">
             <label>${tr('Kategori', 'Category')} <span style="font-weight:500;color:var(--text-3)">${tr('(opsional)', '(optional)')}</span></label>
-            <input type="text" class="input" id="mMapel" placeholder="${tr('mis. Kerja, Rumah', 'e.g. Work, Home')}" value="${esc(task?.mapel || '')}">
+            <input type="text" class="input" id="mMapel" list="mMapelList" placeholder="${tr('mis. Kerja, Rumah', 'e.g. Work, Home')}" value="${esc(task?.mapel || '')}">
+            <datalist id="mMapelList">${kategoriOpts.map(v => `<option value="${esc(v)}">`).join('')}</datalist>
           </div>
           <div class="field">
             <label>${tr('Label/Tag', 'Label/Tag')} <span style="font-weight:500;color:var(--text-3)">${tr('(opsional)', '(optional)')}</span></label>
-            <input type="text" class="input" id="mLabel" placeholder="${tr('mis. Pribadi, Sekolah', 'e.g. Personal, School')}" value="${esc(task?.label || '')}">
+            <input type="text" class="input" id="mLabel" list="mLabelList" placeholder="${tr('mis. Pribadi, Sekolah', 'e.g. Personal, School')}" value="${esc(task?.label || '')}">
+            <datalist id="mLabelList">${labelOpts.map(v => `<option value="${esc(v)}">`).join('')}</datalist>
           </div>
         </div>
         <div class="grid grid-2 keep-2" style="gap:12px;">

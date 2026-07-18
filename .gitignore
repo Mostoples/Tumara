@@ -64,3 +64,8 @@ node_modules/
 
 # dotenv environment variables file
 .env
+
+# Firebase service account keys (used by scripts/migrate-trial-users.js) —
+# never commit these, they grant full admin access to the project.
+*service-account*.json
+*serviceAccount*.json

@@ -8,10 +8,11 @@
    • Menumpang di app & sesi Firebase yang SUDAH dibuat UmumAuth
      (project myosigid) — TIDAK bikin app Firebase baru, supaya
      sesi login dari register.html/pilih-pekerjaan.html terbawa.
-   • Subkoleksi data di trial_users/{uid}/{coll} (paralel dengan
-     users/{uid}/{coll} di project sekolah tumara-id — nama koleksi
-     "trial_users" sengaja dipertahankan, lihat catatan di
-     firestore-umum.rules).
+   • Subkoleksi data di users/{uid}/{coll} — sama namanya dengan
+     users/{uid}/{coll} di project sekolah tumara-id, tapi project
+     Firebase-nya beda (myosigid vs tumara-id) jadi tak pernah
+     bentrok. Sampai 2026-07-18 koleksi ini bernama "trial_users";
+     lihat catatan migrasi di js/umum-auth.js.
    • Tanpa peran admin/guru/siswa, tanpa kelas/NIS/roster — hanya
      satu jenis akun: pengguna umum (dibedakan field pekerjaan).
    ============================================================ */
@@ -36,7 +37,7 @@ const DB = (() => {
   }
 
   function colRef({ F, db }, coll) {
-    return F.collection(db, 'trial_users', user.id, coll);
+    return F.collection(db, 'users', user.id, coll);
   }
   function gColRef({ F, db }, coll) {
     return F.collection(db, coll);
@@ -64,7 +65,7 @@ const DB = (() => {
     async updateUser(patch) {
       const { F, db } = await fb();
       const { id, email, ...safe } = patch;
-      await F.setDoc(F.doc(db, 'trial_users', user.id), clean(safe), { merge: true });
+      await F.setDoc(F.doc(db, 'users', user.id), clean(safe), { merge: true });
       user = { ...user, ...patch };
       UmumAuth.user = user;
       return user;

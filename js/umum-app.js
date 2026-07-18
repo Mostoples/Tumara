@@ -18,6 +18,7 @@
 const App = {
   route: 'dashboard',
   _reminderId: null,
+  _taskReminderId: null,
 
   TITLES: {
     dashboard:  [() => tr('Beranda', 'Home'),          () => fmtDate(todayStr(), { weekday: true })],
@@ -70,9 +71,16 @@ const App = {
     this.showApp();
   },
 
+  // Sekarang bisa lebih dari satu pekerjaan (pekerjaanList) — gabungkan
+  // semua labelnya. Fallback ke `pekerjaan` tunggal untuk akun lama yang
+  // belum pernah disimpan ulang lewat form multi-pilih.
   _pekerjaanLabel(u) {
-    const job = (typeof JOBS !== 'undefined') ? JOBS.find(j => j.key === u.pekerjaan) : null;
-    return job ? tr(job.id, job.en) : (u.pekerjaan || u.email || '');
+    const list = Array.isArray(u.pekerjaanList) && u.pekerjaanList.length ? u.pekerjaanList : (u.pekerjaan ? [u.pekerjaan] : []);
+    if (!list.length) return u.email || '';
+    return list.map(v => {
+      const job = (typeof JOBS !== 'undefined') ? JOBS.find(j => j.key === v) : null;
+      return job ? tr(job.id, job.en) : v;
+    }).join(' · ');
   },
 
   showApp() {
@@ -104,6 +112,7 @@ const App = {
     const route0 = fromHash.split('/')[0];
     this.navigate(this.VIEWS[route0] ? fromHash : 'dashboard');
     if (u.reminderAir) this.startWaterReminder();
+    if (u.reminderTugas) this.startTaskReminder();
   },
 
   _observeTabs() {
@@ -185,10 +194,10 @@ const App = {
     this.navigate(this.route);
   },
 
-  notify(body, { title = 'Tumara 💧' } = {}) {
+  notify(body, { title = 'Tumara 💧', tag = 'tumara-water' } = {}) {
     if ('Notification' in window && Notification.permission === 'granted') {
       try {
-        new Notification(title, { body, icon: 'assets/logo.png', tag: 'tumara-water' });
+        new Notification(title, { body, icon: 'assets/logo.png', tag });
         return true;
       } catch (_) { /* sebagian browser mobile butuh service worker — abaikan */ }
     }
@@ -206,6 +215,19 @@ const App = {
 
   stopWaterReminder() {
     if (this._reminderId) { clearInterval(this._reminderId); this._reminderId = null; }
+  },
+
+  // Pengingat tenggat tugas (jalur Umum — cek js/views/productivity.js
+  // Prod.checkTaskReminders). Dicek langsung saat dinyalakan (biar tak nunggu
+  // 30 mnt pertama), lalu berkala selama app terbuka.
+  startTaskReminder() {
+    this.stopTaskReminder();
+    this._taskReminderId = setInterval(() => Prod.checkTaskReminders(), 30 * 60 * 1000);
+    Prod.checkTaskReminders();
+  },
+
+  stopTaskReminder() {
+    if (this._taskReminderId) { clearInterval(this._taskReminderId); this._taskReminderId = null; }
   }
 };
 

@@ -10,12 +10,12 @@
    halaman yang sama dengan js/db.js.
 
    Data pengguna umum disimpan di koleksi top-level
-   `trial_users/{uid}` — { nama, email, fotoUrl, pekerjaan }.
-   Nama koleksi ini SENGAJA tidak diganti jadi "umum_users":
-   mengganti nama koleksi berarti migrasi data (pindah semua
-   dokumen ke path baru), bukan cuma ganti nama file/variabel —
-   nama koleksi ini murni detail penyimpanan internal, tidak
-   pernah tampil ke pengguna.
+   `users/{uid}` — { nama, email, fotoUrl, pekerjaan }. (Sampai
+   2026-07-18 koleksi ini bernama "trial_users"; akun lama sudah
+   dipindah lewat skrip migrasi — lihat scripts/migrate-trial-users.js
+   — supaya login lama tetap ketemu datanya di path baru. Rules-nya
+   di firestore-umum.rules sengaja masih mengizinkan kedua path
+   selama masa transisi.)
    ============================================================ */
 
 const UmumAuth = {
@@ -55,7 +55,7 @@ const UmumAuth = {
 
   async _loadProfile(fbUser) {
     const { F, db } = this.fb;
-    const ref = F.doc(db, 'trial_users', fbUser.uid);
+    const ref = F.doc(db, 'users', fbUser.uid);
     const snap = await F.getDoc(ref);
     const existing = snap.exists() ? snap.data() : null;
     const account = {
@@ -65,7 +65,7 @@ const UmumAuth = {
       loginTerakhir: new Date().toISOString()
     };
     if (!existing) {
-      const profile = { ...account, pekerjaan: null, dibuatPada: new Date().toISOString() };
+      const profile = { ...account, pekerjaan: null, pekerjaanList: [], dibuatPada: new Date().toISOString() };
       await F.setDoc(ref, profile);
       return { id: fbUser.uid, ...profile };
     }
@@ -101,10 +101,17 @@ const UmumAuth = {
     this.user = null;
   },
 
-  async savePekerjaan(key) {
+  // Sekarang bisa lebih dari satu pekerjaan sekaligus (mis. "Guru" +
+  // "Freelancer"). `pekerjaan` (tunggal) tetap disimpan sebagai yang
+  // pertama di daftar — dipakai di banyak tempat lain di app sebagai
+  // penanda "sudah pilih pekerjaan" (siswa vs umum) & fallback nama,
+  // sedangkan `pekerjaanList` adalah daftar lengkapnya.
+  async savePekerjaan(list) {
+    const arr = (Array.isArray(list) ? list : [list]).map(v => String(v).trim()).filter(Boolean);
     const { F, db } = await this._load();
-    await F.setDoc(F.doc(db, 'trial_users', this.user.id), { pekerjaan: key }, { merge: true });
-    this.user.pekerjaan = key;
+    await F.setDoc(F.doc(db, 'users', this.user.id), { pekerjaan: arr[0] || null, pekerjaanList: arr }, { merge: true });
+    this.user.pekerjaan = arr[0] || null;
+    this.user.pekerjaanList = arr;
   },
 
   // Usia/jenis kelamin/tinggi/berat — diminta sekali setelah memilih
@@ -112,7 +119,7 @@ const UmumAuth = {
   // & target kalori/air minum di halaman Kesehatan.
   async saveDataDiri(patch) {
     const { F, db } = await this._load();
-    await F.setDoc(F.doc(db, 'trial_users', this.user.id), patch, { merge: true });
+    await F.setDoc(F.doc(db, 'users', this.user.id), patch, { merge: true });
     this.user = { ...this.user, ...patch };
     return this.user;
   },

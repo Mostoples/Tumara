@@ -20,6 +20,62 @@ const Profile = {
       : esc(this._inisial(u.nama));
   },
 
+  // Label pekerjaan (bisa lebih dari satu, lihat js/views/job-select.js)
+  // untuk ditampilkan sebagai badge di kartu Data Diri.
+  _pekerjaanChips(u) {
+    const list = Array.isArray(u.pekerjaanList) && u.pekerjaanList.length ? u.pekerjaanList : (u.pekerjaan ? [u.pekerjaan] : []);
+    return list.map(v => {
+      const job = (typeof JOBS !== 'undefined') ? JOBS.find(j => j.key === v) : null;
+      return job ? tr(job.id, job.en) : v;
+    });
+  },
+
+  // Modal ubah pekerjaan — grid kartu multi-pilih yang sama seperti
+  // js/views/job-select.js (pilih-pekerjaan.html), plus satu field teks
+  // bebas untuk pekerjaan yang tidak ada di daftar. Disimpan langsung
+  // lewat DB.updateUser (bukan UmumAuth.savePekerjaan) karena di sini
+  // kita sudah di dalam app, bukan alur onboarding.
+  _pekerjaanModal(u) {
+    const { known, custom } = JobSelectView._splitSaved(u);
+    const selected = new Set(known);
+    const KARTU = JOBS.filter(j => j.key !== 'lainnya');
+
+    openModal({
+      title: tr('Ubah Pekerjaan', 'Change Job'),
+      body: `
+        <div class="job-grid" style="grid-template-columns:repeat(3,1fr);gap:10px;">
+          ${KARTU.map(j => `
+            <div class="job-card ${selected.has(j.key) ? 'selected' : ''}" data-key="${j.key}" style="padding:16px 6px 12px;border-radius:16px;">
+              <div class="job-ic" style="width:42px;height:42px;background:var(--${j.tone}-soft);color:var(--${j.tone});"><ion-icon name="${j.ic}" style="font-size:1.2rem;"></ion-icon></div>
+              <div class="job-label" style="font-size:.72rem;padding:5px 8px;">${tr(j.id, j.en)}</div>
+            </div>`).join('')}
+        </div>
+        <div class="field" style="margin-top:16px;">
+          <label>${tr('Pekerjaan lain (opsional)', 'Other job (optional)')}</label>
+          <input type="text" class="input" id="mgCustomJob" maxlength="60" placeholder="${tr('mis. Programmer, Content Creator, dll.', 'e.g. Programmer, Content Creator, etc.')}" value="${esc(custom)}">
+        </div>
+        <button type="button" class="btn btn-primary btn-block" id="mgSavePekerjaan" style="margin-top:16px;">
+          <ion-icon name="checkmark"></ion-icon> ${tr('Simpan', 'Save')}
+        </button>`,
+      onMount: m => {
+        $$('.job-card', m).forEach(card => card.onclick = () => {
+          const key = card.dataset.key;
+          selected.has(key) ? selected.delete(key) : selected.add(key);
+          card.classList.toggle('selected');
+        });
+        $('#mgSavePekerjaan', m).onclick = async () => {
+          const customVal = $('#mgCustomJob', m).value.trim();
+          const list = [...selected, ...(customVal ? [customVal] : [])];
+          if (!list.length) return toast(tr('Pilih minimal satu pekerjaan, atau tulis pekerjaanmu sendiri.', 'Pick at least one job, or type your own.'), 'warning');
+          await DB.updateUser({ pekerjaan: list[0], pekerjaanList: list });
+          closeModal();
+          toast(tr('Pekerjaan diperbarui ✅', 'Job updated ✅'));
+          App.refresh();
+        };
+      }
+    });
+  },
+
   async render(el) {
     const u = DB.user;
     const isDark = document.documentElement.dataset.theme === 'dark';
@@ -66,6 +122,18 @@ const Profile = {
           <div class="card-sub">${ed
             ? tr('Ubah datamu lalu simpan untuk menghitung ulang target.', 'Edit your data then save to recalculate targets.')
             : tr('Dipakai untuk menghitung target kalori &amp; air minum. Tekan ikon edit untuk mengubah.', 'Used to calculate your calorie &amp; water targets. Tap the edit icon to change.')}</div>
+          ${isUmum ? `
+          <div class="field" style="margin-top:14px;">
+            <label>${tr('Pekerjaan', 'Job')}</label>
+            <div style="display:flex;align-items:center;gap:8px;">
+              <div style="display:flex;gap:6px;flex-wrap:wrap;flex:1;min-width:0;">
+                ${this._pekerjaanChips(u).length
+                  ? this._pekerjaanChips(u).map(lb => `<span class="badge badge-green">${esc(lb)}</span>`).join('')
+                  : `<span style="font-size:.82rem;color:var(--text-3);">${tr('Belum diisi', 'Not set')}</span>`}
+              </div>
+              <button type="button" class="mini-icon-btn" id="pfPekerjaanEdit" title="${tr('Ubah pekerjaan', 'Change job')}"><ion-icon name="create-outline"></ion-icon></button>
+            </div>
+          </div>` : ''}
           <form id="pfForm" novalidate style="margin-top:16px;">
             <div class="grid grid-2 keep-2" style="gap:12px;">
               <div class="field">
@@ -167,6 +235,18 @@ const Profile = {
                   ${[30, 60, 90, 120].map(m => `<option value="${m}" ${(u.reminderInterval || 60) === m ? 'selected' : ''}>${m} ${tr('menit', 'min')}</option>`).join('')}
                 </select>
               </div>
+              ${isUmum ? `
+              <div class="setting-row">
+                <ion-icon name="notifications-outline" style="font-size:1.2rem;color:var(--prod);"></ion-icon>
+                <div class="sr-text">
+                  <div class="sr-title">${tr('Pengingat tenggat tugas', 'Task deadline reminder')}</div>
+                  <div class="sr-sub">${tr('Beri tahu bila ada tugas jatuh tempo/terlambat, selama aplikasi terbuka', 'Notify when a task is due/overdue, while the app is open')}</div>
+                </div>
+                <label class="switch">
+                  <input type="checkbox" id="pfReminderTugas" ${u.reminderTugas ? 'checked' : ''}>
+                  <span class="track"></span>
+                </label>
+              </div>` : ''}
             </div>
           </div>
 
@@ -236,6 +316,8 @@ const Profile = {
       this._editing = !this._editing;
       App.refresh();
     };
+
+    $('#pfPekerjaanEdit', el) && ($('#pfPekerjaanEdit', el).onclick = () => this._pekerjaanModal(u));
 
     let jk = u.jenisKelamin === 'P' ? 'P' : 'L';
     // Pilihan jenis kelamin hanya bisa diubah saat mode edit aktif.
@@ -317,6 +399,34 @@ const Profile = {
                  'This browser does not support notifications. Reminders will only show inside the app.'), 'info');
       }
     };
+
+    $('#pfReminderTugas', el) && ($('#pfReminderTugas', el).onchange = async e => {
+      const aktif = e.target.checked;
+
+      if (!aktif) {
+        await DB.updateUser({ reminderTugas: false });
+        App.stopTaskReminder();
+        return toast(tr('Pengingat tenggat tugas dimatikan.', 'Task deadline reminder turned off.'), 'info');
+      }
+
+      let perm = ('Notification' in window) ? Notification.permission : 'unsupported';
+      if (perm === 'default') {
+        try { perm = await Notification.requestPermission(); } catch (_) { perm = 'denied'; }
+      }
+
+      await DB.updateUser({ reminderTugas: true });
+      App.startTaskReminder();   // langsung cek tugas yang sudah jatuh tempo/terlambat
+
+      if (perm === 'granted') {
+        toast(tr('Oke! Kamu akan diberi tahu bila ada tugas jatuh tempo/terlambat 📌', "Okay! You'll be notified when a task is due/overdue 📌"));
+      } else if (perm === 'denied') {
+        toast(tr('Notifikasi diblokir browser. Aktifkan izin notifikasi untuk situs ini agar pengingat muncul — sementara pengingat hanya tampil di dalam app.',
+                 'Notifications are blocked by the browser. Allow notification permission for this site so reminders can appear — for now reminders only show inside the app.'), 'warning');
+      } else {
+        toast(tr('Browser ini tidak mendukung notifikasi. Pengingat hanya tampil di dalam app.',
+                 'This browser does not support notifications. Reminders will only show inside the app.'), 'info');
+      }
+    });
 
     $('#pfInterval', el).onchange = async e => {
       await DB.updateUser({ reminderInterval: +e.target.value });

@@ -88,28 +88,15 @@ const App = {
         <div class="u-school">${esc(this._pekerjaanLabel(u))}</div>
       </div>`;
 
-    $$('.nav-link, .bnav-item, .bnav-sheet-item').forEach(a => a.onclick = () => this.navigate(a.dataset.route));
-
-    const moreBtn = $('#bnavMore');
-    if (moreBtn) {
-      moreBtn.onclick = (e) => { e.stopPropagation(); this.toggleMoreSheet(); };
-      if (!this._moreSheetBound) {
-        this._moreSheetBound = true;
-        document.addEventListener('click', (e) => {
-          const sheet = $('#bnavSheet'), btn = $('#bnavMore');
-          if (sheet && sheet.classList.contains('open') &&
-              !sheet.contains(e.target) && !btn.contains(e.target)) {
-            this.toggleMoreSheet(false);
-          }
-        });
-      }
-    }
+    $$('.nav-link').forEach(a => a.onclick = () => this.navigate(a.dataset.route));
 
     $('#themeToggle').onclick = () => this.toggleTheme();
     $('#topThemeBtn').onclick = () => this.toggleTheme();
     $('#topLangBtn').onclick = () => this.toggleLang();
     $('#topAvatar').onclick = () => this.navigate('profile');
     $('#sidebarUser').onclick = () => this.navigate('profile');
+    // Tombol pulang (mobile) — hub menunya ada di Beranda (Dashboard), lihat js/views/dashboard.js.
+    $('#topHomeBtn').onclick = () => this.navigate('dashboard');
 
     this._observeTabs();
 
@@ -150,15 +137,11 @@ const App = {
 
     this._writeHash(route, typeof view.tab !== 'undefined' ? view.tab : undefined);
 
-    $$('.nav-link, .bnav-item, .bnav-sheet-item').forEach(a =>
+    $$('.nav-link').forEach(a =>
       a.classList.toggle('active', a.dataset.route === route));
 
-    const moreBtn = $('#bnavMore');
-    if (moreBtn) {
-      const inSheet = !!$('#bnavSheet')?.querySelector(`.bnav-sheet-item[data-route="${route}"]`);
-      moreBtn.classList.toggle('has-active', inSheet);
-    }
-    this.toggleMoreSheet(false);
+    // Tombol pulang di topbar mobile: tak perlu saat sudah di Beranda.
+    $('#topHomeBtn')?.classList.toggle('hidden', route === 'dashboard');
 
     const [judul, sub] = this.TITLES[route];
     $('#pageTitle').textContent = judul();
@@ -166,16 +149,6 @@ const App = {
 
     view.render($('#view'));
     window.scrollTo({ top: 0 });
-  },
-
-  toggleMoreSheet(open) {
-    const sheet = $('#bnavSheet'), btn = $('#bnavMore');
-    if (!sheet || !btn) return;
-    const show = open === undefined ? !sheet.classList.contains('open') : open;
-    sheet.classList.toggle('open', show);
-    btn.classList.toggle('open', show);
-    const icon = $('#bnavMoreIcon');
-    if (icon) icon.setAttribute('name', show ? 'close' : 'apps');
   },
 
   _writeHash(route, tab) {

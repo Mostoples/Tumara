@@ -536,9 +536,11 @@ ion-icon { pointer-events: none; flex-shrink: 0; }
 .fardhu-tile:active { transform: scale(.96); }
 .fardhu-tile .ft-emoji { font-size: 1.6rem; line-height: 1; }
 .fardhu-tile .ft-name { font-weight: 700; font-size: .85rem; overflow-wrap: anywhere; }
+.fardhu-tile .ft-sub { font-size: .72rem; color: var(--text-3); margin-top: -4px; }
 .fardhu-tile .ft-badge { font-size: 1.15rem; color: var(--text-3); }
 .fardhu-tile.done { border-color: var(--brand); background: var(--brand-soft); color: var(--brand-dark); }
 .fardhu-tile.done .ft-badge { color: var(--brand); }
+.fardhu-tile.done .ft-sub { color: inherit; opacity: .75; }
 [data-theme="dark"] .fardhu-tile.done { color: #34d399; }
 [data-theme="dark"] .fardhu-tile.done .ft-badge { color: #34d399; }
 /* Amalan custom: tile + tombol hapus sebagai sibling (bukan button bersarang) */
@@ -760,12 +762,13 @@ ion-icon { pointer-events: none; flex-shrink: 0; }
   background: rgba(255,255,255,.08); bottom: -90px; right: 160px;
 }
 .hero-card > * { position: relative; z-index: 1; }
+.hero-card > div:first-child { min-width: 0; }
 .hero-greet { font-size: 1.35rem; font-weight: 800; letter-spacing: -.02em; }
 .hero-date { font-size: .85rem; opacity: .85; margin-top: 3px; font-weight: 500; }
 .hero-msg { margin-top: 14px; font-size: .87rem; opacity: .95; max-width: 420px; line-height: 1.6; }
 
 .score-ring { position: relative; width: 130px; height: 130px; flex-shrink: 0; }
-.score-ring svg { transform: rotate(-90deg); }
+.score-ring svg { display: block; width: 100%; height: 100%; transform: rotate(-90deg); }
 .score-ring .sr-val {
   position: absolute; inset: 0; display: flex; flex-direction: column;
   align-items: center; justify-content: center;
@@ -777,6 +780,38 @@ ion-icon { pointer-events: none; flex-shrink: 0; }
 .pillar-card .pc-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; }
 .pillar-card .pc-title { display: flex; align-items: center; gap: 10px; font-weight: 800; font-size: .95rem; }
 .pillar-card .pc-title .item-icon { width: 38px; height: 38px; font-size: 1.1rem; border-radius: 11px; }
+
+/* ============ MENU STRIP (dashboard umum — pengganti navbar) ============
+   Kartu ikon + label + sub-label yang bisa diklik, gaya sama seperti strip
+   pilar di index.html (landing page) tapi dibuat interaktif: karena jalur
+   umum (umum-app.html) tidak punya bottom-nav, grid ini jadi SATU-SATUNYA
+   jalan ke semua halaman fitur di mobile (persis pola hub Beranda guru.html). */
+.menu-strip { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+.menu-strip-item {
+  display: flex; align-items: center; gap: 12px; width: 100%; min-width: 0; padding: 14px;
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius-xs); cursor: pointer; font-family: var(--font);
+  text-align: left; transition: transform .15s, box-shadow .15s, border-color .15s;
+}
+.menu-strip-item:hover { transform: translateY(-2px); box-shadow: var(--shadow-sm); border-color: var(--brand); }
+.menu-strip-item:active { transform: scale(.98); }
+.msi-icon {
+  width: 44px; height: 44px; border-radius: 13px; flex-shrink: 0;
+  display: grid; place-items: center; font-size: 1.25rem; color: #fff;
+}
+.msi-green  { background: linear-gradient(135deg, #10b981, #34d399); }
+.msi-teal   { background: linear-gradient(135deg, #0d9488, #2dd4bf); }
+.msi-purple { background: linear-gradient(135deg, #8b5cf6, #a78bfa); }
+.msi-blue   { background: linear-gradient(135deg, #3b82f6, #60a5fa); }
+.msi-amber  { background: linear-gradient(135deg, #f59e0b, #fbbf24); }
+.msi-rose   { background: linear-gradient(135deg, #f43f5e, #fb7185); }
+.msi-body { min-width: 0; }
+.msi-body b { display: block; font-size: .88rem; font-weight: 700; }
+.msi-body span { display: block; font-size: .76rem; color: var(--text-3); margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+@media (max-width: 640px) {
+  .menu-strip { grid-template-columns: repeat(2, 1fr); }
+}
 
 .stat-row { display: flex; align-items: baseline; gap: 6px; }
 .stat-num { font-size: 1.55rem; font-weight: 800; letter-spacing: -.02em; }
@@ -973,8 +1008,11 @@ ion-icon { pointer-events: none; flex-shrink: 0; }
   .auth-form-side { padding: 30px 28px 36px; }
   .onboard-card { padding: 30px 26px; }
 
-  .hero-card { flex-direction: column; align-items: flex-start; padding: 24px; }
-  .score-ring { align-self: center; }
+  .hero-card { padding: 22px; gap: 16px; }
+  .hero-msg { max-width: none; }
+  .score-ring { width: 108px; height: 108px; }
+  .score-ring .sr-num { font-size: 1.5rem; }
+  .score-ring .sr-label { font-size: .56rem; }
   .quick-actions { grid-template-columns: repeat(4, 1fr); gap: 9px; }
   .qa-btn { padding: 13px 4px; font-size: .7rem; }
   .qa-btn .item-icon { width: 40px; height: 40px; font-size: 1.1rem; }
@@ -990,6 +1028,14 @@ ion-icon { pointer-events: none; flex-shrink: 0; }
   .topbar { padding: 12px 14px 10px; }
   .card { padding: 18px; }
   .section-head { flex-wrap: wrap; gap: 8px; margin: 22px 0 12px; }
+
+  .hero-card { padding: 18px; gap: 12px; }
+  .hero-greet { font-size: 1.05rem; }
+  .hero-date { font-size: .78rem; }
+  .hero-msg { font-size: .78rem; margin-top: 8px; }
+  .score-ring { width: 84px; height: 84px; }
+  .score-ring .sr-num { font-size: 1.15rem; }
+  .score-ring .sr-label { font-size: .48rem; }
 
   /* Modal jadi bottom-sheet ala aplikasi mobile */
   .modal-overlay { align-items: flex-end; padding: 0; }
@@ -1387,7 +1433,7 @@ ion-icon { pointer-events: none; flex-shrink: 0; }
 .cred-box span { font-size: .8rem; color: var(--text-3); font-weight: 600; }
 .cred-box b { font-size: .92rem; font-family: ui-monospace, "SF Mono", Menlo, monospace; word-break: break-all; }
 
-/* Sel absensi (kode warna H/S/I/A/D) */
+/* Sel absensi (kode warna H/S/I/A/D/B) */
 .att-cell {
   width: 34px; height: 34px; border-radius: 9px; border: none; cursor: pointer;
   font-weight: 800; font-size: .82rem; color: #fff; transition: transform .1s;
@@ -1398,6 +1444,7 @@ ion-icon { pointer-events: none; flex-shrink: 0; }
 .att-I { background: #10b981; }   /* Izin   - hijau */
 .att-A { background: #ef4444; }   /* Alfa   - merah */
 .att-D { background: #22d3ee; }   /* Dispen - biru muda */
+.att-B { background: #7c3aed; }   /* Bolos  - ungu */
 .att-empty { background: var(--surface-3); color: var(--text-3); }
 
 /* Ringkasan absensi: tiap status dipisah sekat vertikal */

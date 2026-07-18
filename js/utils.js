@@ -539,7 +539,11 @@ function printHTML(title, innerHTML) {
       .km-l{min-width:110px;} .km-s{width:8px;} .km-v{font-weight:bold;}
 
       @media print{.no-print{display:none;}}
-    </style></head><body>${innerHTML}
+    </style></head><body>
+    <div class="no-print" style="margin-bottom:16px;">
+      <button onclick="window.close()" style="padding:6px 14px;font-size:13px;cursor:pointer;">← ${tr('Kembali', 'Back')}</button>
+    </div>
+    ${innerHTML}
     <div class="no-print" style="margin-top:20px;text-align:center;">
       <button onclick="window.print()" style="padding:8px 18px;font-size:14px;cursor:pointer;">🖨️ Cetak / Simpan PDF</button>
     </div></body></html>`);

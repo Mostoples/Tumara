@@ -27,7 +27,8 @@ const Teacher = {
   attDate: todayStr(),
   attPertemuan: 1,
   attMapel: null,         // absensi: mapel yang sedang diabsen (guru bisa >1 mapel)
-  hadirBulan: todayStr().slice(0, 7),   // bulan (YYYY-MM) untuk PDF daftar hadir
+  hadirBulan: todayStr().slice(0, 7),   // bulan (YYYY-MM) untuk PDF daftar hadir bulanan
+  hadirTanggal: todayStr(),             // tanggal untuk PDF daftar hadir HARIAN (rekap wali kelas)
   healthDate: todayStr(),
   aturMenu: false,        // beranda: mode susun ulang tile menu (drag & drop)
   _el: null,
@@ -37,14 +38,16 @@ const Teacher = {
     { k: 'S', id: 'Sakit',  en: 'Sick' },
     { k: 'I', id: 'Izin',   en: 'Excused' },
     { k: 'A', id: 'Alfa',   en: 'Absent' },
-    { k: 'D', id: 'Dispen', en: 'Dispensation' }
+    { k: 'D', id: 'Dispen', en: 'Dispensation' },
+    { k: 'B', id: 'Bolos',  en: 'Truant' }
   ],
 
   // Kesimpulan status HARIAN dari semua kode absensi mapel di satu hari.
   // Kehadiran menang: hadir di ≥1 mapel → H (kasus siswa telat lalu masuk di
   // mapel berikutnya). Bila tak pernah hadir, keterangan "paling ringan" yang
-  // dipakai (I > S > D > A) — jarang terjadi karena izin biasanya seharian.
-  _LENIENT: { I: 4, S: 3, D: 2, A: 1 },
+  // dipakai (I > S > D > A > B) — Bolos paling berat karena sengaja tak masuk
+  // kelas tanpa keterangan, jadi kalah ringan dari Alfa (yg belum tentu sengaja).
+  _LENIENT: { I: 5, S: 4, D: 3, A: 2, B: 1 },
   _dailyStatus(codes) {
     if (!codes.length) return '';
     if (codes.includes('H')) return 'H';
@@ -820,9 +823,14 @@ const Teacher = {
        masuk ke layar absen mapel itu. */
     if (!this.attMapel) {
       const bulan = this.hadirBulan || todayStr().slice(0, 7);
+      const tanggal = this.hadirTanggal || todayStr();
       const jmlPert = m => new Set(attAll
         .filter(a => a.guruId === DB.user.id && a.mapel === m && String(a.tanggal || '').startsWith(`${bulan}-`))
         .map(a => a.pertemuan)).size;
+      // Kelas ini kelas wali-nya sendiri? Kalau ya, tawarkan juga daftar hadir
+      // bulanan berbentuk form cetak sekolah (kolom tanggal 1–31, kesimpulan
+      // harian lintas-mapel) — sama seperti yang dipakai di "Rekap Absensi Kelas".
+      const isWaliKelasIni = DB.user.waliKelasId === this.classId;
 
       el.innerHTML = `
         <style>
@@ -839,8 +847,25 @@ const Teacher = {
             <label>${tr('Bulan (untuk ekspor)', 'Month (for export)')}</label>
             <input type="month" class="input" id="mpBulan" value="${bulan}" style="max-width:180px;">
           </div>
-          <span class="hd-hint">${tr('Pilih mapel untuk mengabsen, atau ekspor rekap bulanannya (kolom = pertemuan).', 'Pick a subject to take attendance, or export its monthly recap (columns = meetings).')}</span>
+          ${isWaliKelasIni ? `
+            <button class="btn btn-sm" id="mpPrintHarian" style="margin-bottom:1px;">
+              <ion-icon name="grid-outline"></ion-icon> ${tr('PDF Daftar Hadir Bulanan (Tgl 1-31)', 'Monthly Attendance PDF (1-31)')}
+            </button>` : ''}
+          ${Kop.btnHTML('mpKop')}
+          <span class="hd-hint">${tr('Pilih mapel untuk mengabsen, atau ekspor daftar hadir bulanannya (kolom tanggal 1-31, sama seperti form wali kelas).', 'Pick a subject to take attendance, or export its monthly attendance sheet (date columns 1-31, same shape as the homeroom form).')}${isWaliKelasIni ? ' ' + tr('Kamu wali kelas ini — PDF daftar hadir bulanan memakai kesimpulan harian lintas-mapel, sesuai form cetak sekolah.', "You're this class's homeroom teacher — the monthly attendance PDF uses the cross-subject daily conclusion, matching the school form.") : ''}</span>
         </div>
+
+        ${isWaliKelasIni ? `
+        <div class="hd-bar" style="margin:0 0 16px;flex-wrap:wrap;">
+          <div class="field" style="margin:0;">
+            <label>${tr('Tanggal (untuk ekspor)', 'Date (for export)')}</label>
+            <input type="date" class="input" id="mpTanggal" value="${tanggal}" style="max-width:180px;">
+          </div>
+          <button class="btn btn-sm" id="mpPrintTanggal" style="margin-bottom:1px;">
+            <ion-icon name="document-text-outline"></ion-icon> ${tr('Ekspor PDF Harian', 'Export Daily PDF')}
+          </button>
+          <span class="hd-hint">${tr('Cetak daftar hadir untuk satu tanggal saja, mis. beberapa hari yang lalu.', 'Print the attendance list for one specific date, e.g. a few days ago.')}</span>
+        </div>` : ''}
 
         ${mapelOpts.length ? `
           <div class="mapel-grid">
@@ -866,7 +891,11 @@ const Teacher = {
       this._bindClassBar(el);
       $('#mpBulan', el) && ($('#mpBulan', el).onchange = e => { this.hadirBulan = e.target.value || todayStr().slice(0, 7); this.render(this._el); });
       $$('[data-open]', el).forEach(b => b.onclick = () => { this.attMapel = b.dataset.open; this.render(this._el); });
-      $$('[data-export]', el).forEach(b => b.onclick = () => this._printRekapPertemuan(cls, students, { mapel: b.dataset.export, guruId: DB.user.id }));
+      $$('[data-export]', el).forEach(b => b.onclick = () => this._printDaftarHadir(cls, students, { mode: 'mapel', mapel: b.dataset.export, guruId: DB.user.id }));
+      $('#mpPrintHarian', el) && ($('#mpPrintHarian', el).onclick = () => this._printDaftarHadir(cls, students, { mode: 'harian' }));
+      $('#mpTanggal', el) && ($('#mpTanggal', el).onchange = e => { this.hadirTanggal = e.target.value || todayStr(); });
+      $('#mpPrintTanggal', el) && ($('#mpPrintTanggal', el).onclick = () => this._printDaftarHadirHarian(cls, students, this.hadirTanggal));
+      $('#mpKop', el) && ($('#mpKop', el).onclick = () => Kop.modal(() => this.render(this._el)));
       $('#mpAdd', el) && ($('#mpAdd', el).onclick = () => {
         openModal({
           title: tr('Tambah Mapel', 'Add Subject'),
@@ -962,10 +991,10 @@ const Teacher = {
             <input type="month" class="input" id="attBulan" value="${this.hadirBulan}" style="max-width:180px;">
           </div>
           <button class="btn btn-sm" id="printHadirAbs" style="margin-bottom:1px;">
-            <ion-icon name="grid-outline"></ion-icon> ${tr('Ekspor Bulanan (Pertemuan)', 'Monthly Export (Meetings)')}
+            <ion-icon name="grid-outline"></ion-icon> ${tr('PDF Daftar Hadir Bulanan', 'Monthly Attendance PDF')}
           </button>
-          <span class="hd-hint">${tr('Rekap bulanan mapel ini: kolom = pertemuan (P1…PN) yang tanggalnya jatuh di bulan terpilih, + blok tanda tangan.',
-                                      'This subject\'s monthly recap: columns = meetings (P1…PN) whose dates fall in the chosen month, + signature block.')}</span>
+          <span class="hd-hint">${tr('Daftar hadir bulanan mapel ini: kolom tanggal 1-31 (sama seperti form wali kelas) — terisi hanya di tanggal kamu ada pertemuan, kosong di tanggal lain.',
+                                      "This subject's monthly attendance sheet: date columns 1-31 (same shape as the homeroom form) — filled only on dates you had a meeting, blank on the rest.")}</span>
         </div>` : `
         <div class="card empty-state"><ion-icon name="people-outline"></ion-icon>
           <div class="es-title">${tr('Kelas ini belum punya siswa', 'This class has no students')}</div>
@@ -1036,7 +1065,7 @@ const Teacher = {
     $('#attBulan', el) && ($('#attBulan', el).onchange = e => {
       this.hadirBulan = e.target.value || todayStr().slice(0, 7);
     });
-    $('#printHadirAbs', el) && ($('#printHadirAbs', el).onclick = () => this._printRekapPertemuan(cls, students, { mapel: this.attMapel, guruId: DB.user.id }));
+    $('#printHadirAbs', el) && ($('#printHadirAbs', el).onclick = () => this._printDaftarHadir(cls, students, { mode: 'mapel', mapel: this.attMapel, guruId: DB.user.id }));
 
     $('#printAtt', el) && ($('#printAtt', el).onclick = () => {
       const namaStatus = k => { const a = this.ABSEN.find(x => x.k === k); return a ? tr(a.id, a.en) : '-'; };
@@ -1061,7 +1090,7 @@ const Teacher = {
         <td class="center">${i + 1}</td>
         <td>${esc(s.nama)}</td>
         <td>${esc(s.nis || '')}</td>
-        <td class="center ${draft[s.id] === 'A' ? 'red' : ''}">${draft[s.id] ? `${draft[s.id]} — ${namaStatus(draft[s.id])}` : '-'}</td>
+        <td class="center ${draft[s.id] === 'A' || draft[s.id] === 'B' ? 'red' : ''}">${draft[s.id] ? `${draft[s.id]} — ${namaStatus(draft[s.id])}` : '-'}</td>
         <td></td>
       </tr>`).join('');
       printHTML(`Absensi ${cls?.nama || ''}`,
@@ -1295,8 +1324,8 @@ const Teacher = {
             <button class="btn btn-sm" id="printHadir" style="margin-bottom:1px;">
               <ion-icon name="grid-outline"></ion-icon> ${tr('PDF Daftar Hadir', 'Attendance PDF')}
             </button>` : ''}
-          <span class="hd-hint">${tr('Memakai bulan ini: jurnal tercetak 31 baris tanggal; daftar hadir memakai kolom pertemuan (P1…PN) untuk mapel yang kamu ampu + blok tanda tangan.',
-                                      'Uses this month: the journal prints 31 date rows; the attendance sheet uses meeting columns (P1…PN) for your subject + a signature block.')}</span>
+          <span class="hd-hint">${tr('Memakai bulan ini: jurnal tercetak 31 baris tanggal; daftar hadir memakai kolom tanggal 1-31 untuk mapel yang kamu ampu (kosong di tanggal tanpa pertemuan) + blok tanda tangan.',
+                                      "Uses this month: the journal prints 31 date rows; the attendance sheet uses date columns 1-31 for your subject (blank on dates without a meeting) + a signature block.")}</span>
         </div>` : ''}
 
       <div class="ts-note">
@@ -1348,7 +1377,7 @@ const Teacher = {
     $('#hdBulan', el) && ($('#hdBulan', el).onchange = e => {
       this.hadirBulan = e.target.value || todayStr().slice(0, 7);
     });
-    $('#printHadir', el) && ($('#printHadir', el).onclick = () => this._printRekapPertemuan(activeCls, students, { mapel: DB.user.mapel, guruId: DB.user.id }));
+    $('#printHadir', el) && ($('#printHadir', el).onclick = () => this._printDaftarHadir(activeCls, students, { mode: 'mapel', mapel: DB.user.mapel, guruId: DB.user.id }));
 
     $('#exportJurnal', el) && ($('#exportJurnal', el).onclick = () => {
       const rows = [[
@@ -1470,12 +1499,11 @@ const Teacher = {
 
     const bulan = this.hadirBulan || todayStr().slice(0, 7);
     const [thn, bln] = bulan.split('-').map(Number);
-    // Kotaknya SELALU 31 (bentuk formnya tetap, tak berubah tiap bulan). Tanggal
-    // yang tidak ada di bulan itu (mis. 30–31 Februari) tetap punya kotak, tapi
-    // diarsir supaya tidak terisi keliru.
-    const jmlHari = new Date(thn, bln, 0).getDate();     // batas tanggal nyata: 28–31
-    const hari = Array.from({ length: 31 }, (_, i) => i + 1);
-    const nyata = d => d <= jmlHari;
+    // Jumlah kotak tanggal MENGIKUTI jumlah hari bulan itu (28–31) — bukan
+    // selalu 31. Juli 2026 → 31 kotak, tapi bulan 30 hari → 30 kotak saja
+    // (tak ada kotak tanggal 31 yang diarsir/kosong).
+    const jmlHari = new Date(thn, bln, 0).getDate();     // 28–31
+    const hari = Array.from({ length: jmlHari }, (_, i) => i + 1);
 
     // Sumber: koleksi absensi global. Mode 'mapel' → hanya mapel & guru itu.
     // Mode 'harian' → semua mapel/guru di kelas ini (rekap wali kelas).
@@ -1504,9 +1532,10 @@ const Teacher = {
       });
     } else {
       /* Satu mapel bisa punya >1 pertemuan sehari. Status "paling berat" yang
-         dipakai (A > I > S > D > H) supaya ketidakhadiran di satu jam tidak
-         tertutup kehadiran di jam lain pada mapel yang sama. */
-      const BOBOT = { A: 5, I: 4, S: 3, D: 2, H: 1 };
+         dipakai (B > A > I > S > D > H) supaya ketidakhadiran di satu jam tidak
+         tertutup kehadiran di jam lain pada mapel yang sama. Bolos terberat
+         karena sengaja tak masuk walau statusnya tercatat hadir di sekolah. */
+      const BOBOT = { B: 6, A: 5, I: 4, S: 3, D: 2, H: 1 };
       recs.forEach(r => {
         const d = +String(r.tanggal).slice(8, 10);
         if (!d) return;
@@ -1538,15 +1567,14 @@ const Teacher = {
     // ini. Bila bukan, barisnya dibiarkan kosong — diisi tangan seperti form asli.
     const wali = DB.user.waliKelasId === classId ? (DB.user.nama || '') : '';
 
-    const lebarHari = (62.5 / 31).toFixed(3);   // sisa lebar dibagi rata ke 31 kotak
+    const lebarHari = (62.5 / hari.length).toFixed(3);   // sisa lebar dibagi rata ke kotak tanggal
     const cols = `<colgroup>
       <col style="width:3.5%"><col style="width:9%"><col style="width:8%"><col style="width:17%">
       ${hari.map(() => `<col style="width:${lebarHari}%">`).join('')}
     </colgroup>`;
 
-    // Minggu diarsir tipis; tanggal yang tak ada di bulan ini diarsir lebih tegas.
-    const kelasHari = d => !nyata(d) ? ' hd-off'
-      : (new Date(thn, bln - 1, d).getDay() === 0 ? ' hd-mgg' : '');
+    // Minggu diarsir tipis, biar gampang dibaca.
+    const kelasHari = d => new Date(thn, bln - 1, d).getDay() === 0 ? ' hd-mgg' : '';
 
     const thHari = hari.map(d => `<th class="hd-d${kelasHari(d)}">${d}</th>`).join('');
 
@@ -1557,7 +1585,7 @@ const Teacher = {
         <td class="hd-no">${esc(s.nis || '')}</td>
         <td class="hd-nama">${esc(s.nama)}</td>
         ${hari.map(d => {
-          const v = nyata(d) ? isi(d, s) : '';
+          const v = isi(d, s);
           return `<td class="hd-d${kelasHari(d)}${v && v !== '✓' ? ' red' : ''}">${v}</td>`;
         }).join('')}
       </tr>`;
@@ -1567,13 +1595,9 @@ const Teacher = {
     const k = Kop.get();
 
     // Kota untuk baris tanda tangan — form aslinya menulis "Boyolali, tgl".
-    // Kota tidak disimpan terpisah, jadi diambil dari potongan terakhir alamat
-    // sebelum titik/telepon (mis. "…, Boyolali. Telp …" → "Boyolali"); bila
-    // alamat kosong, dibiarkan garis titik-titik untuk diisi tangan.
-    const kota = (() => {
-      const seg = (k.alamat || '').split(/[.\n]/)[0].split(',').map(s => s.trim()).filter(Boolean);
-      return seg.length ? seg[seg.length - 1] : '…………………';
-    })();
+    // Diisi lewat field "Kota" di Kop.modal(); kalau belum diisi, dibiarkan
+    // garis titik-titik untuk diisi tangan.
+    const kota = k.kota || '…………………';
 
     printHTML(`${tr('Daftar Hadir', 'Attendance')} ${cls?.nama || ''} ${bulan}`, `
       <style>
@@ -1600,8 +1624,6 @@ const Teacher = {
         table.hd th.hd-d{padding:2px 0;}
         table.hd td.hd-d{height:19px;font-weight:bold;}
         .hd-mgg{background:#eaeaea;-webkit-print-color-adjust:exact;print-color-adjust:exact;}
-        /* Tanggal yang tidak ada di bulan ini (mis. 30–31 Februari) — diarsir tegas. */
-        .hd-off{background:#b8b8b8;-webkit-print-color-adjust:exact;print-color-adjust:exact;}
         /* Keterangan (kiri) & blok tanda tangan (kanan) sejajar, seperti form asli. */
         .hd-foot{display:flex;justify-content:space-between;align-items:flex-start;gap:24px;margin-top:10px;}
         .hd-ket{font-size:10.5px;line-height:1.6;flex:1;}
@@ -1629,7 +1651,7 @@ const Teacher = {
             <th rowspan="2">NISN</th>
             <th rowspan="2">${tr('INDUK', 'STUDENT ID')}</th>
             <th rowspan="2">${tr('NAMA', 'NAME')}</th>
-            <th colspan="31">${tr('Tanggal', 'Date')}</th>
+            <th colspan="${hari.length}">${tr('Tanggal', 'Date')}</th>
           </tr>
           <tr>${thHari}</tr>
         </thead>
@@ -1638,8 +1660,8 @@ const Teacher = {
       <div class="hd-foot">
         <div class="hd-ket">
           <b>✓</b> = ${tr('Hadir', 'Present')} · ${ket}<br>
-          ${tr('Kotak kosong = belum ada catatan absensi pada tanggal itu (boleh diisi tangan). Kotak berarsir tebal = tanggal yang tidak ada di bulan ini.',
-               'An empty box = no attendance record on that date (may be filled in by hand). Dark shaded boxes = dates that do not exist in this month.')}
+          ${tr('Kotak kosong = belum ada catatan absensi pada tanggal itu (boleh diisi tangan).',
+               'An empty box = no attendance record on that date (may be filled in by hand).')}
         </div>
         <div class="hd-ttd">
           ${esc(kota)}, ${fmtDate(todayStr())}<br>
@@ -1649,113 +1671,82 @@ const Teacher = {
       </div>`);
   },
 
-  /* ---- Rekap bulanan PER MAPEL — kolom = PERTEMUAN (bukan tanggal 1–31) ----
-     Nomor pertemuan unik per semester; ekspor bulanan menampilkan pertemuan yang
-     tanggalnya jatuh di bulan terpilih (mis. P5–P8). Tiap kolom = satu pertemuan
-     (nomor + tanggalnya). Bentuk kop/tanda tangan sama dgn daftar hadir sekolah. */
-  async _printRekapPertemuan(cls, students, opts = {}) {
+  /* ---- PDF "DAFTAR HADIR" HARIAN (satu tanggal) — khusus wali kelas ----
+     Beda dari _printDaftarHadir (satu grid 1-31 utk sebulan): ini list
+     sederhana satu baris per siswa untuk SATU tanggal saja, memakai
+     kesimpulan harian lintas-mapel yang sama (hadir-menang). Dipakai saat
+     wali kelas ingin mengecek/mencetak absensi hari tertentu (mis. beberapa
+     hari lalu) tanpa menunggu akhir bulan. */
+  async _printDaftarHadirHarian(cls, students, tanggal) {
     if (!students.length) return toast(tr('Kelas ini belum punya siswa.', 'This class has no students yet.'), 'warning');
     const classId = cls?.id || this.classId;
-    const bulan = this.hadirBulan || todayStr().slice(0, 7);
-    const [thn, bln] = bulan.split('-').map(Number);
 
-    const recs = (await DB.gListWhere('class_attendance', 'classId', classId))
-      .filter(a => a.mapel === opts.mapel && (!opts.guruId || a.guruId === opts.guruId)
-        && String(a.tanggal || '').startsWith(`${bulan}-`));
-    if (!recs.length) return toast(tr('Belum ada pertemuan tercatat bulan ini untuk mapel ini.', 'No meetings recorded this month for this subject.'), 'warning');
-
-    // Satu pertemuan = satu tanggal (unik per semester). pertMap[pert] = {tanggal, entries}.
-    const pertMap = {};
-    recs.forEach(r => {
-      if (!pertMap[r.pertemuan]) pertMap[r.pertemuan] = { tanggal: r.tanggal, entries: {} };
-      Object.assign(pertMap[r.pertemuan].entries, r.entries || {});
-    });
-    const perts = Object.keys(pertMap).map(Number).sort((a, b) => a - b);
-    const isi = (p, s) => { const k = pertMap[p].entries[s.id]; return !k ? '' : (k === 'H' ? '✓' : k); };
+    const recs = (await DB.gListWhere('class_attendance', 'classId', classId)).filter(a => a.tanggal === tanggal);
+    const codes = {};
+    recs.forEach(r => Object.entries(r.entries || {}).forEach(([sid, k]) => { (codes[sid] = codes[sid] || []).push(k); }));
+    const status = {};
+    Object.entries(codes).forEach(([sid, arr]) => { status[sid] = this._dailyStatus(arr); });
 
     const kop = Kop.html({ judul: tr('DAFTAR HADIR', 'ATTENDANCE') });
-    const gasal = bln >= 7;
-    const semester = gasal ? tr('GASAL', 'ODD') : tr('GENAP', 'EVEN');
-    const tapel = gasal ? `${thn} / ${thn + 1}` : `${thn - 1} / ${thn}`;
     const wali = DB.user.waliKelasId === classId ? (DB.user.nama || '') : '';
     const k = Kop.get();
-    const kota = (() => {
-      const seg = (k.alamat || '').split(/[.\n]/)[0].split(',').map(s => s.trim()).filter(Boolean);
-      return seg.length ? seg[seg.length - 1] : '…………………';
-    })();
+    const kota = k.kota || '…………………';
+    const namaStatus = kk => { const a = this.ABSEN.find(x => x.k === kk); return a ? tr(a.id, a.en) : '-'; };
 
-    const wPert = (57 / Math.max(perts.length, 1)).toFixed(3);
-    const cols = `<colgroup>
-      <col style="width:3.5%"><col style="width:9%"><col style="width:8%"><col style="width:22.5%">
-      ${perts.map(() => `<col style="width:${wPert}%">`).join('')}
-    </colgroup>`;
-    const thPert = perts.map(p => {
-      const [, mm, dd] = String(pertMap[p].tanggal).split('-');
-      return `<th class="hd-d"><div>${p}</div><div class="hd-tgl">${dd}/${mm}</div></th>`;
+    const body = students.map((s, i) => {
+      const st = status[s.id] || '';
+      return `<tr>
+        <td class="center">${i + 1}</td>
+        <td>${esc(s.nisn || '')}</td>
+        <td>${esc(s.nis || '')}</td>
+        <td>${esc(s.nama)}</td>
+        <td class="center${st && st !== 'H' ? ' red' : ''}">${st === 'H' ? '✓' : (st || '–')}</td>
+        <td>${st ? namaStatus(st) : tr('Belum ada catatan', 'No record')}</td>
+      </tr>`;
     }).join('');
-    const body = students.map((s, i) => `<tr>
-      <td class="center">${i + 1}</td>
-      <td class="hd-no">${esc(s.nisn || '')}</td>
-      <td class="hd-no">${esc(s.nis || '')}</td>
-      <td class="hd-nama">${esc(s.nama)}</td>
-      ${perts.map(p => { const v = isi(p, s); return `<td class="hd-d${v && v !== '✓' ? ' red' : ''}">${v}</td>`; }).join('')}
-    </tr>`).join('');
+
     const ket = this.ABSEN.filter(a => a.k !== 'H').map(a => `<b>${a.k}</b> = ${tr(a.id, a.en)}`).join(' · ');
 
-    printHTML(`${tr('Rekap', 'Recap')} ${esc(opts.mapel || '')} ${cls?.nama || ''} ${bulan}`, `
+    printHTML(`${tr('Daftar Hadir', 'Attendance')} ${cls?.nama || ''} ${tanggal}`, `
       <style>
-        @page{size:A4 landscape;margin:10mm;}
         .hd-head{position:relative;margin:2px 0 8px;font-family:"Times New Roman",Times,serif;}
-        .hd-judul{text-align:center;font-size:14px;font-weight:bold;line-height:1.45;letter-spacing:.02em;padding:0 235px;}
+        .hd-judul{text-align:center;font-size:14px;font-weight:bold;line-height:1.45;letter-spacing:.02em;padding:0 200px;}
         table.hd-info{position:absolute;right:0;top:0;width:auto;border:none;margin:0;font-family:"Times New Roman",Times,serif;}
         table.hd-info td{border:none;padding:1px 4px 1px 0;font-size:12px;white-space:nowrap;}
         table.hd-info td.hi-l{letter-spacing:.06em;}
         table.hd-info td.hi-v{border-bottom:1px dotted #000;min-width:190px;font-weight:bold;padding-left:6px;}
-        table.hd th,table.hd td{padding:2px 1px;font-size:10px;text-align:center;}
-        table.hd td.hd-nama{text-align:left;padding:2px 5px;font-size:10.5px;white-space:nowrap;overflow:hidden;}
-        table.hd td.hd-no{font-size:9.5px;letter-spacing:-.02em;}
-        table.hd th.hd-d{padding:2px 0;}
-        table.hd th .hd-tgl{font-size:7.5px;font-weight:normal;color:#333;}
-        table.hd td.hd-d{height:19px;font-weight:bold;}
-        .hd-foot{display:flex;justify-content:space-between;align-items:flex-start;gap:24px;margin-top:10px;}
-        .hd-ket{font-size:10.5px;line-height:1.6;flex:1;}
+        .hd-foot{display:flex;justify-content:space-between;align-items:flex-start;gap:24px;margin-top:14px;}
+        .hd-ket{font-size:11px;line-height:1.6;flex:1;}
         .hd-ttd{font-family:"Times New Roman",Times,serif;text-align:center;font-size:11.5px;line-height:1.55;padding-right:24px;white-space:nowrap;}
         .ttd-nama{margin-top:46px;font-weight:bold;text-decoration:underline;text-underline-offset:2px;}
       </style>
       ${kop}
       <div class="hd-head">
         <div class="hd-judul">
-          ${tr(`DAFTAR HADIR SISWA SEMESTER ${semester}`, `STUDENT ATTENDANCE — ${semester} SEMESTER`)}<br>
-          ${esc(k.sekolah || '')}<br>
-          ${tr('TAHUN PELAJARAN', 'ACADEMIC YEAR')} ${tapel}
+          ${tr('DAFTAR HADIR SISWA', 'STUDENT ATTENDANCE')}<br>
+          ${esc(k.sekolah || '')}
         </div>
         <table class="hd-info">
-          <tr><td class="hi-l">${tr('BULAN', 'MONTH')}</td><td>:</td><td class="hi-v">${BULAN[bln - 1]} ${thn}</td></tr>
+          <tr><td class="hi-l">${tr('TANGGAL', 'DATE')}</td><td>:</td><td class="hi-v">${fmtDate(tanggal, { weekday: true })}</td></tr>
           <tr><td class="hi-l">${tr('KELAS', 'CLASS')}</td><td>:</td><td class="hi-v">${esc(cls?.nama || '')}</td></tr>
-          <tr><td class="hi-l">${tr('MAPEL', 'SUBJECT')}</td><td>:</td><td class="hi-v">${esc(opts.mapel || '')}</td></tr>
           <tr><td class="hi-l">${tr('WALI KELAS', 'HOMEROOM')}</td><td>:</td><td class="hi-v">${esc(wali)}</td></tr>
         </table>
       </div>
-      <table class="hd">${cols}
-        <thead>
-          <tr>
-            <th rowspan="2">No</th><th rowspan="2">NISN</th>
-            <th rowspan="2">${tr('INDUK', 'STUDENT ID')}</th><th rowspan="2">${tr('NAMA', 'NAME')}</th>
-            <th colspan="${perts.length}">${tr('Pertemuan ke-', 'Meeting #')}</th>
-          </tr>
-          <tr>${thPert}</tr>
-        </thead>
+      <table>
+        <thead><tr>
+          <th>No</th><th>NISN</th><th>${tr('INDUK', 'STUDENT ID')}</th><th>${tr('NAMA', 'NAME')}</th>
+          <th>${tr('Status', 'Status')}</th><th>${tr('Keterangan', 'Note')}</th>
+        </tr></thead>
         <tbody>${body}</tbody>
       </table>
       <div class="hd-foot">
         <div class="hd-ket">
           <b>✓</b> = ${tr('Hadir', 'Present')} · ${ket}<br>
-          ${tr('Kolom = pertemuan (angka atas = nomor, bawah = tanggal). Kotak kosong = siswa belum tercatat pada pertemuan itu.',
-               'Columns = meetings (top = number, bottom = date). Empty box = student not recorded for that meeting.')}
+          ${tr('Status = kesimpulan harian lintas-mapel (hadir bila hadir di ≥1 mapel).', 'Status = cross-subject daily conclusion (present if present in ≥1 subject).')}
         </div>
         <div class="hd-ttd">
           ${esc(kota)}, ${fmtDate(todayStr())}<br>
-          ${tr('Guru Mapel', 'Subject Teacher')}
+          ${tr('Wali Kelas', 'Homeroom Teacher')}
           <div class="ttd-nama">${esc(DB.user?.nama || '')}</div>
         </div>
       </div>`);
@@ -2451,12 +2442,13 @@ const Teacher = {
     const clsNama = cls?.nama || tr('Kelasmu', 'Your class');
     const students = await this._students(waliId);
     const bulan = this.hadirBulan || todayStr().slice(0, 7);
+    const tanggal = this.hadirTanggal || todayStr();
 
     const recs = (await DB.gListWhere('class_attendance', 'classId', waliId))
       .filter(a => String(a.tanggal || '').startsWith(`${bulan}-`));
 
-    // Rekap per siswa: tally[sid][mapel] = {H,S,I,A,D}; harian[sid] = {H,S,I,A,D}
-    const blank = () => ({ H: 0, S: 0, I: 0, A: 0, D: 0 });
+    // Rekap per siswa: tally[sid][mapel] = {H,S,I,A,D,B}; harian[sid] = {H,S,I,A,D,B}
+    const blank = () => ({ H: 0, S: 0, I: 0, A: 0, D: 0, B: 0 });
     const mapelList = [...new Set(recs.map(r => r.mapel).filter(Boolean))].sort();
     const tally = {};
     recs.forEach(r => {
@@ -2483,9 +2475,9 @@ const Teacher = {
 
     const cellTxt = t => {
       if (!t) return '<span style="color:var(--text-3);">–</span>';
-      const total = t.H + t.S + t.I + t.A + t.D;
+      const total = t.H + t.S + t.I + t.A + t.D + t.B;
       if (!total) return '<span style="color:var(--text-3);">–</span>';
-      const parts = ['S', 'I', 'A', 'D'].filter(k => t[k]).map(k => `<span class="wa-x">${k}${t[k]}</span>`);
+      const parts = ['S', 'I', 'A', 'D', 'B'].filter(k => t[k]).map(k => `<span class="wa-x">${k}${t[k]}</span>`);
       return `<span class="wa-h">H${t.H}</span>${parts.length ? ' ' + parts.join(' ') : ''}`;
     };
 
@@ -2503,15 +2495,27 @@ const Teacher = {
         </div>
       </div>
 
-      <div class="hd-bar" style="margin-bottom:14px;">
+      <div class="hd-bar" style="margin-bottom:14px;flex-wrap:wrap;">
         <div class="field" style="margin:0;">
           <label>${tr('Bulan', 'Month')}</label>
           <input type="month" class="input" id="waBulan" value="${bulan}" style="max-width:180px;">
         </div>
         <button class="btn btn-sm" id="waPrint" style="margin-bottom:1px;">
-          <ion-icon name="grid-outline"></ion-icon> ${tr('PDF Daftar Hadir (Harian)', 'Attendance PDF (Daily)')}
+          <ion-icon name="grid-outline"></ion-icon> ${tr('PDF Daftar Hadir Bulanan', 'Monthly Attendance PDF')}
         </button>
         <span class="hd-hint">${tr('PDF memakai kesimpulan harian lintas-mapel, sesuai form cetak sekolah.', 'PDF uses the cross-subject daily conclusion, matching the school form.')}</span>
+      </div>
+
+      <div class="hd-bar" style="margin-bottom:14px;flex-wrap:wrap;">
+        <div class="field" style="margin:0;">
+          <label>${tr('Tanggal', 'Date')}</label>
+          <input type="date" class="input" id="waTanggal" value="${tanggal}" style="max-width:180px;">
+        </div>
+        <button class="btn btn-sm" id="waPrintHarian" style="margin-bottom:1px;">
+          <ion-icon name="document-text-outline"></ion-icon> ${tr('Ekspor PDF Harian', 'Export Daily PDF')}
+        </button>
+        ${Kop.btnHTML('waKop')}
+        <span class="hd-hint">${tr('Cetak daftar hadir untuk satu tanggal saja, mis. beberapa hari yang lalu.', 'Print the attendance list for one specific date, e.g. a few days ago.')}</span>
       </div>
 
       ${!students.length ? `
@@ -2535,7 +2539,7 @@ const Teacher = {
             <tbody>
               ${students.map((s, i) => {
                 const h = harian[s.id];
-                const hariRekap = h ? `<span class="wa-h">${h.H}</span>${['S', 'I', 'A', 'D'].filter(k => h[k]).map(k => ` <span class="wa-x">${k}${h[k]}</span>`).join('')}` : '<span style="color:var(--text-3);">–</span>';
+                const hariRekap = h ? `<span class="wa-h">${h.H}</span>${['S', 'I', 'A', 'D', 'B'].filter(k => h[k]).map(k => ` <span class="wa-x">${k}${h[k]}</span>`).join('')}` : '<span style="color:var(--text-3);">–</span>';
                 return `<tr>
                   <td class="center">${i + 1}</td>
                   <td class="wa-nama">${esc(s.nama)}</td>
@@ -2547,7 +2551,7 @@ const Teacher = {
           </table>
         </div>
         <div style="font-size:.78rem;color:var(--text-3);margin-top:10px;line-height:1.6;">
-          <b class="wa-h">H</b> = ${tr('Hadir', 'Present')} · <b class="wa-x">S/I/A/D</b> = ${tr('Sakit / Izin / Alfa / Dispen (jumlah pertemuan)', 'Sick / Excused / Absent / Dispensation (meeting counts)')}<br>
+          <b class="wa-h">H</b> = ${tr('Hadir', 'Present')} · <b class="wa-x">S/I/A/D/B</b> = ${tr('Sakit / Izin / Alfa / Dispen / Bolos (jumlah pertemuan)', 'Sick / Excused / Absent / Dispensation / Truant (meeting counts)')}<br>
           ${tr('Angka = jumlah pertemuan pada mapel itu. "Hari Hadir" = jumlah hari (kesimpulan lintas-mapel).', 'Numbers = meeting counts per subject. "Days Present" = number of days (cross-subject conclusion).')}
         </div>`}`;
 
@@ -2556,6 +2560,9 @@ const Teacher = {
       this.render(this._el);
     });
     $('#waPrint', el) && ($('#waPrint', el).onclick = () => this._printDaftarHadir(cls, students, { mode: 'harian' }));
+    $('#waTanggal', el) && ($('#waTanggal', el).onchange = e => { this.hadirTanggal = e.target.value || todayStr(); });
+    $('#waPrintHarian', el) && ($('#waPrintHarian', el).onclick = () => this._printDaftarHadirHarian(cls, students, this.hadirTanggal));
+    $('#waKop', el) && ($('#waKop', el).onclick = () => Kop.modal(() => this.render(this._el)));
   },
 
   // Form "Data Guru": nama, mapel, status wali + kelas wali. Dipanggil otomatis

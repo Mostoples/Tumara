@@ -18,6 +18,7 @@ const Kop = {
     lembaga: '',     // mis. "LEMBAGA PENDIDIKAN MA'ARIF NU CAB BOYOLALI"
     sekolah: '',     // mis. "SMK KARYA NUGRAHA BOYOLALI"
     alamat: '',
+    kota: '',        // mis. "Surakarta" — dipakai di baris tanda tangan ("Kota, tanggal")
     kontak: '',      // e-mail / website
     kotak: true,     // tampilkan kotak kode form di kanan
     kodeForm: '',    // mis. "F.KUR : 15"
@@ -139,6 +140,9 @@ const Kop = {
         <div class="field"><label>${tr('Alamat & telepon', 'Address & phone')}</label>
           <input type="text" class="input" id="kAlamat" placeholder="${tr('mis. Sariasih Karanggeneng, Boyolali. Telp : (0276) 321749', 'e.g. street, city. Phone')}" value="${esc(k.alamat)}"></div>
 
+        <div class="field"><label>${tr('Kota', 'City')} <span style="font-weight:500;color:var(--text-3)">${tr('— dipakai di baris tanda tangan (mis. "Surakarta, 18 Juli 2026")', '— used on the signature line (e.g. "Surakarta, July 18, 2026")')}</span></label>
+          <input type="text" class="input" id="kKota" placeholder="${tr('mis. Surakarta', 'e.g. Surakarta')}" value="${esc(k.kota)}"></div>
+
         <div class="field"><label>${tr('E-mail / website', 'E-mail / website')}</label>
           <input type="text" class="input" id="kKontak" placeholder="mis. e-mail : sekolah@mail.com, website : sekolah.sch.id" value="${esc(k.kontak)}"></div>
 
@@ -201,6 +205,7 @@ const Kop = {
               lembaga:  $('#kLembaga', m).value.trim(),
               sekolah:  $('#kSekolah', m).value.trim(),
               alamat:   $('#kAlamat', m).value.trim(),
+              kota:     $('#kKota', m).value.trim(),
               kontak:   $('#kKontak', m).value.trim(),
               kotak:    $('#kKotak', m).checked,
               kodeForm: $('#kKode', m).value.trim(),

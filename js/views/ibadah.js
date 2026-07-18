@@ -39,6 +39,95 @@ const Ibadah = {
   // Umum (umum-app.html, punya DB.user.pekerjaan) → sholat 5 waktu.
   _itemsHariIni() { return DB.user?.pekerjaan ? this.UMUM : this.SEKOLAH; },
 
+  /* Checklist "Hari Ini" jalur UMUM — dikelompokkan per waktu sholat, tiap
+     item BISA diedit/dihapus/ditambah sendiri oleh pengguna (lihat referensi
+     spreadsheet amalan harian). Item disimpan di koleksi 'ibadah_checklist'
+     (per akun), dicentang lewat 'ibadah_daily' yang sama seperti sebelumnya
+     — hanya kuncinya kini id item, bukan key sholat yang tetap. */
+  KELOMPOK_IBADAH: [
+    { key: 'subuh',   id: 'Subuh',           en: 'Fajr',                emoji: '🌅' },
+    { key: 'dhuha',   id: 'Dhuha',           en: 'Duha',                emoji: '🕗' },
+    { key: 'dzuhur',  id: 'Dzuhur',          en: 'Dhuhr',               emoji: '☀️' },
+    { key: 'asar',    id: 'Asar',            en: 'Asr',                 emoji: '🌤️' },
+    { key: 'maghrib', id: 'Maghrib',         en: 'Maghrib',             emoji: '🌇' },
+    { key: 'isya',    id: 'Isya',            en: 'Isha',                emoji: '🌙' },
+    { key: 'malam',   id: 'Sepertiga Malam', en: 'Last Third of Night', emoji: '✨' }
+  ],
+
+  // Entri berupa string → checklist centang biasa. Entri berupa objek dengan
+  // `pilihan` (mis. Sholat Dhuha: 2/4/6/8 rakaat) → dirender sebagai pilihan
+  // angka, bukan centang tunggal (lihat _renderTodayUmum → rowPilihan).
+  CHECKLIST_DEFAULT: {
+    subuh:   ['Qobliyah Subuh', 'Sedekah Subuh', 'Doa Subuh', 'Dzikir Subuh'],
+    dhuha:   [{ label: 'Sholat Dhuha', pilihan: [2, 4, 6, 8], satuan: 'rakaat' }, 'Doa Dhuha', 'Dzikir Dhuha'],
+    dzuhur:  ['Qobliyah Dzuhur', "Ba'diyah Dzuhur", 'Doa Dzuhur', 'Dzikir Dzuhur'],
+    asar:    ['Doa Asar', 'Dzikir Asar', 'Kajian'],
+    maghrib: ["Ba'diyah Maghrib", 'Awwabin', 'Doa Maghrib', 'Dzikir Maghrib'],
+    isya:    ["Ba'diyah Isya", 'Doa Isya', 'Dzikir Isya'],
+    malam:   ['Sholat Taubat', 'Sholat Hajat', 'Sholat Tahajud', 'Doa Malam', 'Dzikir Malam']
+  },
+
+  // Isi pertama kali dipakai (belum ada item tersimpan) dengan daftar bawaan
+  // di atas — sesudahnya sepenuhnya milik pengguna (boleh diubah/dihapus semua).
+  async _seedChecklist() {
+    const out = [];
+    let urutan = 0;
+    for (const g of this.KELOMPOK_IBADAH) {
+      for (const entry of this.CHECKLIST_DEFAULT[g.key] || []) {
+        const data = typeof entry === 'string' ? { label: entry } : { ...entry };
+        out.push(await DB.add('ibadah_checklist', { kelompok: g.key, urutan: urutan++, ...data }));
+      }
+    }
+    return out;
+  },
+
+  async _checklist() {
+    let items = await DB.list('ibadah_checklist');
+    if (!items.length) return this._seedChecklist();
+
+    // Migrasi lunak: akun yang sudah lebih dulu dibuat sebelum fitur pilihan
+    // rakaat ada belum punya field `pilihan` di item "Sholat Dhuha" bawaan —
+    // tambahkan sekali saja, selama pengguna belum mengganti namanya sendiri.
+    const dhuha = items.find(i => i.kelompok === 'dhuha' && i.label === 'Sholat Dhuha' && !i.pilihan);
+    if (dhuha) {
+      const patched = await DB.update('ibadah_checklist', dhuha.id, { pilihan: [2, 4, 6, 8], satuan: 'rakaat' });
+      items = items.map(i => i.id === dhuha.id ? patched : i);
+    }
+
+    return items.sort((a, b) => (a.urutan || 0) - (b.urutan || 0));
+  },
+
+  _checklistModal(kelompokKey, existing = null) {
+    const g = this.KELOMPOK_IBADAH.find(x => x.key === kelompokKey);
+    openModal({
+      title: existing
+        ? tr('Edit Item Checklist', 'Edit Checklist Item')
+        : tr(`Tambah Item — ${g ? g.id : ''}`, `Add Item — ${g ? g.en : ''}`),
+      body: `
+        <div class="field">
+          <label>${tr('Nama amalan', 'Item name')}</label>
+          <input type="text" class="input" id="mLabel" placeholder="${tr('mis. Dzikir pagi', 'e.g. Morning dhikr')}" value="${esc(existing?.label || '')}">
+        </div>
+        <button class="btn btn-primary btn-block" id="mSave"><ion-icon name="checkmark"></ion-icon> ${tr('Simpan', 'Save')}</button>`,
+      onMount: m => {
+        $('#mSave', m).onclick = async () => {
+          const label = $('#mLabel', m).value.trim();
+          if (!label) return toast(tr('Isi nama amalan.', 'Enter item name.'), 'warning');
+          if (existing) {
+            await DB.update('ibadah_checklist', existing.id, { label });
+          } else {
+            const all = await DB.list('ibadah_checklist');
+            const urutan = all.filter(i => i.kelompok === kelompokKey).length;
+            await DB.add('ibadah_checklist', { kelompok: kelompokKey, label, urutan });
+          }
+          closeModal();
+          toast(existing ? tr('Tersimpan ✅', 'Saved ✅') : tr('Ditambahkan ✅', 'Added ✅'));
+          App.refresh();
+        };
+      }
+    });
+  },
+
   async render(el) {
     // Catat tanggal (lokal) saat render & pasang watcher pergantian hari
     this._lastDate = todayStr();
@@ -809,6 +898,8 @@ const Ibadah = {
     const done = rec.done || {};
     const siswa = !DB.user?.pekerjaan;
 
+    if (!siswa) return this._renderTodayUmum(el, done);
+
     const items = this._itemsHariIni();
     const total = items.length;
     const selesai = items.filter(i => done[i.key]).length;
@@ -837,8 +928,8 @@ const Ibadah = {
       </div>
 
       <div class="section-head" style="margin-top:20px;">
-        <h2>🕌 ${siswa ? tr('Sholat Dhuha & Dzuhur', 'Dhuha & Dhuhr Prayers') : tr('Sholat 5 Waktu', 'The 5 Daily Prayers')}</h2>
-        ${siswa ? `<span class="badge badge-green">${tr('Dipantau guru', 'Monitored by teacher')}</span>` : ''}
+        <h2>🕌 ${tr('Sholat Dhuha & Dzuhur', 'Dhuha & Dhuhr Prayers')}</h2>
+        <span class="badge badge-green">${tr('Dipantau guru', 'Monitored by teacher')}</span>
       </div>
       <div class="fardhu-grid">
         ${items.map(tile).join('')}
@@ -846,17 +937,108 @@ const Ibadah = {
 
       <div class="disclaimer" style="margin-top:20px;">
         <ion-icon name="bulb-outline"></ion-icon>
-        <span>${siswa
-          ? tr('Centang setelah kamu mengerjakannya. Guru melihat rekap harian & bulanannya, jadi isi dengan jujur ya. 🌱',
-               'Check them off once you have prayed. Your teacher sees the daily and monthly recap, so be honest. 🌱')
-          : tr('Centang setelah kamu mengerjakannya — sekadar pengingat harian untuk dirimu sendiri. 🌱',
-               "Check them off once you have prayed — a simple daily reminder just for you. 🌱")}</span>
+        <span>${tr('Centang setelah kamu mengerjakannya. Guru melihat rekap harian & bulanannya, jadi isi dengan jujur ya. 🌱',
+               'Check them off once you have prayed. Your teacher sees the daily and monthly recap, so be honest. 🌱')}</span>
       </div>`;
 
     $$('[data-toggle]', el).forEach(b => b.onclick = async () => {
       const key = b.dataset.toggle;
       const nd = { ...done, [key]: !done[key] };
       await this._saveToday(nd);
+      App.refresh();
+    });
+  },
+
+  // Jalur UMUM — checklist amalan dikelompokkan per waktu sholat, sepenuhnya
+  // bisa diedit/ditambah/dihapus per individu (lihat KELOMPOK_IBADAH/_checklist()).
+  async _renderTodayUmum(el, done) {
+    const items = await this._checklist();
+    const total = items.length;
+    const selesai = items.filter(i => done[i.id]).length;
+    const pct = total ? Math.round(selesai / total * 100) : 0;
+
+    const rowCheck = i => `
+      <div class="list-item">
+        <button class="task-check ${done[i.id] ? 'done' : ''}" data-toggle="${i.id}"><ion-icon name="checkmark"></ion-icon></button>
+        <div style="flex:1;min-width:0;font-weight:700;font-size:.88rem;" class="${done[i.id] ? 'task-title-done' : ''}">${esc(i.label)}</div>
+        <button class="mini-icon-btn" data-editchk="${i.id}"><ion-icon name="create-outline"></ion-icon></button>
+        <button class="mini-icon-btn danger" data-delchk="${i.id}"><ion-icon name="trash-outline"></ion-icon></button>
+      </div>`;
+
+    // Item dengan `pilihan` (mis. Sholat Dhuha) → pilih jumlah rakaat, bukan
+    // centang tunggal. Klik angka yang sama sekali lagi = batalkan pilihan.
+    const rowPilihan = i => `
+      <div class="list-item" style="align-items:flex-start;flex-wrap:wrap;">
+        <div style="flex:1;min-width:140px;">
+          <div class="${done[i.id] ? 'task-title-done' : ''}" style="font-weight:700;font-size:.88rem;">${esc(i.label)}</div>
+          <div style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap;">
+            ${i.pilihan.map(n => `<button class="btn btn-sm ${done[i.id] === n ? 'btn-primary' : ''}" data-rakaat="${i.id}" data-val="${n}">${n} ${esc(i.satuan || '')}</button>`).join('')}
+          </div>
+        </div>
+        <button class="mini-icon-btn" data-editchk="${i.id}"><ion-icon name="create-outline"></ion-icon></button>
+        <button class="mini-icon-btn danger" data-delchk="${i.id}"><ion-icon name="trash-outline"></ion-icon></button>
+      </div>`;
+
+    const row = i => (i.pilihan ? rowPilihan(i) : rowCheck(i));
+
+    const groupCard = g => {
+      const its = items.filter(i => i.kelompok === g.key);
+      return `
+        <div class="card" style="margin-top:14px;">
+          <div class="section-head" style="margin:0 0 10px;">
+            <h2 style="font-size:.95rem;">${g.emoji} ${tr(g.id, g.en)}</h2>
+            <button class="btn btn-sm" data-addchk="${g.key}"><ion-icon name="add"></ion-icon> ${tr('Tambah', 'Add')}</button>
+          </div>
+          <div style="display:flex;flex-direction:column;gap:8px;">
+            ${its.length ? its.map(row).join('') : `<div style="font-size:.82rem;color:var(--text-3);padding:6px 2px;">${tr('Belum ada item.', 'No items yet.')}</div>`}
+          </div>
+        </div>`;
+    };
+
+    el.innerHTML = `
+      <div class="card" style="background:linear-gradient(135deg,#0e7490,#0891b2);color:#fff;">
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap;">
+          <div>
+            <div style="font-size:.8rem;font-weight:700;opacity:.85;text-transform:uppercase;letter-spacing:.04em;">${tr('Ibadah Hari Ini', "Today's Worship")}</div>
+            <div style="font-size:1.5rem;font-weight:800;margin-top:2px;">${selesai} / ${total} ${tr('selesai', 'done')}</div>
+            <div style="font-size:.85rem;opacity:.9;margin-top:4px;">${fmtDate(todayStr(), { weekday: true })}</div>
+          </div>
+          <div class="score-ring" style="width:100px;height:100px;">
+            ${ringSVG(pct, { size: 100, stroke: 9, color: '#fff', track: 'rgba(255,255,255,.25)' })}
+            <div class="sr-val"><div class="sr-num" style="font-size:1.3rem;">${pct}%</div></div>
+          </div>
+        </div>
+      </div>
+
+      ${this.KELOMPOK_IBADAH.map(groupCard).join('')}
+
+      <div class="disclaimer" style="margin-top:20px;">
+        <ion-icon name="bulb-outline"></ion-icon>
+        <span>${tr('Centang tiap kali selesai mengerjakannya. Ketuk ✏️ untuk mengganti nama, 🗑️ untuk menghapus, atau "Tambah" untuk menambah amalanmu sendiri di tiap waktu. 🌱',
+               'Check items off as you complete them. Tap ✏️ to rename, 🗑️ to delete, or "Add" to add your own item under each prayer time. 🌱')}</span>
+      </div>`;
+
+    $$('[data-toggle]', el).forEach(b => b.onclick = async () => {
+      const key = b.dataset.toggle;
+      const nd = { ...done, [key]: !done[key] };
+      await this._saveToday(nd);
+      App.refresh();
+    });
+    $$('[data-rakaat]', el).forEach(b => b.onclick = async () => {
+      const id = b.dataset.rakaat, val = +b.dataset.val;
+      const nd = { ...done, [id]: done[id] === val ? 0 : val };
+      await this._saveToday(nd);
+      App.refresh();
+    });
+    $$('[data-addchk]', el).forEach(b => b.onclick = () => this._checklistModal(b.dataset.addchk));
+    $$('[data-editchk]', el).forEach(b => b.onclick = () => {
+      const item = items.find(i => i.id === b.dataset.editchk);
+      this._checklistModal(item.kelompok, item);
+    });
+    $$('[data-delchk]', el).forEach(b => b.onclick = async () => {
+      if (!await confirmDialog(tr('Hapus item checklist ini?', 'Delete this checklist item?'), { danger: true, okText: tr('Hapus', 'Delete') })) return;
+      await DB.remove('ibadah_checklist', b.dataset.delchk);
+      toast(tr('Item dihapus', 'Item deleted'));
       App.refresh();
     });
   },
@@ -883,9 +1065,23 @@ const Ibadah = {
     }
     const todayLembar = logs.filter(l => l.tanggal === todayStr()).reduce((s, l) => s + (l.lembar || 0), 0);
 
-    // target harian untuk khatam sesuai target hari
+    // target harian untuk khatam sesuai target hari, dibagi rata ke 5 sesi
+    // (setelah tiap sholat fardhu) — lihat tabel acuan di SS/image copy 3.png.
     const perHari = Math.ceil(totalLembar / target); // lembar/hari
+    const perSesi = Math.max(1, Math.round(perHari / 5));
     const juzBulan = (lembarBulan / totalLembar * 30).toFixed(1);
+
+    // Sesi tilawah hari ini: satu entri quran_log bertanda `sesi` per sholat
+    // fardhu (klik = tercatat perSesi lembar, klik lagi = batal) — tak perlu
+    // modal/catatan manual lagi, tinggal klik seperti checklist sholat.
+    const sesiHariIni = new Set(logs.filter(l => l.tanggal === todayStr() && l.sesi).map(l => l.sesi));
+    const sesiTile = i => `
+      <button class="fardhu-tile ${sesiHariIni.has(i.key) ? 'done' : ''}" data-sesi="${esc(i.key)}">
+        <span class="ft-emoji">${i.emoji}</span>
+        <span class="ft-name">${esc(tr(i.id, i.en))}</span>
+        <span class="ft-sub">${perSesi} ${tr('lembar', 'pages')}</span>
+        <ion-icon class="ft-badge" name="${sesiHariIni.has(i.key) ? 'checkmark-circle' : 'ellipse-outline'}"></ion-icon>
+      </button>`;
 
     const hafalHafal = hafalan.filter(h => h.status === 'hafal').length;
 
@@ -898,8 +1094,10 @@ const Ibadah = {
             <div style="font-size:.82rem;color:var(--text-3);font-weight:600;">${tr(`lembar hari ini · target ${perHari} lembar/hari`, `pages today · target ${perHari} pages/day`)}</div>
           </div>
           <div class="progress"><div class="progress-fill blue" style="width:${clamp(Math.round(todayLembar / perHari * 100), 0, 100)}%"></div></div>
-          <div style="display:flex;gap:8px;margin-top:16px;">
-            <button class="btn btn-primary btn-block btn-sm" id="addQuran"><ion-icon name="add"></ion-icon> ${tr('Catat Bacaan', 'Log Reading')}</button>
+          <div class="fardhu-grid" style="margin-top:16px;">
+            ${this.UMUM.map(sesiTile).join('')}
+          </div>
+          <div style="display:flex;justify-content:flex-end;margin-top:12px;">
             <button class="mini-icon-btn" id="khatamSet" title="${tr('Atur target khatam', 'Set khatam target')}"><ion-icon name="options-outline"></ion-icon></button>
           </div>
         </div>
@@ -974,7 +1172,17 @@ const Ibadah = {
       ch.setAttribute('name', open ? 'chevron-up' : 'chevron-down');
     });
 
-    $('#addQuran', el).onclick = () => this._quranModal(todayLembar);
+    $$('[data-sesi]', el).forEach(b => b.onclick = async () => {
+      const key = b.dataset.sesi;
+      const existing = logs.find(l => l.tanggal === todayStr() && l.sesi === key);
+      if (existing) {
+        await DB.remove('quran_log', existing.id);
+      } else {
+        await DB.add('quran_log', { tanggal: todayStr(), lembar: perSesi, sesi: key });
+        toast(tr('Barakallah, tercatat 📖', 'Barakallah, logged 📖'));
+      }
+      App.refresh();
+    });
     $('#khatamSet', el).onclick = () => this._khatamModal(target);
     $('#addHafalan', el).onclick = () => this._hafalanModal();
     $$('[data-hf]', el).forEach(b => b.onclick = async () => {
@@ -987,36 +1195,6 @@ const Ibadah = {
       if (!await confirmDialog(tr('Hapus target hafalan ini?', 'Delete this memorization target?'), { danger: true, okText: tr('Hapus', 'Delete') })) return;
       await DB.remove('hafalan', b.dataset.delhf);
       App.refresh();
-    });
-  },
-
-  _quranModal(todayLembar) {
-    openModal({
-      title: tr('Catat Bacaan Al-Qur\'an', 'Log Qur\'an Reading'),
-      body: `
-        <p style="font-size:.84rem;color:var(--text-3);margin-bottom:12px;">${tr(`Hari ini sudah <b>${todayLembar}</b> lembar. Tambahkan bacaanmu:`, `Today: <b>${todayLembar}</b> pages so far. Add your reading:`)}</p>
-        <div class="field">
-          <label>${tr('Jumlah lembar', 'Number of pages')}</label>
-          <div class="input-group">
-            <input type="number" class="input" id="mLembar" min="0" step="0.5" placeholder="${tr('mis. 2', 'e.g. 2')}">
-            <span class="input-unit">${tr('lembar', 'pages')}</span>
-          </div>
-        </div>
-        <div class="field">
-          <label>${tr('Catatan', 'Note')} <span style="font-weight:500;color:var(--text-3)">${tr('(opsional)', '(optional)')}</span></label>
-          <input type="text" class="input" id="mCat" placeholder="${tr('mis. Al-Baqarah 1–20', 'e.g. Al-Baqarah 1–20')}">
-        </div>
-        <button class="btn btn-primary btn-block" id="mSave"><ion-icon name="checkmark"></ion-icon> ${tr('Simpan', 'Save')}</button>`,
-      onMount: m => {
-        $('#mSave', m).onclick = async () => {
-          const lembar = +$('#mLembar', m).value;
-          if (!lembar || lembar <= 0) return toast(tr('Masukkan jumlah lembar.', 'Enter number of pages.'), 'warning');
-          await DB.add('quran_log', { tanggal: todayStr(), lembar, catatan: $('#mCat', m).value.trim() });
-          closeModal();
-          toast(tr('Barakallah, tercatat 📖', 'Barakallah, logged 📖'));
-          App.refresh();
-        };
-      }
     });
   },
 

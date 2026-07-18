@@ -287,12 +287,16 @@ const AdminView = {
       </div>`).join('');
   },
 
-  // NIS: hanya angka, maksimal 20 digit.
+  // NIS/NISN: hanya angka, maksimal 20 digit.
   _cleanNis(v) { return String(v || '').replace(/\D/g, '').slice(0, 20); },
-  // Batasi input #mNis ke digit & maks 20 angka saat diketik/tempel.
+  // Batasi input #mNis & #mNisn ke digit & maks 20 angka saat diketik/tempel.
+  // NISN bukan kredensial (bukan sandi/username) — cuma data pengisi PDF
+  // daftar hadir, jadi tidak wajib diisi & boleh diubah kapan saja.
   _bindNis(scope) {
-    const el = $('#mNis', scope);
-    if (el) el.oninput = () => { el.value = this._cleanNis(el.value); };
+    ['mNis', 'mNisn'].forEach(id => {
+      const el = $(`#${id}`, scope);
+      if (el) el.oninput = () => { el.value = this._cleanNis(el.value); };
+    });
   },
 
   async renderClasses(el) {
@@ -388,7 +392,7 @@ const AdminView = {
               <table class="data-table stack">
                 <thead><tr>
                   <th style="width:44px;">No</th><th>${tr('Nama Siswa', 'Student Name')}</th>
-                  <th>Username</th><th>${tr('NIS (kata sandi)', 'NIS (password)')}</th>
+                  <th>Username</th><th>${tr('NIS (kata sandi)', 'NIS (password)')}</th><th>NISN</th>
                   <th style="text-align:right;">${tr('Aksi', 'Actions')}</th>
                 </tr></thead>
                 <tbody>
@@ -398,6 +402,7 @@ const AdminView = {
                       <td class="cell-primary"><b>${esc(s.nama)}</b></td>
                       <td data-label="Username" style="color:var(--text-3);">${esc(this._loginId(s))}</td>
                       <td data-label="NIS" style="color:var(--text-3);">${esc(s.nis || '-')}</td>
+                      <td data-label="NISN" style="color:var(--text-3);">${esc(s.nisn || '-')}</td>
                       <td data-label="${tr('Aksi', 'Actions')}" style="text-align:right;white-space:nowrap;">
                         <button class="mini-icon-btn" data-edits="${s.id}" title="${tr('Ubah', 'Edit')}"><ion-icon name="create-outline"></ion-icon></button>
                         <button class="mini-icon-btn danger" data-dels="${s.id}" title="${tr('Hapus akun', 'Delete account')}"><ion-icon name="trash-outline"></ion-icon></button>
@@ -449,8 +454,8 @@ const AdminView = {
     });
     const expBtn = $('#exportRoster', el);
     if (expBtn && siswa.length) expBtn.onclick = () => {
-      const rows = [[tr('No', 'No'), tr('Nama', 'Name'), 'Username', 'NIS']];
-      siswa.forEach((s, i) => rows.push([i + 1, s.nama, this._loginId(s), s.nis || '']));
+      const rows = [[tr('No', 'No'), tr('Nama', 'Name'), 'Username', 'NIS', 'NISN']];
+      siswa.forEach((s, i) => rows.push([i + 1, s.nama, this._loginId(s), s.nis || '', s.nisn || '']));
       downloadCSV(rows, `siswa_${(active.nama || 'kelas').replace(/\s+/g, '_')}.csv`);
     };
   },
@@ -533,6 +538,10 @@ const AdminView = {
           <label>NIS <span style="font-weight:500;color:var(--text-3)">${tr('— dipakai sebagai kata sandi (maks 20 angka)', '— used as the password (max 20 digits)')}</span></label>
           <input type="text" class="input" id="mNis" inputmode="numeric" maxlength="20" placeholder="${tr('Nomor Induk Siswa', 'Student ID number')}">
         </div>`}
+        <div class="field">
+          <label>NISN <span style="font-weight:500;color:var(--text-3)">${tr('— bukan sandi/username, cuma pengisi kolom NISN di PDF daftar hadir (opsional, maks 20 angka)', "— not a password/username, just fills the NISN column on the attendance PDF (optional, max 20 digits)")}</span></label>
+          <input type="text" class="input" id="mNisn" inputmode="numeric" maxlength="20" placeholder="${tr('Nomor Induk Siswa Nasional', 'National Student ID number')}" value="${esc(student?.nisn || '')}">
+        </div>
         <button class="btn btn-primary btn-block" id="mSave"><ion-icon name="checkmark"></ion-icon> ${editing ? tr('Simpan Perubahan', 'Save Changes') : tr('Buat Akun Siswa', 'Create Student Account')}</button>`,
       onMount: m => {
         this._bindNis(m);
@@ -543,8 +552,9 @@ const AdminView = {
           if (nama.length < 2) return toast(tr('Isi nama siswa.', 'Enter a student name.'), 'warning');
           const btn = $('#mSave', m); btn.disabled = true;
           try {
+            const nisn = this._cleanNis($('#mNisn', m).value);
             if (editing) {
-              await DB.adminUpdateUser(student.id, { nama }); // username & NIS tetap
+              await DB.adminUpdateUser(student.id, { nama, nisn }); // username & NIS tetap
               closeModal();
               toast(tr('Data siswa diperbarui.', 'Student updated.'));
               this.render(this._el);
@@ -557,7 +567,7 @@ const AdminView = {
 
             await DB.adminCreateUser({
               nama, username, password: nis, role: 'siswa',
-              extra: { nis, kelasId: cls.id, kelasNama: cls.nama, kelas: cls.nama }
+              extra: { nis, nisn, kelasId: cls.id, kelasNama: cls.nama, kelas: cls.nama }
             });
             closeModal();
             this._createdInfoModal(nama, username, nis, 'siswa');
@@ -663,7 +673,7 @@ const AdminView = {
     return `
       <div class="field">
         <label>${tr('Username', 'Username')} <span style="font-weight:500;color:var(--text-3)">${tr('— ini yang diketik saat masuk', '— this is what they type to sign in')}</span></label>
-        <input type="text" class="input" id="mUser" placeholder="budi.santoso" value="${esc(user?.username || '')}" autocapitalize="off" spellcheck="false">
+        <input type="text" class="input" id="mUser" placeholder="muhhamad.thoriq" value="${esc(user?.username || '')}" autocapitalize="off" spellcheck="false">
         <div style="font-size:.76rem;color:var(--text-3);margin-top:5px;">
           ${tr('Otomatis dari nama; boleh dipangkas (mis. <b>muhammadthoriq</b>) bila terlalu panjang atau ada nama kembar.', 'Auto-filled from the name; you may shorten it (e.g. <b>muhammadthoriq</b>) if it is too long or a name clashes.')}
         </div>

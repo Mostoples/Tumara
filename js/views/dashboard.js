@@ -15,6 +15,21 @@
 
 const Dashboard = {
 
+  // Menu ringkas khusus jalur umum (umum-app.html) — tak ada di app.html siswa
+  // karena app.html masih punya bottom-nav biasa. 5 pilar yang sama seperti
+  // strip di index.html (landing page); "Produktivitas" & "Daily Planner"
+  // masing-masing menaungi beberapa rute (lihat Prod._KLASTER di
+  // js/views/productivity.js) — mendarat di rute pertama klasternya, rute
+  // saudaranya dijangkau lewat tab di dalam halaman itu sendiri, sama seperti
+  // pola tab Ibadah (js/views/ibadah.js renderKalender dst).
+  _MENU_UMUM: [
+    { route: 'health',  icon: 'heart',          color: 'green',  label: () => tr('Kesehatan', 'Health'),       sub: () => tr('Kalori, tidur & olahraga', 'Calories, sleep & exercise') },
+    { route: 'ibadah',  icon: 'moon',           color: 'teal',   label: () => tr('Ibadah', 'Worship'),         sub: () => tr("Sholat, Qur'an & dzikir", "Prayer, Qur'an & dhikr") },
+    { route: 'catatan', icon: 'rocket',         color: 'purple', label: () => tr('Produktivitas', 'Productivity'), sub: () => tr('Catatan, jadwal & fokus', 'Notes, schedule & focus') },
+    { route: 'tugas',   icon: 'calendar-number',color: 'blue',   label: () => tr('Daily Planner', 'Daily Planner'), sub: () => tr('To-do & kebiasaan', 'To-do & habits') },
+    { route: 'finance', icon: 'wallet',         color: 'amber',  label: () => tr('Keuangan', 'Finance'),       sub: () => tr('Uang saku & menabung', 'Allowance & saving goals') }
+  ],
+
   async render(el) {
     return DB.user?.pekerjaan ? this._renderUmum(el) : this._renderSiswa(el);
   },
@@ -126,8 +141,8 @@ const Dashboard = {
 
   async _renderUmum(el) {
     const user = DB.user;
-    const [daily, tasks, transactions, goals, ibadahRec] = await Promise.all([
-      DB.getDaily(), DB.list('tasks'), DB.list('transactions'), DB.list('goals'), Ibadah._today()
+    const [daily, tasks, transactions, goals, ibadahRec, ibadahItems] = await Promise.all([
+      DB.getDaily(), DB.list('tasks'), DB.list('transactions'), DB.list('goals'), Ibadah._today(), Ibadah._checklist()
     ]);
 
     const score = Calc.balanceScore({ daily, user, tasks, transactions });
@@ -144,11 +159,10 @@ const Dashboard = {
                    || (a.tenggat || '9999-99-99').localeCompare(b.tenggat || '9999-99-99'));
     const dueToday = aktif.filter(t => t.tenggat === todayStr()).length;
 
-    /* --- data ibadah hari ini (sholat 5 waktu) --- */
+    /* --- data ibadah hari ini (checklist per waktu sholat, custom per pengguna) --- */
     const doneMap = ibadahRec.done || {};
-    const ibadahItems = Ibadah._itemsHariIni();
     const ibadahTotal = ibadahItems.length;
-    const ibadahSelesai = ibadahItems.filter(i => doneMap[i.key]).length;
+    const ibadahSelesai = ibadahItems.filter(i => doneMap[i.id]).length;
     const ibadahPct = ibadahTotal ? Math.round(ibadahSelesai / ibadahTotal * 100) : 0;
 
     /* --- data keuangan --- */
@@ -179,25 +193,15 @@ const Dashboard = {
         </div>
       </div>
 
-      <!-- AKSI CEPAT -->
-      <div class="section-head"><h2>${tr('Aksi Cepat', 'Quick Actions')}</h2></div>
-      <div class="quick-actions">
-        <button class="qa-btn" id="qaWater">
-          <span class="item-icon" style="background:var(--info-soft);color:var(--info)"><ion-icon name="water"></ion-icon></span>
-          ${tr('+ Gelas Air', '+ Glass of Water')}
-        </button>
-        <button class="qa-btn" id="qaTx">
-          <span class="item-icon" style="background:var(--fin-soft);color:var(--fin)"><ion-icon name="cash-outline"></ion-icon></span>
-          ${tr('+ Transaksi', '+ Transaction')}
-        </button>
-        <button class="qa-btn" id="qaTask">
-          <span class="item-icon" style="background:var(--prod-soft);color:var(--prod)"><ion-icon name="add-circle-outline"></ion-icon></span>
-          ${tr('+ Tugas', '+ Task')}
-        </button>
-        <button class="qa-btn" id="qaFocus">
-          <span class="item-icon" style="background:var(--danger-soft);color:var(--danger)"><ion-icon name="timer-outline"></ion-icon></span>
-          ${tr('Timer Fokus', 'Focus Timer')}
-        </button>
+      <!-- MENU — jalur umum tidak punya navbar/bottom-nav (lihat umum-app.html);
+           grid ini satu-satunya jalan ke semua halaman fitur, terutama di mobile. -->
+      <div class="section-head"><h2>${tr('Menu', 'Menu')}</h2></div>
+      <div class="menu-strip">
+        ${this._MENU_UMUM.map(m => `
+          <button class="menu-strip-item" data-goto="${m.route}">
+            <span class="msi-icon msi-${m.color}"><ion-icon name="${m.icon}"></ion-icon></span>
+            <span class="msi-body"><b>${m.label()}</b><span>${m.sub()}</span></span>
+          </button>`).join('')}
       </div>
 
       <!-- RINGKASAN 4 PILAR -->
@@ -322,14 +326,5 @@ const Dashboard = {
       App.refresh();
     });
 
-    $('#qaWater', el).onclick = async () => {
-      const d = await DB.getDaily();
-      await DB.saveDaily(todayStr(), { air: (d.air || 0) + 1 });
-      toast(tr(`Segar! ${(d.air || 0) + 1} gelas air hari ini 💧`, `Refreshing! ${(d.air || 0) + 1} glasses of water today 💧`));
-      App.refresh();
-    };
-    $('#qaTx', el).onclick = () => Fin.openTxModal();
-    $('#qaTask', el).onclick = () => Prod.openTaskModal();
-    $('#qaFocus', el).onclick = () => App.navigate('fokus');
   }
 };

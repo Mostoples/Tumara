@@ -19,17 +19,52 @@ const Prod = {
   _TASK_DKEY: 'tumara_siswa_task_detail',   // agar detail tugas tahan refresh
   noteQuery: '',
 
-  // Tugas/Catatan/Kebiasaan/Jadwal/Fokus masing-masing halaman nav
-  // tersendiri (lihat js/app.js) — dibedakan langsung lewat App.route,
-  // jadi tak ada lagi tab-bar internal yang menggabungkannya dalam satu halaman.
+  // Tugas/Catatan/Kebiasaan/Jadwal/Fokus masing-masing tetap halaman nav
+  // tersendiri (rute App penuh, hash & judul sendiri — lihat js/app.js /
+  // js/umum-app.js) — dibedakan lewat App.route seperti sebelumnya.
+  // Klaster di bawah HANYA menambah tab di dalam halaman (mirip pola tab
+  // Ibadah di js/views/ibadah.js) supaya rute-rute serumpun tetap terjangkau
+  // dari jalur umum, yang Dashboard-nya cuma punya SATU tile per klaster
+  // ("Produktivitas" → Catatan/Jadwal/Fokus, "Daily Planner" → Tugas/
+  // Kebiasaan — lihat Dashboard._MENU_UMUM). Tab ini pindah rute beneran
+  // lewat App.navigate(), bukan state tab terpisah, supaya hash & judul
+  // topbar tetap ikut berubah. Siswa (app.html) masih punya bottom-nav
+  // lengkap jadi tab klaster ini disembunyikan untuknya.
+  _KLASTER: {
+    produktivitas: ['catatan', 'jadwal', 'fokus'],
+    planner: ['tugas', 'kebiasaan']
+  },
+  _TAB_INFO: {
+    catatan:   ['document-text-outline', () => tr('Catatan', 'Notes')],
+    jadwal:    ['calendar-outline',      () => tr('Jadwal', 'Schedule')],
+    fokus:     ['timer-outline',         () => tr('Fokus', 'Focus')],
+    tugas:     ['checkbox-outline',      () => tr('Tugas', 'Tasks')],
+    kebiasaan: ['repeat-outline',        () => tr('Kebiasaan', 'Habits')]
+  },
+
   async render(el) {
-    el.innerHTML = `<div id="prodBody"></div>`;
+    const route = App.route;
+    const klaster = DB.user?.pekerjaan
+      ? Object.values(this._KLASTER).find(rutes => rutes.includes(route))
+      : null;
+
+    el.innerHTML = `
+      ${klaster ? `
+        <div class="tabs">
+          ${klaster.map(r => {
+            const [icon, label] = this._TAB_INFO[r];
+            return `<button class="tab ${route === r ? 'active' : ''}" data-route="${r}"><ion-icon name="${icon}"></ion-icon>${label()}</button>`;
+          }).join('')}
+        </div>` : ''}
+      <div id="prodBody"></div>`;
+
+    $$('.tab', el).forEach(t => t.onclick = () => App.navigate(t.dataset.route));
 
     const body = $('#prodBody', el);
-    if (App.route === 'tugas') await this.renderTasks(body);
-    else if (App.route === 'catatan') await this.renderNotes(body);
-    else if (App.route === 'kebiasaan') await this.renderHabits(body);
-    else if (App.route === 'jadwal') await this.renderSchedule(body);
+    if (route === 'tugas') await this.renderTasks(body);
+    else if (route === 'catatan') await this.renderNotes(body);
+    else if (route === 'kebiasaan') await this.renderHabits(body);
+    else if (route === 'jadwal') await this.renderSchedule(body);
     else this.renderPomo(body);
   },
 

@@ -1438,7 +1438,7 @@ const Teacher = {
           <td class="center">${i + 1}</td>
           <td class="nowrap">${j.tanggal ? fmtDate(j.tanggal, { weekday: true }) : ''}</td>
           <td class="center">${j.pertemuan ?? ''}</td>
-          <td><b>${esc(j.judul || '')}</b>${j.materi ? `<div style="white-space:pre-wrap;">${esc(j.materi)}</div>` : ''}</td>
+          <td><b class="jrn-line">${esc(j.judul || '')}</b>${j.materi ? `<div class="jrn-line">${esc(j.materi)}</div>` : ''}</td>
           <td class="center">${jmlSiswa || ''}</td>
           <td class="center">${j.hadir ?? ''}</td>
           <td class="center">${tidakHadir(j)}</td>
@@ -1464,10 +1464,19 @@ const Teacher = {
 
       printHTML(`Jurnal ${activeCls?.nama || ''} ${bulan}`, `
         <style>
-          /* Baris dibuat cukup tinggi supaya bisa ditulisi tangan. */
-          table td{height:26px;}
+          /* Semua baris (isi maupun kosong) dipatok tinggi yang SAMA persis, cukup
+             tinggi untuk ditulis tangan (baris kosong) dan untuk judul+materi 2 baris
+             (baris isi). Materi yang kepanjangan dipotong 1 baris dgn ellipsis (bukan
+             melebarkan tinggi barisnya) — supaya tabel isi & kosong tetap rapi sejajar. */
+          table td{height:40px;overflow:hidden;}
+          table td .jrn-line{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+          /* Lebar 100% + border-collapse pada tabel 9 kolom ini kadang membuat
+             sisa pembulatan lebar kolom mendorong tepi kanan tabel sedikit
+             melewati batas kertas — kolom terakhir (Ket./TTD) jadi terpotong
+             saat dicetak/PDF. Beri sedikit ruang aman dengan lebar 99%. */
+          table.jrn-tbl{width:99%;}
         </style>
-        ${kop}<table style="table-layout:fixed;">${cols}<thead>${th}</thead><tbody>${isiRows}${kosongRows}</tbody></table>
+        ${kop}<table class="jrn-tbl" style="table-layout:fixed;">${cols}<thead>${th}</thead><tbody>${isiRows}${kosongRows}</tbody></table>
         <p class="muted" style="margin-top:8px;">
           ${tr('Baris kosong di bagian bawah bisa diisi tangan untuk pertemuan lain di bulan ini.',
                'The blank rows at the bottom may be filled in by hand for other meetings this month.')}

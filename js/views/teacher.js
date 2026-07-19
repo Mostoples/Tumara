@@ -1416,9 +1416,13 @@ const Teacher = {
         ]
       });
       // Lebar kolom dikunci: uraian materi mendapat porsi terbesar (seperti form
-      // aslinya), kolom angka dibuat sempit agar tidak memakan ruang.
+      // aslinya), kolom angka dibuat sempit agar tidak memakan ruang. Kolom
+      // "Hari, tanggal" diberi porsi lumayan (20%, bukan 13%) — hari+tanggal
+      // ("Minggu, 12 Juli 2026") lebih panjang dari perkiraan awal & sempat
+      // terpotong tanpa "…" (mentah) saat dicetak; sisanya diambil dari kolom
+      // materi yang sudah aman terpotong dgn ellipsis (lihat .jrn-line).
       const cols = `<colgroup>
-        <col style="width:4%"><col style="width:13%"><col style="width:6%"><col style="width:27%">
+        <col style="width:4%"><col style="width:20%"><col style="width:6%"><col style="width:20%">
         <col style="width:8%"><col style="width:7%"><col style="width:7%"><col style="width:11%"><col style="width:17%">
       </colgroup>`;
       const th = `<tr>
@@ -1436,7 +1440,7 @@ const Teacher = {
       const tidakHadir = j => (j.hadir != null && jmlSiswa ? Math.max(0, jmlSiswa - j.hadir) : '');
       const isiRows = jsBulan.map((j, i) => `<tr>
           <td class="center">${i + 1}</td>
-          <td class="nowrap">${j.tanggal ? fmtDate(j.tanggal, { weekday: true }) : ''}</td>
+          <td class="jrn-date">${j.tanggal ? fmtDate(j.tanggal, { weekday: true }) : ''}</td>
           <td class="center">${j.pertemuan ?? ''}</td>
           <td><b class="jrn-line">${esc(j.judul || '')}</b>${j.materi ? `<div class="jrn-line">${esc(j.materi)}</div>` : ''}</td>
           <td class="center">${jmlSiswa || ''}</td>
@@ -1470,6 +1474,10 @@ const Teacher = {
              melebarkan tinggi barisnya) — supaya tabel isi & kosong tetap rapi sejajar. */
           table td{height:40px;overflow:hidden;}
           table td .jrn-line{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+          /* Kolom Hari/tanggal: satu baris, dipotong dgn "…" kalau kombinasi
+             nama hari+bulan terpanjang (mis. "Selasa, 30 September 2026")
+             masih tak muat di 20% lebar — drpd terpotong mentah tanpa tanda. */
+          table td.jrn-date{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
           /* Lebar 100% + border-collapse pada tabel 9 kolom ini kadang membuat
              sisa pembulatan lebar kolom mendorong tepi kanan tabel sedikit
              melewati batas kertas — kolom terakhir (Ket./TTD) jadi terpotong

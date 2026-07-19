@@ -114,14 +114,21 @@ const UmumAuth = {
     this.user.pekerjaanList = arr;
   },
 
-  // Usia/jenis kelamin/tinggi/berat — diminta sekali setelah memilih
-  // pekerjaan (lihat js/views/data-diri.js), dipakai untuk Indeks BMI
-  // & target kalori/air minum di halaman Kesehatan.
-  async saveDataDiri(patch) {
+  // Merge-patch generik ke users/{uid} + sinkron this.user — dipakai
+  // saveDataDiri di bawah, dan juga js/ai-job-preset.js (lewat AiJobPreset.ensure)
+  // saat menyimpan cache saran AI utk pekerjaan bebas ketik saat onboarding.
+  async _patch(patch) {
     const { F, db } = await this._load();
     await F.setDoc(F.doc(db, 'users', this.user.id), patch, { merge: true });
     this.user = { ...this.user, ...patch };
     return this.user;
+  },
+
+  // Usia/jenis kelamin/tinggi/berat — diminta sekali setelah memilih
+  // pekerjaan (lihat js/views/data-diri.js), dipakai untuk Indeks BMI
+  // & target kalori/air minum di halaman Kesehatan.
+  async saveDataDiri(patch) {
+    return this._patch(patch);
   },
 
   // Sudah mengisi data diri (usia/tinggi/berat)? Dipakai untuk gerbang

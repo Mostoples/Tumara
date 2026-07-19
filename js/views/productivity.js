@@ -70,6 +70,15 @@ const Prod = {
 
   /* ============ TAB: HABIT TRACKER ============ */
 
+  // Preset utk satu entri pekerjaanList: JOB_PRESETS bawaan (12 kartu) kalau
+  // key dikenal; kalau bukan (pekerjaan bebas ketik), coba cache saran AI di
+  // user.aiJobPresets (lihat js/ai-job-preset.js) — atau null kalau belum ada.
+  _presetFor(jobKey) {
+    if (JOB_PRESETS[jobKey]) return JOB_PRESETS[jobKey];
+    if (typeof AiJobPreset === 'undefined') return null;
+    return AiJobPreset.asPreset(AiJobPreset.cached(DB.user, jobKey));
+  },
+
   // Saran kebiasaan berdasarkan pekerjaan (JOB_PRESETS di job-select.js),
   // digabung dari semua pekerjaan yang dipilih, dikurangi yang sudah ditambah
   // (dicocokkan lewat nama, apa adanya tanpa normalisasi — cukup untuk saran).
@@ -78,7 +87,7 @@ const Prod = {
     const list = DB.user?.pekerjaanList?.length ? DB.user.pekerjaanList : (DB.user?.pekerjaan ? [DB.user.pekerjaan] : []);
     const existingNames = new Set(existingHabits.map(h => h.nama));
     const seen = new Set();
-    return list.flatMap(k => JOB_PRESETS[k]?.kebiasaan || [])
+    return list.flatMap(k => this._presetFor(k)?.kebiasaan || [])
       .map(s => ({ emoji: s.e, nama: s.n() }))
       .filter(s => !existingNames.has(s.nama) && !seen.has(s.nama) && seen.add(s.nama));
   },
@@ -637,7 +646,7 @@ const Prod = {
   _jobKategoriPreset() {
     if (typeof JOB_PRESETS === 'undefined') return [];
     const list = DB.user?.pekerjaanList?.length ? DB.user.pekerjaanList : (DB.user?.pekerjaan ? [DB.user.pekerjaan] : []);
-    return list.flatMap(k => JOB_PRESETS[k]?.kategori || []);
+    return list.flatMap(k => this._presetFor(k)?.kategori || []);
   },
 
   // `allTasks` (daftar tugas yang sudah ada, dari pemanggil) dipakai untuk

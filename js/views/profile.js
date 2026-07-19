@@ -82,6 +82,9 @@ const Profile = {
           const list = [...selected, ...(customVal ? [customVal] : [])];
           if (!list.length) return toast(tr('Pilih minimal satu pekerjaan, atau tulis pekerjaanmu sendiri.', 'Pick at least one job, or type your own.'), 'warning');
           await DB.updateUser({ pekerjaan: list[0], pekerjaanList: list });
+          // Pekerjaan bebas ketik → siapkan saran AI (kategori/kebiasaan) kalau
+          // belum ada di cache; gagal pun tak masalah, ensure() diam-diam.
+          if (customVal) await AiJobPreset.ensure(customVal, DB.user, patch => DB.updateUser(patch));
           closeModal();
           toast(tr('Pekerjaan diperbarui ✅', 'Job updated ✅'));
           App._syncJobNav?.();

@@ -151,6 +151,10 @@ const JobSelectView = {
     $$('.job-card').forEach(c => c.classList.add('busy'));
     try {
       await UmumAuth.savePekerjaan(list);
+      // Pekerjaan bebas ketik → coba siapkan saran AI (kategori/kebiasaan)
+      // SEBELUM pindah halaman (location.replace di bawah membatalkan
+      // fetch yang belum selesai) — gagal pun tak masalah, ensure() diam-diam.
+      if (this._custom) await AiJobPreset.ensure(this._custom, UmumAuth.user, patch => UmumAuth._patch(patch));
       location.replace(UmumAuth.hasDataDiri(UmumAuth.user) ? 'umum-app.html' : 'data-diri.html');
     } catch (_) {
       toast(tr('Gagal menyimpan pilihan. Coba lagi.', 'Failed to save your choice. Please try again.'), 'error');

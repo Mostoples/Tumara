@@ -1586,9 +1586,13 @@ const Teacher = {
     const semester = gasal ? tr('GASAL', 'ODD') : tr('GENAP', 'EVEN');
     const tapel = gasal ? `${thn} / ${thn + 1}` : `${thn - 1} / ${thn}`;
 
-    // Nama wali kelas hanya diketahui bila guru yang mencetak memang wali kelas
-    // ini. Bila bukan, barisnya dibiarkan kosong — diisi tangan seperti form asli.
-    const wali = DB.user.waliKelasId === classId ? (DB.user.nama || '') : '';
+    // Nama wali kelas diambil dari class_schedule/{classId} (ditulis oleh wali
+    // kelas saat ia mengisi "Data Guru"/jadwal kelas) — bukan hanya dari akun
+    // guru yang sedang mencetak, supaya guru mapel lain pun melihat nama wali
+    // yang benar. Fallback ke akun sendiri kalau dokumennya belum ada tapi
+    // guru ini memang tercatat sebagai wali kelasnya.
+    const jadwalWali = await DB.gGet('class_schedule', classId).catch(() => null);
+    const wali = jadwalWali?.waliNama || (DB.user.waliKelasId === classId ? (DB.user.nama || '') : '');
 
     const lebarHari = (62.5 / hari.length).toFixed(3);   // sisa lebar dibagi rata ke kotak tanggal
     const cols = `<colgroup>
@@ -1711,7 +1715,8 @@ const Teacher = {
     Object.entries(codes).forEach(([sid, arr]) => { status[sid] = this._dailyStatus(arr); });
 
     const kop = Kop.html({ judul: tr('DAFTAR HADIR', 'ATTENDANCE') });
-    const wali = DB.user.waliKelasId === classId ? (DB.user.nama || '') : '';
+    const jadwalWali = await DB.gGet('class_schedule', classId).catch(() => null);
+    const wali = jadwalWali?.waliNama || (DB.user.waliKelasId === classId ? (DB.user.nama || '') : '');
     const k = Kop.get();
     const kota = k.kota || '…………………';
     const namaStatus = kk => { const a = this.ABSEN.find(x => x.k === kk); return a ? tr(a.id, a.en) : '-'; };

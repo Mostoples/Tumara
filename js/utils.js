@@ -468,13 +468,17 @@ function compressImage(file, { maxDim = 800, quality = 0.6 } = {}) {
 function printHTML(title, innerHTML) {
   const w = window.open('', '_blank');
   if (!w) { toast(tr('Izinkan pop-up untuk mencetak/unduh PDF.', 'Allow pop-ups to print/download PDF.'), 'warning'); return; }
-  w.document.write(`<!DOCTYPE html><html><head><meta charset="utf-8"><title>${title}</title>
+  w.document.write(`<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${title}</title>
     <style>
       /* Margin kertas diatur di @page (bukan padding body), supaya isi memenuhi
          lebar kertas dari tepi margin ke tepi margin — tanpa itu padding body
          menumpuk di atas margin printer dan hasilnya menyempit ke tengah. */
       @page{size:A4;margin:12mm;}
       *{box-sizing:border-box;}
+      /* Tanpa ini, browser HP membesarkan teks di blok sempit (mis. judul)
+         secara tidak proporsional terhadap tabel ("font boosting") —
+         judul jadi tampak jauh lebih besar dari font-size aslinya. */
+      html{-webkit-text-size-adjust:100%;text-size-adjust:100%;}
       body{font-family:Arial,Helvetica,sans-serif;color:#000;margin:0;padding:20px;font-size:12px;}
       @media print{body{padding:0;}}
       h1,h2,h3{margin:0 0 6px;}
@@ -539,6 +543,19 @@ function printHTML(title, innerHTML) {
       .km-l{min-width:110px;} .km-s{width:8px;} .km-v{font-weight:bold;}
 
       @media print{.no-print{display:none;}}
+      /* .hd-judul/.hd-info (lihat js/views/teacher.js, kop daftar hadir)
+         memakai padding & posisi absolut piksel-tetap yang dihitung utk
+         lebar kertas A4 cetak — di layar HP yang sempit, padding itu
+         melebihi lebar layar sehingga judul & blok info tumpang-tindih
+         dan terlihat berantakan/kebesaran. Di bawah breakpoint ini saja
+         (tak menyentuh tampilan desktop maupun hasil cetak/PDF-nya),
+         judul & info disusun jadi satu kolom yang wajar. */
+      @media screen and (max-width:700px){
+        .hd-judul{padding:0 6px !important;font-size:12px !important;}
+        table.hd-info{position:static !important;width:100% !important;margin:6px 0 0 !important;}
+        table.hd-info td{white-space:normal;}
+        table.hd-info td.hi-v{min-width:0 !important;}
+      }
     </style></head><body>
     <div class="no-print" style="margin-bottom:16px;">
       <button onclick="window.close()" style="padding:6px 14px;font-size:13px;cursor:pointer;">← ${tr('Kembali', 'Back')}</button>

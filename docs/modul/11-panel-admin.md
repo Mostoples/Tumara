@@ -407,26 +407,31 @@ UX-nya berlapis dua: pertama, `if (siswa.length)` — kalau kelas masih ada isin
 
 Membuat satu akun siswa lewat modal sudah cukup untuk beberapa orang. Tapi bagaimana kalau admin punya daftar 40 siswa satu angkatan, hasil salin dari Excel atau Google Sheets? Menekan "Tambah Siswa" 40 kali, mengetik nama dan NIS satu-satu, adalah pekerjaan yang menyiksa. Untuk itu ada tombol "Import Massal", dipicu `_rosterImportModal(cls)`.
 
-Alurnya: admin menyalin dua kolom (Nama, NIS) dari spreadsheet, menempelkannya ke satu `<textarea>` besar, satu siswa per baris. Karena format Excel/Sheets bisa menempel dengan pemisah yang berbeda-beda tergantung sumbernya (koma saat disalin sebagai teks, tab saat disalin sebagai sel tabel, kadang cuma spasi ganda), pemisahnya harus fleksibel:
+Alurnya: admin menyalin tiga kolom (NISN, NIS, Nama Siswa) dari spreadsheet — urutan ini sengaja dipilih karena rapor/dapodik biasanya sudah menaruh NISN di kolom paling kiri — lalu menempelkannya ke satu `<textarea>` besar, satu siswa per baris. Karena format Excel/Sheets bisa menempel dengan pemisah yang berbeda-beda tergantung sumbernya (koma saat disalin sebagai teks, tab saat disalin sebagai sel tabel), pemisahnya harus fleksibel, dan NISN boleh dikosongkan (baris `"; 12345, Budi Santoso"` tetap valid):
 
 ```js
 // js/views/admin.js — AdminView._parseRoster()
-// Tempel banyak siswa sekaligus. Tiap baris: "Nama, NIS" (pemisah , ; tab
-// atau 2+ spasi). NIS opsional. Baris kosong diabaikan.
+// Tempel banyak siswa sekaligus. Tiap baris: "NISN, NIS, Nama" (pemisah ,
+// ; atau tab). NISN opsional (boleh dikosongkan, mis. ", 12345, Budi").
+// Baris dengan hanya 2 kolom dianggap "NIS, Nama" (tanpa NISN). Baris
+// kosong diabaikan.
 _parseRoster(text) {
   return text.split(/\r?\n/).map(line => {
     const raw = line.trim();
     if (!raw) return null;
-    let nama, nis = '';
-    const parts = raw.split(/\s*[\t;,]\s*/);
-    if (parts.length >= 2) { nama = parts[0].trim(); nis = parts.slice(1).join(' ').trim(); }
-    else {
-      const mm = raw.match(/^(.*?)\s{2,}(\S+)$/);
-      if (mm) { nama = mm[1].trim(); nis = mm[2].trim(); }
+    const parts = raw.split(/\s*[\t;,]\s*/).map(p => p.trim());
+    let nisn = '', nis = '', nama = '';
+    if (parts.length >= 3) {
+      nisn = parts[0]; nis = parts[1]; nama = parts.slice(2).join(' ').trim();
+    } else if (parts.length === 2) {
+      nis = parts[0]; nama = parts[1];
+    } else {
+      const mm = raw.match(/^(\S+)\s{2,}(.*)$/);
+      if (mm) { nis = mm[1]; nama = mm[2].trim(); }
       else nama = raw;
     }
     nama = (nama || '').trim();
-    return nama ? { nama, nis: this._cleanNis(nis) } : null;
+    return nama ? { nama, nis: this._cleanNis(nis), nisn: this._cleanNis(nisn) } : null;
   }).filter(Boolean);
 }
 ```
@@ -434,10 +439,11 @@ _parseRoster(text) {
 Baca logikanya sebagai percabangan bertingkat:
 
 1. **`text.split(/\r?\n/)`** — pecah tempelan jadi baris-baris. `\r?\n` menangani baik akhir baris gaya Windows (`\r\n`) maupun gaya Unix/Mac (`\n`) — penting karena Excel di Windows dan Google Sheets bisa menghasilkan salah satu.
-2. **`raw.split(/\s*[\t;,]\s*/)`** — coba dulu pemisah yang "jelas": tab, titik-koma, atau koma (dengan spasi longgar di sekitarnya). Kalau baris berbentuk `"Budi Santoso, 12345"` atau `"Budi Santoso\t12345"`, langkah ini langsung berhasil memisahkan nama dan NIS.
-3. Kalau langkah 2 gagal (baris cuma satu potongan, artinya tak ada koma/titik-koma/tab sama sekali), coba pola cadangan: `/^(.*?)\s{2,}(\S+)$/` — nama diikuti **dua spasi atau lebih**, lalu satu kata terakhir (NIS-nya). Ini menangani tempelan dari sumber yang memisahkan kolom dengan spasi lebar, bukan tab sungguhan.
-4. Kalau tak satu pun pola cocok, seluruh baris dianggap **nama saja** tanpa NIS (`nis` tetap `''`) — nanti divalidasi belakangan bahwa NIS wajib minimal 4 digit, jadi baris seperti ini akan gagal dengan pesan yang jelas, bukan diam-diam terlewat.
-5. **`this._cleanNis(nis)`** — apa pun yang tertangkap sebagai NIS dibersihkan dulu (hanya digit, maksimal 20 karakter) sebelum disimpan ke hasil.
+2. **`raw.split(/\s*[\t;,]\s*/)`** — pisahkan dengan pemisah yang "jelas": tab, titik-koma, atau koma (dengan spasi longgar di sekitarnya).
+3. **3 kolom atau lebih** (`parts.length >= 3`) — kolom pertama NISN, kolom kedua NIS, sisanya digabung kembali jadi nama (`parts.slice(2).join(' ')`, supaya nama yang kebetulan mengandung koma/tab tidak terpotong).
+4. **Tepat 2 kolom** — dianggap format lama tanpa NISN: `"NIS, Nama"`. Ini menjaga kompatibilitas untuk admin yang masih menempel dua kolom saja.
+5. Kalau tak ada pemisah sama sekali (baris cuma satu potongan), coba pola cadangan: `/^(\S+)\s{2,}(.*)$/` — satu token pertama (NIS) diikuti **dua spasi atau lebih**, lalu sisanya jadi nama. Kalau ini pun gagal, seluruh baris dianggap **nama saja** tanpa NIS/NISN — nanti divalidasi belakangan bahwa NIS wajib minimal 4 digit, jadi baris seperti ini akan gagal dengan pesan yang jelas, bukan diam-diam terlewat.
+6. **`this._cleanNis(...)`** — apa pun yang tertangkap sebagai NIS/NISN dibersihkan dulu (hanya digit, maksimal 20 karakter) sebelum disimpan ke hasil.
 
 Setelah baris-baris berhasil di-parse, alur pembuatan akunnya berbeda dari yang mungkin Anda bayangkan:
 
@@ -451,7 +457,7 @@ for (const [i, s] of items.entries()) {
   try {
     await DB.adminCreateUser({
       nama: s.nama, username: usernameOf(s.nama), password: s.nis, role: 'siswa',
-      extra: { nis: s.nis, kelasId: cls.id, kelasNama: cls.nama, kelas: cls.nama }
+      extra: { nis: s.nis, nisn: s.nisn, kelasId: cls.id, kelasNama: cls.nama, kelas: cls.nama }
     });
     sukses++;
   } catch (e) {
@@ -516,7 +522,7 @@ async gAddMany(coll, items) {
 - [ ] Di tab Kelas & Siswa, buat satu kelas baru, buka detailnya, tambah satu siswa (nama + NIS ≥4 digit). Modal kredensial muncul menampilkan username + NIS. Buka `auth.html` di tab lain, coba login dengan kredensial itu — harus berhasil masuk sebagai siswa.
 - [ ] Di tab Akun, ketik satu nama di kotak cari huruf demi huruf perlahan. Kursor **tidak** boleh melompat keluar kotak — Anda harus bisa mengetik terus tanpa mengklik ulang.
 - [ ] Coba hapus kelas yang masih berisi siswa tadi. Harus muncul `toast` peringatan menyebutkan jumlah siswa, **penghapusan dibatalkan**. Hapus dulu siswanya, baru kelas bisa dihapus.
-- [ ] Buka "Import Massal" di sebuah kelas, tempel 5 baris `Nama, NIS` (format bebas — coba campur koma dan spasi ganda), tekan "Buat Akun Siswa". Log progres `1/5` sampai `5/5` harus muncul berurutan, lalu 5 akun baru tampil di daftar siswa kelas itu.
+- [ ] Buka "Import Massal" di sebuah kelas, tempel 5 baris `NISN, NIS, Nama` (format bebas — coba campur koma dan tab, dan kosongkan NISN di satu baris), tekan "Buat Akun Siswa". Log progres `1/5` sampai `5/5` harus muncul berurutan, lalu 5 akun baru tampil di daftar siswa kelas itu, lengkap dengan NISN-nya.
 - [ ] Ulangi impor massal dengan salah satu baris ber-NIS 2 digit saja. Modal harus **tetap terbuka** setelah proses selesai, menunjukkan baris mana yang gagal dan kenapa, sementara baris lain yang valid tetap berhasil dibuat.
 
 ## 🧯 Kalau macet

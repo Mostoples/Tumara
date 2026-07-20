@@ -659,22 +659,27 @@ const AdminView = {
     });
   },
 
-  // Tempel banyak siswa sekaligus. Tiap baris: "Nama, NIS" (pemisah , ; tab
-  // atau 2+ spasi). NIS opsional. Baris kosong diabaikan.
+  // Tempel banyak siswa sekaligus. Tiap baris: "NISN, NIS, Nama" (pemisah ,
+  // ; atau tab). NISN opsional (boleh dikosongkan, mis. ", 12345, Budi").
+  // Baris dengan hanya 2 kolom dianggap "NIS, Nama" (tanpa NISN). Baris
+  // kosong diabaikan.
   _parseRoster(text) {
     return text.split(/\r?\n/).map(line => {
       const raw = line.trim();
       if (!raw) return null;
-      let nama, nis = '';
-      const parts = raw.split(/\s*[\t;,]\s*/);
-      if (parts.length >= 2) { nama = parts[0].trim(); nis = parts.slice(1).join(' ').trim(); }
-      else {
-        const mm = raw.match(/^(.*?)\s{2,}(\S+)$/);
-        if (mm) { nama = mm[1].trim(); nis = mm[2].trim(); }
+      const parts = raw.split(/\s*[\t;,]\s*/).map(p => p.trim());
+      let nisn = '', nis = '', nama = '';
+      if (parts.length >= 3) {
+        nisn = parts[0]; nis = parts[1]; nama = parts.slice(2).join(' ').trim();
+      } else if (parts.length === 2) {
+        nis = parts[0]; nama = parts[1];
+      } else {
+        const mm = raw.match(/^(\S+)\s{2,}(.*)$/);
+        if (mm) { nis = mm[1]; nama = mm[2].trim(); }
         else nama = raw;
       }
       nama = (nama || '').trim();
-      return nama ? { nama, nis: this._cleanNis(nis) } : null;
+      return nama ? { nama, nis: this._cleanNis(nis), nisn: this._cleanNis(nisn) } : null;
     }).filter(Boolean);
   },
 
@@ -686,10 +691,10 @@ const AdminView = {
       title: tr('Import Massal Siswa', 'Bulk Import Students'),
       body: `
         <p style="font-size:.84rem;color:var(--text-3);margin-bottom:10px;line-height:1.6;">
-          ${tr(`Tempel satu siswa per baris, format <b>Nama, NIS</b>. Tiap baris dibuatkan <b>akun</b> di kelas ${esc(cls.nama)} — username otomatis dari nama, NIS jadi kata sandinya (minimal 4 angka).`, `Paste one student per line, format <b>Name, NIS</b>. Each line becomes an <b>account</b> in class ${esc(cls.nama)} — username auto from the name, NIS becomes the password (min 4 digits).`)}
+          ${tr(`Tempel satu siswa per baris, format <b>NISN, NIS, Nama Siswa</b>. Tiap baris dibuatkan <b>akun</b> di kelas ${esc(cls.nama)} — username otomatis dari nama, NIS jadi kata sandinya (minimal 4 angka). NISN boleh dikosongkan.`, `Paste one student per line, format <b>NISN, NIS, Student Name</b>. Each line becomes an <b>account</b> in class ${esc(cls.nama)} — username auto from the name, NIS becomes the password (min 4 digits). NISN may be left blank.`)}
         </p>
         <div class="field">
-          <textarea class="input" id="mBulk" rows="9" style="resize:vertical;font-family:inherit;" placeholder="Budi Santoso, 12345&#10;Siti Aminah, 12346&#10;Ahmad Rizki, 12347"></textarea>
+          <textarea class="input" id="mBulk" rows="9" style="resize:vertical;font-family:inherit;" placeholder="0012345678, 12345, Budi Santoso&#10;0012345679, 12346, Siti Aminah&#10;0012345680, 12347, Ahmad Rizki"></textarea>
         </div>
         <div style="font-size:.8rem;color:var(--text-3);margin-bottom:12px;"><span id="mPreview">0</span> ${tr('siswa terdeteksi', 'students detected')}</div>
         <div id="mLog" style="font-size:.8rem;color:var(--text-3);margin-bottom:12px;"></div>
@@ -711,7 +716,7 @@ const AdminView = {
             try {
               await DB.adminCreateUser({
                 nama: s.nama, username: usernameOf(s.nama), password: s.nis, role: 'siswa',
-                extra: { nis: s.nis, kelasId: cls.id, kelasNama: cls.nama, kelas: cls.nama }
+                extra: { nis: s.nis, nisn: s.nisn, kelasId: cls.id, kelasNama: cls.nama, kelas: cls.nama }
               });
               sukses++;
             } catch (e) {

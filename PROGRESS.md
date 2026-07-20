@@ -34,7 +34,7 @@ Fokus v1.3: menata alur **sekolah** (admin → guru → siswa) dan membuat tugas
 
 ### 1. Enrolment terpusat (data induk admin)
 - **Koleksi Firestore top-level baru** (bukan subkoleksi user): `school_classes` (daftar kelas: `nama`, `keterangan`, `urutan?`) & `school_roster` (data acuan siswa: `classId`, `nama`, `nis`).
-- **Admin** (`js/views/admin.js`, state `view: accounts|classes`): menu **"Kelas & Siswa"** — buat/ubah/hapus kelas, **import massal** siswa (tempel `Nama, NIS`; parser `_parseRoster`, pemisah `,`/`;`/tab/2+ spasi), tambah/edit/hapus siswa, ekspor CSV. **NIS dibatasi maks 20 angka** (helper `_cleanNis`/`_bindNis`) di semua input NIS.
+- **Admin** (`js/views/admin.js`, state `view: accounts|classes`): menu **"Kelas & Siswa"** — buat/ubah/hapus kelas, **import massal** siswa (tempel `NISN, NIS, Nama`, NISN opsional; format lama `NIS, Nama` 2-kolom tetap didukung; parser `_parseRoster`, pemisah `,`/`;`/tab), tambah/edit/hapus siswa, ekspor CSV. **NIS dibatasi maks 20 angka** (helper `_cleanNis`/`_bindNis`) di semua input NIS.
 - Roster admin = **acuan**; roster aktif guru berasal dari siswa yang sudah login (lihat #2).
 
 ### 2. Siswa login Google → pilih kelas + NIS

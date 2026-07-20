@@ -464,21 +464,40 @@ function compressImage(file, { maxDim = 800, quality = 0.6 } = {}) {
   });
 }
 
-// Cetak sepotong HTML lewat jendela baru (untuk unduhan PDF via dialog cetak browser).
-function printHTML(title, innerHTML) {
+/* Buka jendela cetak SEGERA, synchronous di dalam handler klik — sebelum
+   ada `await` apa pun. Popup yang dibuka setelah await tidak lagi dianggap
+   browser sebagai hasil langsung gesture pengguna; di Chrome/HP ini bikin
+   tab barunya dirender dengan metrik viewport yang salah (halaman tampil
+   mengecil di pojok, bukan memenuhi layar) meski popup-nya tidak diblokir.
+   Panggil ini duluan di onclick, lalu oper hasilnya ke printHTML(). */
+function openPrintWindow() {
   const w = window.open('', '_blank');
-  if (!w) { toast(tr('Izinkan pop-up untuk mencetak/unduh PDF.', 'Allow pop-ups to print/download PDF.'), 'warning'); return; }
-  w.document.write(`<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${title}</title>
+  if (!w) toast(tr('Izinkan pop-up untuk mencetak/unduh PDF.', 'Allow pop-ups to print/download PDF.'), 'warning');
+  return w;
+}
+
+// Cetak sepotong HTML lewat jendela baru (untuk unduhan PDF via dialog cetak browser).
+// `w` opsional: jendela yang sudah dibuka lebih dulu lewat openPrintWindow()
+// (wajib dipakai bila innerHTML baru siap setelah kode async/await).
+function printHTML(title, innerHTML, w) {
+  if (!w) w = openPrintWindow();
+  if (!w) return;
+  /* SENGAJA tanpa <meta name="viewport"> — biar browser HP memperlakukan
+     halaman ini seperti halaman desktop biasa (viewport lebar default ~980px)
+     lalu menzum-keluar otomatis supaya seluruh lebar kertas kelihatan, PERSIS
+     seperti di desktop, bisa dizum manual buat baca detail. Sebelumnya ada
+     `width=device-width` + CSS breakpoint mobile yang menyusun ulang kop/tabel
+     jadi satu kolom di layar sempit — hasilnya malah tampilan mobile beda
+     dari desktop (rawan komponen tumpang-tindih tiap ada elemen lebar/posisi
+     baru). Tanpa viewport meta, mobile & desktop selalu menampilkan tata
+     letak yang SAMA persis — tak ada breakpoint terpisah yang bisa basi. */
+  w.document.write(`<!DOCTYPE html><html><head><meta charset="utf-8"><title>${title}</title>
     <style>
       /* Margin kertas diatur di @page (bukan padding body), supaya isi memenuhi
          lebar kertas dari tepi margin ke tepi margin — tanpa itu padding body
          menumpuk di atas margin printer dan hasilnya menyempit ke tengah. */
       @page{size:A4;margin:12mm;}
       *{box-sizing:border-box;}
-      /* Tanpa ini, browser HP membesarkan teks di blok sempit (mis. judul)
-         secara tidak proporsional terhadap tabel ("font boosting") —
-         judul jadi tampak jauh lebih besar dari font-size aslinya. */
-      html{-webkit-text-size-adjust:100%;text-size-adjust:100%;}
       body{font-family:Arial,Helvetica,sans-serif;color:#000;margin:0;padding:20px;font-size:12px;}
       @media print{body{padding:0;}}
       h1,h2,h3{margin:0 0 6px;}
@@ -543,19 +562,13 @@ function printHTML(title, innerHTML) {
       .km-l{min-width:110px;} .km-s{width:8px;} .km-v{font-weight:bold;}
 
       @media print{.no-print{display:none;}}
-      /* .hd-judul/.hd-info (lihat js/views/teacher.js, kop daftar hadir)
-         memakai padding & posisi absolut piksel-tetap yang dihitung utk
-         lebar kertas A4 cetak — di layar HP yang sempit, padding itu
-         melebihi lebar layar sehingga judul & blok info tumpang-tindih
-         dan terlihat berantakan/kebesaran. Di bawah breakpoint ini saja
-         (tak menyentuh tampilan desktop maupun hasil cetak/PDF-nya),
-         judul & info disusun jadi satu kolom yang wajar. */
-      @media screen and (max-width:700px){
-        .hd-judul{padding:0 6px !important;font-size:12px !important;}
-        table.hd-info{position:static !important;width:100% !important;margin:6px 0 0 !important;}
-        table.hd-info td{white-space:normal;}
-        table.hd-info td.hi-v{min-width:0 !important;}
-      }
+      /* Tabel bertanggal (grid 1-31 hari, lihat js/views/teacher.js &
+         js/views/ibadah.js) selalu dibungkus <div class="tbl-scroll"> —
+         tanpa viewport meta, div ini tak lagi perlu digeser sendiri (seluruh
+         halaman sudah digeser/dizum bareng oleh browser); overflow-nya
+         cukup dinetralkan lagi di media cetak, bukan diberi behavior layar
+         terpisah. */
+      @media print{.tbl-scroll{overflow:visible;}}
     </style></head><body>
     <div class="no-print" style="margin-bottom:16px;">
       <button onclick="window.close()" style="padding:6px 14px;font-size:13px;cursor:pointer;">← ${tr('Kembali', 'Back')}</button>

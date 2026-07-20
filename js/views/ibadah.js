@@ -1203,6 +1203,7 @@ const Ibadah = {
         </style>
         <h1>${tr('CHECKLIST IBADAH DAN AMALAN', 'WORSHIP CHECKLIST & DEEDS')}</h1>
         <div class="sub">${esc(DB.user?.nama || '')} · ${BULAN[bln]} ${thn}</div>
+        <div class="tbl-scroll">
         <table class="ib-print">
           <thead><tr>
             <th style="text-align:left;">${tr('Amalan', 'Item')}</th>
@@ -1210,7 +1211,8 @@ const Ibadah = {
             <th>%</th>
           </tr></thead>
           <tbody>${pdfBody}</tbody>
-        </table>`);
+        </table>
+        </div>`);
     };
 
     $$('[data-cell]', el).forEach(b => b.onclick = async () => {

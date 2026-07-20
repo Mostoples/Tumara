@@ -2038,23 +2038,15 @@ ion-icon { pointer-events: none; flex-shrink: 0; }
 .class-bar-mapel select:focus { outline: none; }
 [data-theme="dark"] .class-bar-mapel { color: #a78bfa; }
 
-/* Daftar mapel pada form "Data Guru". */
-.mapel-add { display: flex; gap: 8px; align-items: center; }
-.mapel-add .input { flex: 1; }
+/* Daftar mapel (baca-saja — diatur admin, lihat js/views/admin.js). */
 .mapel-chips { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
 .mapel-chip {
   display: inline-flex; align-items: center; gap: 4px;
-  padding: 6px 6px 6px 12px; border-radius: 99px;
+  padding: 6px 12px; border-radius: 99px;
   background: var(--prod-soft); color: var(--prod);
   font-size: .82rem; font-weight: 700;
 }
 [data-theme="dark"] .mapel-chip { color: #a78bfa; }
-.mapel-x {
-  display: inline-flex; align-items: center; justify-content: center;
-  width: 20px; height: 20px; border: none; border-radius: 50%;
-  background: transparent; color: inherit; cursor: pointer; font-size: .9rem;
-}
-.mapel-x:hover { background: var(--danger-soft); color: var(--danger); }
 
 /* ============================================================
    IBADAH SISWA (guru) — pantauan Sholat Dhuha & Dzuhur

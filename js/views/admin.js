@@ -7,16 +7,18 @@
 const AdminView = {
   query: '',
   filter: 'all', // 'all' | 'admin' | 'guru' | 'siswa'
-  view: 'accounts', // 'accounts' | 'classes'
+  view: 'accounts', // 'accounts' | 'classes' | 'mapel'
   activeClassId: null,
+  activeMapelId: null,
   _NAV_KEY: 'tumara_admin_nav',   // simpan view + kelas terpilih agar tahan refresh
   _el: null,
 
-  // Pengalih antara halaman Akun & halaman Kelas/Siswa (data induk sekolah).
+  // Pengalih antara halaman Akun, Kelas/Siswa, & Mapel (data induk sekolah).
   _switcher() {
     return `<div class="tabs" style="margin-bottom:18px;">
       <button class="tab ${this.view === 'accounts' ? 'active' : ''}" data-view="accounts"><ion-icon name="people-outline"></ion-icon>${tr('Akun', 'Accounts')}</button>
       <button class="tab ${this.view === 'classes' ? 'active' : ''}" data-view="classes"><ion-icon name="school-outline"></ion-icon>${tr('Kelas & Siswa', 'Classes & Students')}</button>
+      <button class="tab ${this.view === 'mapel' ? 'active' : ''}" data-view="mapel"><ion-icon name="book-outline"></ion-icon>${tr('Mapel', 'Subjects')}</button>
     </div>`;
   },
 
@@ -31,11 +33,12 @@ const AdminView = {
       this._booted = true;
       try {
         const d = JSON.parse(localStorage.getItem(this._NAV_KEY) || 'null');
-        if (d) { if (d.view === 'classes' || d.view === 'accounts') this.view = d.view; this.activeClassId = d.cls || null; }
+        if (d) { if (['classes', 'accounts', 'mapel'].includes(d.view)) this.view = d.view; this.activeClassId = d.cls || null; this.activeMapelId = d.mp || null; }
       } catch (_) { /* abaikan */ }
     }
-    localStorage.setItem(this._NAV_KEY, JSON.stringify({ view: this.view, cls: this.activeClassId || '' }));
+    localStorage.setItem(this._NAV_KEY, JSON.stringify({ view: this.view, cls: this.activeClassId || '', mp: this.activeMapelId || '' }));
     if (this.view === 'classes') return this.renderClasses(el);
+    if (this.view === 'mapel') return this.renderMapel(el);
     return this.renderAccounts(el);
   },
 
@@ -56,6 +59,10 @@ const AdminView = {
       </div>`;
       return;
     }
+    // Daftar mapel (buat modal "Buat/Ubah Akun" guru) — dimuat sekali di sini,
+    // dipakai lagi tanpa fetch ulang tiap kali modal dibuka.
+    try { this._mapelOptions = this._sortByOrder(await DB.gList('school_mapel')); }
+    catch (_) { this._mapelOptions = this._mapelOptions || []; }
 
     // Siswa alumni dihitung terpisah dari siswa aktif (bukan dobel-hitung).
     const counts = { admin: 0, guru: 0, siswa: 0, alumni: 0 };
@@ -139,16 +146,6 @@ const AdminView = {
     return u?.mapel ? [u.mapel] : [];
   },
   _mapelTeks(u) { return this._mapelList(u).join(', '); },
-
-  // "Matematika, Fisika" → ['Matematika', 'Fisika'] (tanpa kembar, tanpa kosong).
-  _parseMapel(teks) {
-    const out = [];
-    String(teks || '').split(',').forEach(x => {
-      const v = x.trim();
-      if (v && !out.some(y => y.toLowerCase() === v.toLowerCase())) out.push(v);
-    });
-    return out;
-  },
 
   // Menyaring akun sesuai kotak pencarian + chip peran (dari data di memori).
   // Chip 'siswa' = siswa AKTIF saja (alumni disembunyikan); chip 'alumni' =
@@ -584,6 +581,202 @@ const AdminView = {
     });
   },
 
+  /* ============================================================
+     HALAMAN: MAPEL
+     Daftar mata pelajaran (school_mapel, dikelola admin) — dipakai sebagai
+     pilihan (bukan ketik bebas) saat admin membuat/mengubah akun guru di
+     _userModal(). Bentuknya sengaja daftar datar (bukan gerbang kartu
+     seperti Kelas) karena tak ada data anak-nesting di bawahnya.
+     ============================================================ */
+
+  async renderMapel(el) {
+    el.innerHTML = `${this._switcher()}<div class="portal-loading"><div class="spinner"></div> ${tr('Memuat data mapel…', 'Loading subjects…')}</div>`;
+    this._bindSwitcher(el);
+
+    let list = [];
+    try {
+      list = this._mapelOptions = this._sortByOrder(await DB.gList('school_mapel'));
+    } catch (e) {
+      el.innerHTML = `${this._switcher()}<div class="card empty-state">
+        <ion-icon name="alert-circle-outline"></ion-icon>
+        <div class="es-title">${tr('Gagal memuat mapel', 'Failed to load subjects')}</div>
+        <div class="es-sub">${esc(e.message || '')}</div>
+      </div>`;
+      this._bindSwitcher(el);
+      return;
+    }
+    // Dipakai juga bila admin belum pernah membuka tab Akun sesi ini.
+    if (!this._users) { try { this._users = await DB.adminListUsers(); } catch (_) { /* hitungan "dipakai" tetap 0, bukan blocker */ } }
+
+    // Guru per mapel (dicocokkan case-insensitive) — dipakai baik utk kolom
+    // "Dipakai" di layar daftar maupun layar detail (klik baris → daftar guru).
+    const guruMapel = nama => (this._users || []).filter(u =>
+      (u.role || 'siswa') === 'guru' && this._mapelList(u).some(x => x.toLowerCase() === (nama || '').toLowerCase()));
+
+    // Mapel yang dipilih sebelumnya mungkin sudah dihapus → balik ke daftar.
+    if (this.activeMapelId && !list.find(m => m.id === this.activeMapelId)) this.activeMapelId = null;
+    const active = list.find(m => m.id === this.activeMapelId) || null;
+
+    const head = `
+      ${this._switcher()}
+      <div class="portal-head" style="margin-bottom:16px;">
+        <div>
+          <h1>${tr('Mata Pelajaran', 'Subjects')}</h1>
+          <p>${tr('Daftar mapel yang bisa dipilih saat membuat/mengubah akun guru — sekali ditambah di sini, tinggal dipilih (tanpa ketik ulang). Klik salah satu mapel untuk melihat guru pengampunya.', 'The subjects selectable when creating/editing a teacher account — add once here, then just pick them (no retyping). Click a subject to see which teachers teach it.')}</p>
+        </div>
+        <button class="btn btn-primary" id="addMapel"><ion-icon name="add"></ion-icon> ${tr('Mapel Baru', 'New Subject')}</button>
+      </div>`;
+
+    /* ---------- LAYAR 1: daftar mapel ---------- */
+    if (!active) {
+      el.innerHTML = head + (list.length ? `
+      <div class="table-wrap stack">
+        <table class="data-table stack">
+          <thead><tr>
+            <th>${tr('Mata Pelajaran', 'Subject')}</th><th>${tr('Dipakai', 'In use')}</th>
+            <th style="text-align:right;">${tr('Aksi', 'Actions')}</th>
+          </tr></thead>
+          <tbody>
+            ${list.map(m => `
+              <tr data-mapel="${m.id}" style="cursor:pointer;">
+                <td class="cell-primary"><b>${esc(m.nama)}</b></td>
+                <td data-label="${tr('Dipakai', 'In use')}" style="color:var(--text-3);">${guruMapel(m.nama).length} ${tr('guru', 'teacher(s)')}</td>
+                <td data-label="${tr('Aksi', 'Actions')}" style="text-align:right;white-space:nowrap;">
+                  <button class="mini-icon-btn" data-editm="${m.id}" title="${tr('Ubah', 'Edit')}"><ion-icon name="create-outline"></ion-icon></button>
+                  <button class="mini-icon-btn danger" data-delm="${m.id}" title="${tr('Hapus', 'Delete')}"><ion-icon name="trash-outline"></ion-icon></button>
+                </td>
+              </tr>`).join('')}
+          </tbody>
+        </table>
+      </div>` : `
+      <div class="card empty-state">
+        <ion-icon name="book-outline"></ion-icon>
+        <div class="es-title">${tr('Belum ada mapel', 'No subjects yet')}</div>
+        <div class="es-sub">${tr('Tambahkan mapel pertama, mis. "Matematika" — nanti tinggal dipilih saat membuat akun guru.', 'Add your first subject, e.g. "Mathematics" — pick it right away when creating a teacher account.')}</div>
+      </div>`);
+
+      this._bindSwitcher(el);
+      $('#addMapel', el).onclick = () => this._mapelModal();
+      // Klik baris → buka detail (kecuali klik tombol Ubah/Hapus di baris itu).
+      $$('[data-mapel]', el).forEach(tr_ => tr_.onclick = e => {
+        if (e.target.closest('[data-editm],[data-delm]')) return;
+        this.activeMapelId = tr_.dataset.mapel;
+        this.render(this._el);
+      });
+      $$('[data-editm]', el).forEach(b => b.onclick = () => this._mapelModal(list.find(m => m.id === b.dataset.editm)));
+      $$('[data-delm]', el).forEach(b => b.onclick = async () => {
+        const m = list.find(x => x.id === b.dataset.delm);
+        const n = guruMapel(m.nama).length;
+        if (!await confirmDialog(
+          n
+            ? tr(`Hapus mapel "${m.nama}"? ${n} guru masih tercatat mengampu mapel ini — data mereka tidak berubah, mapel ini hanya tak lagi muncul di daftar pilihan.`,
+                 `Delete subject "${m.nama}"? ${n} teacher(s) are still recorded teaching it — their data stays intact, this subject just won't appear as a pick option anymore.`)
+            : tr(`Hapus mapel "${m.nama}"?`, `Delete subject "${m.nama}"?`),
+          { danger: true, okText: tr('Hapus Mapel', 'Delete Subject') })) return;
+        try {
+          await DB.gRemove('school_mapel', m.id);
+          toast(tr('Mapel dihapus.', 'Subject deleted.'));
+          this.render(this._el);
+        } catch (e) { toast(e.message, 'error'); }
+      });
+      return;
+    }
+
+    /* ---------- LAYAR 2: guru pengampu mapel terpilih ---------- */
+    const guru = guruMapel(active.nama).sort((a, b) => (a.nama || '').localeCompare(b.nama || ''));
+
+    el.innerHTML = `
+      ${this._switcher()}
+      <div class="class-bar">
+        <button class="btn btn-sm" id="backMapel"><ion-icon name="arrow-back-outline"></ion-icon> ${tr('Ganti Mapel', 'Change Subject')}</button>
+        <span class="class-bar-name"><ion-icon name="book"></ion-icon> ${esc(active.nama)}</span>
+      </div>
+      <div class="card">
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;">
+          <div class="card-title" style="margin:0;"><ion-icon name="school" style="color:var(--brand)"></ion-icon>${tr('Guru Pengampu', 'Teachers')} <span class="badge badge-blue">${guru.length}</span></div>
+          <div class="kelas-actions">
+            <button class="btn btn-sm" id="editMapelD"><ion-icon name="create-outline"></ion-icon> ${tr('Ubah Nama', 'Rename')}</button>
+            <button class="btn btn-sm btn-soft-danger" id="delMapelD" title="${tr('Hapus mapel', 'Delete subject')}"><ion-icon name="trash-outline"></ion-icon></button>
+          </div>
+        </div>
+        ${guru.length ? `
+          <div class="table-wrap stack" style="margin-top:16px;">
+            <table class="data-table stack">
+              <thead><tr>
+                <th style="width:44px;">No</th><th>${tr('Nama Guru', 'Teacher Name')}</th>
+                <th>${tr('Masuk dengan', 'Signs in with')}</th><th>${tr('Mapel lain', 'Other subjects')}</th>
+                <th style="text-align:right;">${tr('Aksi', 'Actions')}</th>
+              </tr></thead>
+              <tbody>
+                ${guru.map((u, i) => `
+                  <tr>
+                    <td class="center">${i + 1}</td>
+                    <td class="cell-primary"><b>${esc(u.nama || '-')}</b></td>
+                    <td data-label="${tr('Masuk dengan', 'Signs in with')}" style="color:var(--text-3);">${esc(this._loginId(u))}</td>
+                    <td data-label="${tr('Mapel lain', 'Other subjects')}" style="color:var(--text-3);">${esc(this._mapelList(u).filter(x => x.toLowerCase() !== active.nama.toLowerCase()).join(', ')) || '-'}</td>
+                    <td data-label="${tr('Aksi', 'Actions')}" style="text-align:right;white-space:nowrap;">
+                      <button class="mini-icon-btn" data-editg="${u.id}" title="${tr('Ubah akun guru', 'Edit teacher account')}"><ion-icon name="create-outline"></ion-icon></button>
+                    </td>
+                  </tr>`).join('')}
+              </tbody>
+            </table>
+          </div>` : `
+          <div class="empty-state" style="padding:30px 10px;">
+            <ion-icon name="school-outline"></ion-icon>
+            <div class="es-title">${tr('Belum ada guru yang mengampu mapel ini', 'No teacher teaches this subject yet')}</div>
+            <div class="es-sub">${tr('Pilih mapel ini saat membuat/mengubah akun guru di tab Akun.', 'Pick this subject when creating/editing a teacher account in the Accounts tab.')}</div>
+          </div>`}
+      </div>`;
+
+    this._bindSwitcher(el);
+    $('#backMapel', el).onclick = () => { this.activeMapelId = null; this.render(this._el); };
+    $('#editMapelD', el).onclick = () => this._mapelModal(active);
+    $('#delMapelD', el).onclick = async () => {
+      if (!await confirmDialog(
+        guru.length
+          ? tr(`Hapus mapel "${active.nama}"? ${guru.length} guru masih tercatat mengampu mapel ini — data mereka tidak berubah, mapel ini hanya tak lagi muncul di daftar pilihan.`,
+               `Delete subject "${active.nama}"? ${guru.length} teacher(s) are still recorded teaching it — their data stays intact, this subject just won't appear as a pick option anymore.`)
+          : tr(`Hapus mapel "${active.nama}"?`, `Delete subject "${active.nama}"?`),
+        { danger: true, okText: tr('Hapus Mapel', 'Delete Subject') })) return;
+      try {
+        await DB.gRemove('school_mapel', active.id);
+        this.activeMapelId = null;
+        toast(tr('Mapel dihapus.', 'Subject deleted.'));
+        this.render(this._el);
+      } catch (e) { toast(e.message, 'error'); }
+    };
+    $$('[data-editg]', el).forEach(b => b.onclick = () => this._userModal(guru.find(u => u.id === b.dataset.editg)));
+  },
+
+  _mapelModal(m = null) {
+    openModal({
+      title: m ? tr('Ubah Mapel', 'Edit Subject') : tr('Mapel Baru', 'New Subject'),
+      body: `
+        <div class="field">
+          <label>${tr('Nama mata pelajaran', 'Subject name')}</label>
+          <input type="text" class="input" id="mNamaMapel" placeholder="${tr('mis. Matematika', 'e.g. Mathematics')}" value="${esc(m?.nama || '')}">
+        </div>
+        <button class="btn btn-primary btn-block" id="mSaveMapel"><ion-icon name="checkmark"></ion-icon> ${tr('Simpan', 'Save')}</button>`,
+      onMount: modal => {
+        const inp = $('#mNamaMapel', modal);
+        $('#mSaveMapel', modal).onclick = async () => {
+          const nama = inp.value.trim();
+          if (!nama) return toast(tr('Isi nama mata pelajaran.', 'Enter a subject name.'), 'warning');
+          const dupe = (this._mapelOptions || []).some(x => x.id !== m?.id && (x.nama || '').toLowerCase() === nama.toLowerCase());
+          if (dupe) return toast(tr('Mapel ini sudah ada di daftar.', 'This subject is already in the list.'), 'warning');
+          const btn = $('#mSaveMapel', modal); btn.disabled = true;
+          try {
+            if (m) await DB.gUpdate('school_mapel', m.id, { nama });
+            else await DB.gAdd('school_mapel', { nama });
+            closeModal();
+            toast(tr('Mapel tersimpan 📘', 'Subject saved 📘'));
+            this.render(this._el);
+          } catch (e) { btn.disabled = false; toast(e.message, 'error'); }
+        };
+      }
+    });
+  },
+
   // Tambah Siswa = BUAT AKUN SISWA. Nama → username otomatis (boleh dipangkas),
   // NIS → kata sandi. Akun langsung tertaut ke kelasnya (kelasId/kelasNama).
   _studentModal(cls, student = null) {
@@ -782,21 +975,53 @@ const AdminView = {
     const editing = !!user;
     let role = user?.role || 'guru';
 
+    // Mapel diampu = dipilih (chip), bukan diketik bebas — sumbernya daftar
+    // master school_mapel (dikelola di tab "Mapel"). Set-nya disimpan di luar
+    // roleFields() supaya pilihannya tidak hilang saat peran diganti-ganti
+    // lalu dibalikkan lagi ke 'guru' (roleFields dipanggil ulang tiap ganti).
+    const mapelOptions = (this._mapelOptions || []).map(o => o.nama).filter(Boolean);
+    const existingMapel = this._mapelList(user);
+    // Mapel lama hasil ketik bebas (sebelum fitur ini ada) yang sudah tak ada
+    // di daftar master — tetap ditampilkan & tercentang, supaya datanya tidak
+    // diam-diam hilang hanya karena namanya tidak persis cocok.
+    const legacyMapel = existingMapel.filter(x => !mapelOptions.some(o => o.toLowerCase() === x.toLowerCase()));
+    const selectedMapel = new Set(existingMapel);
+
+    const mapelPickerHTML = () => {
+      const semua = [...mapelOptions, ...legacyMapel];
+      if (!semua.length) {
+        return `<div class="hint">${tr('Belum ada mapel terdaftar. Tambahkan dulu lewat tab "Mapel" di atas.', 'No subjects registered yet. Add some first via the "Subjects" tab above.')}</div>`;
+      }
+      return `<div id="mMapelChips" style="display:flex;flex-wrap:wrap;gap:8px;">
+        ${semua.map(nm => `<button type="button" class="chip ${selectedMapel.has(nm) ? 'active' : ''}" data-mapel="${esc(nm)}">${esc(nm)}</button>`).join('')}
+      </div>`;
+    };
+
     // Data tambahan per peran; digambar ulang tiap peran berganti.
     const roleFields = r => r === 'guru' ? `
-        <div class="grid grid-2 keep-2" style="gap:12px;">
-          <div class="field">
-            <label>${tr('Mata pelajaran', 'Subjects')}</label>
-            <input type="text" class="input" id="mMapel" placeholder="${tr('mis. Matematika, Fisika', 'e.g. Math, Physics')}" value="${esc(this._mapelTeks(user))}">
-            <div class="hint">${tr('Boleh lebih dari satu — pisahkan dengan koma. Guru juga bisa mengubahnya sendiri.',
-                                   'More than one is allowed — separate with commas. Teachers can edit this themselves too.')}</div>
-          </div>
-          <div class="field"><label>NIP/NIK <span style="font-weight:500;color:var(--text-3)">${tr('(opsional)', '(optional)')}</span></label><input type="text" class="input" id="mNip" value="${esc(user?.nip || '')}"></div>
+        <div class="field">
+          <label>${tr('Mata pelajaran', 'Subjects')}</label>
+          ${mapelPickerHTML()}
+          <div class="hint">${tr('Boleh pilih lebih dari satu, sesuai yang benar-benar diampu. Guru juga bisa mengubahnya sendiri.',
+                                 'Pick as many as apply to what they actually teach. Teachers can edit this themselves too.')}</div>
         </div>
-        <div class="field"><label>${tr('Asal sekolah', 'School')} <span style="font-weight:500;color:var(--text-3)">${tr('(opsional)', '(optional)')}</span></label><input type="text" class="input" id="mSekolah" value="${esc(user?.sekolah || '')}"></div>`
+        <div class="grid grid-2 keep-2" style="gap:12px;">
+          <div class="field"><label>NIP/NIK <span style="font-weight:500;color:var(--text-3)">${tr('(opsional)', '(optional)')}</span></label><input type="text" class="input" id="mNip" value="${esc(user?.nip || '')}"></div>
+          <div class="field"><label>${tr('Asal sekolah', 'School')} <span style="font-weight:500;color:var(--text-3)">${tr('(opsional)', '(optional)')}</span></label><input type="text" class="input" id="mSekolah" value="${esc(user?.sekolah || '')}"></div>
+        </div>`
       : r === 'siswa' ? `
         <div class="field"><label>${tr('Kelas', 'Class')}</label><input type="text" class="input" id="mKelas" placeholder="${tr('mis. X TKJ 2', 'e.g. X TKJ 2')}" value="${esc(user?.kelas || '')}"></div>`
       : '';
+
+    // Chip mapel dibuat ulang tiap roleFields() dipanggil (mis. ganti peran
+    // lalu balik ke 'guru') — pasang ulang klik-nya tiap kali juga.
+    const bindMapelChips = scope => {
+      $$('#mMapelChips [data-mapel]', scope).forEach(b => b.onclick = () => {
+        const v = b.dataset.mapel;
+        if (selectedMapel.has(v)) selectedMapel.delete(v); else selectedMapel.add(v);
+        b.classList.toggle('active', selectedMapel.has(v));
+      });
+    };
 
     // Peran yang bisa dipilih. Akun SISWA tidak dibuat di sini — dibuat di
     // halaman "Kelas & Siswa" agar langsung tertaut ke kelasnya. Saat MENGUBAH
@@ -850,10 +1075,12 @@ const AdminView = {
         const gen = $('#genPass', m);
         if (gen) gen.onclick = () => { $('#mPass', m).value = 'tumara' + Math.floor(1000 + Math.random() * 9000); };
 
+        bindMapelChips(m);
         $$('#mRole .radio-card', m).forEach(c => c.onclick = () => {
           role = c.dataset.val;
           $$('#mRole .radio-card', m).forEach(x => x.classList.toggle('selected', x === c));
           $('#mExtra', m).innerHTML = roleFields(role);
+          bindMapelChips(m);
         });
 
         $('#mSave', m).onclick = async () => {
@@ -864,7 +1091,7 @@ const AdminView = {
           if (role === 'guru') {
             // Guru bisa mengampu beberapa mapel. Disimpan sebagai daftar (mapelAmpu);
             // `mapel` tetap diisi mapel pertama karena app siswa masih membacanya.
-            const mapelAmpu = this._parseMapel($('#mMapel', m)?.value);
+            const mapelAmpu = [...selectedMapel];
             extra.mapelAmpu = mapelAmpu;
             extra.mapel = mapelAmpu[0] || '';
             extra.nip = $('#mNip', m)?.value.trim() || '';

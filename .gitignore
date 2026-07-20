@@ -1,3 +1,6 @@
+# Screenshot scratch folder (debug/QA images, not app assets)
+SS/
+
 # Logs
 logs
 *.log

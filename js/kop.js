@@ -23,12 +23,30 @@ const Kop = {
     kotak: true,     // tampilkan kotak kode form di kanan
     kodeForm: '',    // mis. "F.KUR : 15"
     edisi: '',
-    revisi: ''
+    revisi: '',
+    semester: 'otomatis'   // 'otomatis' (ikut bulan laporan) | 'gasal' | 'genap'
   },
 
   get() { return { ...this.DEFAULT, ...(DB.user?.kop || {}) }; },
 
   async save(patch) { await DB.updateUser({ kop: { ...this.get(), ...patch } }); },
+
+  /* Semester & tahun pelajaran untuk laporan bulanan (Daftar Hadir dkk).
+     `bln`/`thn` = bulan(1-12)/tahun laporan yang SEDANG dilihat guru — biasanya
+     bulan berjalan, jadi tahun pelajarannya otomatis ikut maju tiap tahun ajaran
+     baru TANPA perlu diisi ulang manual. Yang bisa diatur manual di Kop.modal()
+     HANYA status Gasal/Genap-nya (guru.semesterAkademik tak selalu berpatokan
+     Juli–Desember/Januari–Juni persis; sekolah bisa punya kalender sendiri) —
+     begitu ditentukan, tahun pelajarannya tetap dihitung dari `thn` di atas. */
+  semesterInfo(bln, thn) {
+    const mode = this.get().semester || 'otomatis';
+    const gasal = mode === 'gasal' ? true : mode === 'genap' ? false : bln >= 7;
+    return {
+      gasal,
+      semester: gasal ? tr('GASAL', 'ODD') : tr('GENAP', 'EVEN'),
+      tapel: gasal ? `${thn} / ${thn + 1}` : `${thn - 1} / ${thn}`
+    };
+  },
 
   // Kop dianggap "terisi" bila minimal ada nama sekolah/lembaga. Kalau belum,
   // ekspor tetap jalan — hanya memakai judul sederhana (tidak menghalangi guru).
@@ -160,6 +178,15 @@ const Kop = {
           </div>
         </div>
 
+        <div class="field"><label>${tr('Semester pada Daftar Hadir', 'Semester on the Attendance sheet')}</label>
+          <select class="input" id="kSemester">
+            <option value="otomatis" ${k.semester === 'otomatis' ? 'selected' : ''}>${tr('Otomatis (ikut bulan — Jul–Des Gasal, Jan–Jun Genap)', 'Automatic (follows the month — Jul–Dec Odd, Jan–Jun Even)')}</option>
+            <option value="gasal" ${k.semester === 'gasal' ? 'selected' : ''}>${tr('Selalu Gasal', 'Always Odd')}</option>
+            <option value="genap" ${k.semester === 'genap' ? 'selected' : ''}>${tr('Selalu Genap', 'Always Even')}</option>
+          </select>
+          <span style="font-size:.78rem;color:var(--text-3);">${tr('Tahun pelajaran ikut menyesuaikan otomatis dari bulan laporannya — tak perlu diisi ulang tiap tahun ajaran baru.', 'The academic year adjusts automatically from the report month — no need to re-enter it each new school year.')}</span>
+        </div>
+
         <label style="display:flex;align-items:center;gap:10px;font-size:.85rem;font-weight:600;color:var(--text-2);cursor:pointer;margin:4px 0 18px;">
           <input type="checkbox" id="kAktif" ${k.aktif ? 'checked' : ''} style="width:17px;height:17px;accent-color:var(--brand);">
           ${tr('Pakai kop pada unduhan PDF', 'Use letterhead on PDF downloads')}
@@ -210,7 +237,8 @@ const Kop = {
               kotak:    $('#kKotak', m).checked,
               kodeForm: $('#kKode', m).value.trim(),
               edisi:    $('#kEdisi', m).value.trim(),
-              revisi:   $('#kRevisi', m).value.trim()
+              revisi:   $('#kRevisi', m).value.trim(),
+              semester: $('#kSemester', m).value
             });
             closeModal();
             toast(tr('Kop surat tersimpan 🏫', 'Letterhead saved 🏫'));

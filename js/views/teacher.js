@@ -1551,11 +1551,11 @@ const Teacher = {
       return !k ? '' : (k === 'H' ? '✓' : k);
     };
 
-    // Semester & tahun pelajaran diturunkan dari bulannya: Juli–Desember =
-    // Gasal (tahun ajaran baru), Januari–Juni = Genap (lanjutan tahun sebelumnya).
-    const gasal = bln >= 7;
-    const semester = gasal ? tr('GASAL', 'ODD') : tr('GENAP', 'EVEN');
-    const tapel = gasal ? `${thn} / ${thn + 1}` : `${thn - 1} / ${thn}`;
+    // Semester (Gasal/Genap) bisa dipaksa manual lewat Kop.modal() — default
+    // "Otomatis" tetap menurunkannya dari bulan laporan (Juli–Desember Gasal,
+    // Januari–Juni Genap). Tahun pelajarannya SELALU ikut `thn` di atas, jadi
+    // otomatis maju sendiri tiap tahun ajaran baru tanpa perlu diisi ulang.
+    const { semester, tapel } = Kop.semesterInfo(bln, thn);
 
     // Nama wali kelas diambil dari class_schedule/{classId} (ditulis oleh wali
     // kelas saat ia mengisi "Data Guru"/jadwal kelas) — bukan hanya dari akun
@@ -1565,25 +1565,28 @@ const Teacher = {
     const jadwalWali = await DB.gGet('class_schedule', classId).catch(() => null);
     const wali = jadwalWali?.waliNama || (DB.user.waliKelasId === classId ? (DB.user.nama || '') : '');
 
-    /* Keterangan (semester/bulan/kelas/wali) dititipkan ke `meta` Kop.html —
-       sama seperti PDF Jurnal — jadi jadi baris label:nilai biasa yang mengalir
-       normal di bawah kop. Sebelumnya blok ini punya judul besar + kotak info
-       yang diposisikan absolute supaya "mengambang" di kanan meniru form kertas;
-       itu rapuh (lebar kotak info berubah-ubah tergantung isi, mis. nama wali
-       kelas yang panjang) dan gampang tumpang-tindih dgn judulnya sendiri, baik
-       di layar sempit MAUPUN lebar. Tata letak `meta` biasa sudah terbukti rapi
-       di kedua ukuran layar pada PDF Jurnal — tidak butuh trik posisi sama sekali. */
-    const kop = Kop.html({
-      judul: tr('DAFTAR HADIR', 'ATTENDANCE'),
-      meta: [
-        [tr('Semester', 'Semester'), semester],
-        [tr('Tahun Pelajaran', 'Academic Year'), tapel],
-        [tr('Bulan', 'Month'), `${BULAN[bln - 1]} ${thn}`],
-        [tr('Kelas', 'Class'), cls?.nama || ''],
-        mode === 'mapel' && opts.mapel ? [tr('Mapel', 'Subject'), opts.mapel] : null,
-        [tr('Wali Kelas', 'Homeroom'), wali]
-      ].filter(Boolean)
-    });
+    // Judul besar 3-baris ("DAFTAR HADIR SISWA SEMESTER … / nama sekolah /
+    // TAHUN PELAJARAN …") meniru form cetak sekolah. Bedanya dari versi lama:
+    // ditaruh mengalir biasa (bukan diposisikan absolute di tengah kertas
+    // dengan padding kiri-kanan tetap) — supaya tak pernah tumpang-tindih dgn
+    // baris keterangan di bawahnya, baik di desktop maupun mobile.
+    const k = Kop.get();
+    const kop = Kop.html({ judul: tr('DAFTAR HADIR', 'ATTENDANCE') });
+    const judulBesar = `
+      <div class="hd-titleblock">
+        ${tr(`DAFTAR HADIR SISWA SEMESTER ${semester}`, `STUDENT ATTENDANCE — ${semester} SEMESTER`)}<br>
+        ${esc(k.sekolah || '')}<br>
+        ${tr('TAHUN PELAJARAN', 'ACADEMIC YEAR')} ${tapel}
+      </div>`;
+    // Keterangan (bulan/kelas/mapel/wali) dititipkan sebagai baris label:nilai
+    // biasa — sama seperti PDF Jurnal — jadi mengalir normal di bawah judul,
+    // bukan kotak info yang mengambang lagi.
+    const metaRows = [
+      [tr('Bulan', 'Month'), `${BULAN[bln - 1]} ${thn}`],
+      [tr('Kelas', 'Class'), cls?.nama || ''],
+      mode === 'mapel' && opts.mapel ? [tr('Mapel', 'Subject'), opts.mapel] : null,
+      [tr('Wali Kelas', 'Homeroom'), wali]
+    ].filter(Boolean).map(([l, v]) => `<tr><td class="km-l">${esc(l)}</td><td class="km-s">:</td><td class="km-v">${esc(v)}</td></tr>`).join('');
 
     const lebarHari = (62.5 / hari.length).toFixed(3);   // sisa lebar dibagi rata ke kotak tanggal
     const cols = `<colgroup>
@@ -1610,7 +1613,6 @@ const Teacher = {
     }).join('');
 
     const ket = this.ABSEN.filter(a => a.k !== 'H').map(a => `<b>${a.k}</b> = ${tr(a.id, a.en)}`).join(' · ');
-    const k = Kop.get();
 
     // Kota untuk baris tanda tangan — form aslinya menulis "Boyolali, tgl".
     // Diisi lewat field "Kota" di Kop.modal(); kalau belum diisi, dibiarkan
@@ -1628,6 +1630,16 @@ const Teacher = {
         table.hd th.hd-d{padding:2px 0;}
         table.hd td.hd-d{height:19px;font-weight:bold;}
         .hd-mgg{background:#eaeaea;-webkit-print-color-adjust:exact;print-color-adjust:exact;}
+        /* Judul besar — sengaja MENGALIR biasa (bukan absolute), jadi tak pernah
+           tumpang-tindih dgn baris keterangan di bawahnya. */
+        .hd-titleblock{text-align:center;font-size:14px;font-weight:bold;line-height:1.45;letter-spacing:.02em;font-family:"Times New Roman",Times,serif;margin:4px 0 10px;}
+        /* Baris keterangan (Bulan/Kelas/Mapel/Wali Kelas) digeser ke kanan
+           seperti form asli — TETAP mengalir biasa (flex, bukan position:
+           absolute), jadi tak bisa tumpang-tindih dgn judul besar di
+           atasnya. (margin-left:auto saja tak mempan di <table> — tabel
+           dihitung lewat algoritma layout tabel sendiri, bukan sizing
+           block biasa yang jadi syarat auto-margin bekerja.) */
+        .hd-meta-right{display:flex;justify-content:flex-end;}
         /* Keterangan (kiri) & blok tanda tangan (kanan) sejajar, seperti form asli. */
         .hd-foot{display:flex;justify-content:space-between;align-items:flex-start;gap:24px;margin-top:10px;}
         .hd-ket{font-size:10.5px;line-height:1.6;flex:1;}
@@ -1635,6 +1647,8 @@ const Teacher = {
         .ttd-nama{margin-top:46px;font-weight:bold;text-decoration:underline;text-underline-offset:2px;}
       </style>
       ${kop}
+      ${judulBesar}
+      <div class="hd-meta-right"><table class="kop-meta">${metaRows}</table></div>
       <div class="tbl-scroll">
       <table class="hd">${cols}
         <thead>
@@ -1682,15 +1696,18 @@ const Teacher = {
 
     const jadwalWali = await DB.gGet('class_schedule', classId).catch(() => null);
     const wali = jadwalWali?.waliNama || (DB.user.waliKelasId === classId ? (DB.user.nama || '') : '');
-    const kop = Kop.html({
-      judul: tr('DAFTAR HADIR', 'ATTENDANCE'),
-      meta: [
-        [tr('Tanggal', 'Date'), fmtDate(tanggal, { weekday: true })],
-        [tr('Kelas', 'Class'), cls?.nama || ''],
-        [tr('Wali Kelas', 'Homeroom'), wali]
-      ]
-    });
     const k = Kop.get();
+    const kop = Kop.html({ judul: tr('DAFTAR HADIR', 'ATTENDANCE') });
+    const judulBesar = `
+      <div class="hd-titleblock">
+        ${tr('DAFTAR HADIR SISWA', 'STUDENT ATTENDANCE')}<br>
+        ${esc(k.sekolah || '')}
+      </div>`;
+    const metaRows = [
+      [tr('Tanggal', 'Date'), fmtDate(tanggal, { weekday: true })],
+      [tr('Kelas', 'Class'), cls?.nama || ''],
+      [tr('Wali Kelas', 'Homeroom'), wali]
+    ].map(([l, v]) => `<tr><td class="km-l">${esc(l)}</td><td class="km-s">:</td><td class="km-v">${esc(v)}</td></tr>`).join('');
     const kota = k.kota || '…………………';
     const namaStatus = kk => { const a = this.ABSEN.find(x => x.k === kk); return a ? tr(a.id, a.en) : '-'; };
 
@@ -1713,12 +1730,16 @@ const Teacher = {
         /* Sama seperti daftar hadir bulanan (_printDaftarHadir) — kertas mendatar,
            biar bentuk keduanya konsisten sebagai satu keluarga form absensi. */
         @page{size:A4 landscape;margin:10mm;}
+        .hd-titleblock{text-align:center;font-size:14px;font-weight:bold;line-height:1.45;letter-spacing:.02em;font-family:"Times New Roman",Times,serif;margin:4px 0 10px;}
+        .hd-meta-right{display:flex;justify-content:flex-end;}
         .hd-foot{display:flex;justify-content:space-between;align-items:flex-start;gap:24px;margin-top:14px;}
         .hd-ket{font-size:11px;line-height:1.6;flex:1;}
         .hd-ttd{font-family:"Times New Roman",Times,serif;text-align:center;font-size:11.5px;line-height:1.55;padding-right:24px;white-space:nowrap;}
         .ttd-nama{margin-top:46px;font-weight:bold;text-decoration:underline;text-underline-offset:2px;}
       </style>
       ${kop}
+      ${judulBesar}
+      <div class="hd-meta-right"><table class="kop-meta">${metaRows}</table></div>
       <table>
         <thead><tr>
           <th>No</th><th>NISN</th><th>${tr('INDUK', 'STUDENT ID')}</th><th>${tr('NAMA', 'NAME')}</th>

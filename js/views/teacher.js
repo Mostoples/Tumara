@@ -2395,10 +2395,8 @@ const Teacher = {
       el.innerHTML = `<div class="card empty-state">
         <ion-icon name="lock-closed-outline"></ion-icon>
         <div class="es-title">${tr('Khusus wali kelas', 'Homeroom teachers only')}</div>
-        <div class="es-sub">${tr('Kamu belum terdaftar sebagai wali kelas. Atur lewat "Data Guru".', 'You are not registered as a homeroom teacher. Set it via "Teacher Info".')}</div>
-        <button class="btn btn-primary btn-sm" id="openSetup" style="margin-top:14px;"><ion-icon name="create-outline"></ion-icon> ${tr('Data Guru', 'Teacher Info')}</button>
+        <div class="es-sub">${tr('Kamu belum terdaftar sebagai wali kelas. Ini diatur oleh admin — hubungi admin untuk menjadikanmu wali kelas.', 'You are not registered as a homeroom teacher. This is set by the admin — contact them to become one.')}</div>
       </div>`;
-      $('#openSetup', el) && ($('#openSetup', el).onclick = () => this._setupModal(() => this.render(this._el)));
       return;
     }
 
@@ -2500,10 +2498,8 @@ const Teacher = {
       el.innerHTML = `<div class="card empty-state">
         <ion-icon name="lock-closed-outline"></ion-icon>
         <div class="es-title">${tr('Khusus wali kelas', 'Homeroom teachers only')}</div>
-        <div class="es-sub">${tr('Kamu belum terdaftar sebagai wali kelas. Atur lewat "Data Guru".', 'You are not registered as a homeroom teacher. Set it via "Teacher Info".')}</div>
-        <button class="btn btn-primary btn-sm" id="openSetup" style="margin-top:14px;"><ion-icon name="create-outline"></ion-icon> ${tr('Data Guru', 'Teacher Info')}</button>
+        <div class="es-sub">${tr('Kamu belum terdaftar sebagai wali kelas. Ini diatur oleh admin — hubungi admin untuk menjadikanmu wali kelas.', 'You are not registered as a homeroom teacher. This is set by the admin — contact them to become one.')}</div>
       </div>`;
-      $('#openSetup', el) && ($('#openSetup', el).onclick = () => this._setupModal(() => this.render(this._el)));
       return;
     }
 
@@ -2634,15 +2630,18 @@ const Teacher = {
     $('#waKop', el) && ($('#waKop', el).onclick = () => Kop.modal(() => this.render(this._el)));
   },
 
-  // Form "Data Guru": nama, mapel, status wali + kelas wali. Dipanggil otomatis
-  // saat guru pertama login (guruSetup belum true) & bisa dibuka ulang dari topbar.
+  // Form "Data Guru": nama + tampilan info mapel & wali kelas (baca-saja,
+  // keduanya sekarang wewenang admin — lihat AdminView._userModal &
+  // _syncWaliKelas di js/views/admin.js). Dipanggil otomatis saat guru
+  // pertama login (guruSetup belum true) & bisa dibuka ulang dari topbar.
   // onSaved: callback setelah simpan (mis. refresh nav & tampilan).
   async _setupModal(onSaved) {
-    let classes = [];
-    try { classes = (await DB.gList('school_classes')).sort(this._byOrder); } catch (_) { classes = []; }
     const u = DB.user;
-    const isWali = !!u.waliKelasId;
     const mapelAmpu = this._mapelList();
+    let waliKelasNama = '';
+    if (u.waliKelasId) {
+      try { waliKelasNama = (await DB.gGet('school_classes', u.waliKelasId))?.nama || ''; } catch (_) {}
+    }
     openModal({
       title: tr('Data Guru', 'Teacher Info'),
       body: `
@@ -2660,45 +2659,27 @@ const Teacher = {
                                   'Set by the admin, not by teachers — contact the admin to add or change these.')}</div>
         </div>
 
-        <div class="field" style="margin-bottom:8px;">
-          <label class="setting-row" style="cursor:pointer;padding:10px 0;gap:12px;">
-            <ion-icon name="ribbon-outline" style="font-size:1.2rem;color:var(--brand);"></ion-icon>
-            <span class="sr-text"><span class="sr-title">${tr('Saya wali kelas', 'I am a homeroom teacher')}</span><span class="sr-sub">${tr('Hanya wali yang bisa mengirim jadwal kelas', 'Only homeroom teachers can send the class schedule')}</span></span>
-            <input type="checkbox" id="sgWali" ${isWali ? 'checked' : ''} style="width:20px;height:20px;accent-color:var(--brand);">
-          </label>
-        </div>
-        <div class="field" id="sgKelasWrap" style="${isWali ? '' : 'display:none;'}">
-          <label>${tr('Wali kelas dari', 'Homeroom of')}</label>
-          ${classes.length ? `
-          <select class="select" id="sgKelas">
-            <option value="">${tr('— Pilih kelas —', '— Choose class —')}</option>
-            ${classes.map(c => `<option value="${esc(c.id)}" ${c.id === u.waliKelasId ? 'selected' : ''}>${esc(c.nama)}</option>`).join('')}
-          </select>` : `
-          <input type="text" class="input" disabled value="${tr('Belum ada kelas (hubungi admin)', 'No classes yet (contact admin)')}">`}
+        <div class="field">
+          <label>${tr('Wali kelas', 'Homeroom teacher')}</label>
+          <div class="mapel-chips">
+            ${u.waliKelasId
+              ? `<span class="mapel-chip">${esc(waliKelasNama || tr('Kelas tak dikenal', 'Unknown class'))}</span>`
+              : `<span class="hint">${tr('Bukan wali kelas.', 'Not a homeroom teacher.')}</span>`}
+          </div>
+          <div class="hint">${tr('Diatur oleh admin — hubungi admin untuk menjadikan/melepas kamu sebagai wali kelas.',
+                                  'Set by the admin — contact them to become or stop being a homeroom teacher.')}</div>
         </div>
         <button class="btn btn-primary btn-block" id="sgSave"><ion-icon name="checkmark"></ion-icon> ${tr('Simpan', 'Save')}</button>`,
       onMount: m => {
-        const wali = $('#sgWali', m), wrap = $('#sgKelasWrap', m);
-        wali.onchange = () => { wrap.style.display = wali.checked ? '' : 'none'; };
-
         $('#sgSave', m).onclick = async () => {
           const nama = $('#sgNama', m).value.trim();
           if (nama.length < 2) return toast(tr('Isi nama guru.', 'Enter teacher name.'), 'warning');
 
-          let waliKelasId = '';
-          if (wali.checked) {
-            waliKelasId = $('#sgKelas', m)?.value || '';
-            if (!waliKelasId) return toast(tr('Pilih kelas yang kamu wali-i.', 'Choose the class you are homeroom of.'), 'warning');
-          }
           const btn = $('#sgSave', m); btn.disabled = true;
           try {
-            // Mapel TIDAK ikut dikirim — itu sekarang wewenang admin (mapelAmpu
-            // diubah lewat panel admin), bukan lagi diedit guru dari sini.
-            await DB.updateUser({ nama, waliKelasId, guruSetup: true });
-            // Bila jadi wali, catat namanya di dokumen jadwal (merge — entri lama tetap).
-            if (waliKelasId) {
-              try { await DB.gUpdate('class_schedule', waliKelasId, { classId: waliKelasId, waliNama: nama, updatedAt: new Date().toISOString() }); } catch (_) {}
-            }
+            // Mapel & wali kelas TIDAK ikut dikirim — keduanya sekarang wewenang
+            // admin, bukan lagi diedit guru dari sini.
+            await DB.updateUser({ nama, guruSetup: true });
             closeModal();
             toast(tr('Data guru tersimpan ✅', 'Teacher info saved ✅'));
             onSaved && onSaved();
@@ -2759,8 +2740,8 @@ const Teacher = {
           <div class="es-title">${tr('Kelas ini belum punya siswa', 'This class has no students')}</div>
         </div>` : `
         <div class="disclaimer" style="margin-bottom:14px;"><ion-icon name="information-circle"></ion-icon><span>${tr(
-          'Ibadah dicentang mandiri oleh siswa lewat app-nya sendiri. Guru cuma memantau — tapi bisa mengoreksi dengan mengetuk tombol "Ikut/Belum" di tabel bila siswa lupa mencentang.',
-          'Worship is checked off by students themselves in their own app. Teachers only monitor — but can correct it by tapping the "Yes/No" button in the table if a student forgot to check it.')}</span></div>
+          'Ibadah dicentang mandiri oleh siswa lewat app-nya sendiri. Guru cuma memantau — tapi bisa mengoreksi lewat pilihan status (Sholat / Tidak Sholat / Haid / Tidak Berangkat) di tabel bila siswa lupa mencentang.',
+          'Worship is checked off by students themselves in their own app. Teachers only monitor — but can correct it via the status dropdown (Prayed / Did Not Pray / Menstruating / Absent) in the table if a student forgot to check it.')}</span></div>
 
         <div class="ib-ringkas" id="ibRingkas"></div>
 
@@ -2854,20 +2835,46 @@ const Teacher = {
     { key: 'dzuhur', id: 'Dzuhur', en: 'Dhuhr', emoji: '☀️' }
   ],
 
-  // Ambil centang ibadah satu siswa pada satu tanggal.
+  // 4 pilihan status yang bisa ditandai guru per ibadah per siswa. Haid &
+  // Tidak Berangkat adalah alasan sah (bukan pelanggaran) — dikecualikan dari
+  // penyebut persentase rekap, beda dari Tidak Sholat yang tetap dihitung.
+  IBADAH_STATUS: [
+    { v: 'sholat',          id: 'Sholat',          en: 'Prayed',        sym: '✓', cls: 'ib-st-sholat' },
+    { v: 'tidak_sholat',    id: 'Tidak Sholat',    en: 'Did Not Pray',  sym: '✗', cls: 'ib-st-tidak' },
+    { v: 'haid',            id: 'Haid',            en: 'Menstruating',  sym: 'H', cls: 'ib-st-haid' },
+    { v: 'tidak_berangkat', id: 'Tidak Berangkat', en: 'Absent',        sym: 'A', cls: 'ib-st-absen' }
+  ],
+
+  // Ambil record ibadah lengkap (done + status) satu siswa pada satu tanggal.
   async _ibadahSiswa(uid, tanggal) {
     const daily = await DB.listStudentData(uid, 'ibadah_daily');
-    return daily.find(d => d.tanggal === tanggal)?.done || {};
+    return daily.find(d => d.tanggal === tanggal) || null;
   },
 
-  // Guru mengoreksi/menandai ibadah siswa (mis. lupa mencentang sendiri di app-nya).
-  // Baca status terkini dulu supaya toggle tidak menimpa ibadah lain di tanggal
-  // yang sama (Dhuha vs Dzuhur tersimpan dalam satu map `done`).
-  async _toggleIbadahGuru(studentUid, key, tanggal) {
-    const done = await this._ibadahSiswa(studentUid, tanggal);
-    done[key] = !done[key];
-    await DB.setStudentData(studentUid, 'ibadah_daily', tanggal, { tanggal, done });
-    toast(done[key] ? tr('Ditandai ikut ✅', 'Marked as attended ✅') : tr('Ditandai belum ikut.', 'Marked as not attended.'));
+  // Turunkan status (4 pilihan) satu ibadah dari satu record harian. Data lama
+  // cuma punya `done` boolean (dicentang siswa sendiri lewat app) — dipetakan
+  // ke 'sholat'/'tidak_sholat' supaya catatan lama tetap terbaca. Data yang
+  // sudah ditandai guru lewat pilihan status punya map `status` yang lebih rinci.
+  _ibStatus(rec, key) {
+    if (!rec) return null;
+    if (rec.status && rec.status[key]) return rec.status[key];
+    if (rec.done && key in rec.done) return rec.done[key] ? 'sholat' : 'tidak_sholat';
+    return null;
+  },
+
+  // Guru menandai/mengoreksi status ibadah siswa (Sholat/Tidak Sholat/Haid/
+  // Tidak Berangkat). Baca record terkini dulu supaya perubahan satu ibadah
+  // tidak menimpa ibadah lain di tanggal yang sama. `done` tetap disinkronkan
+  // (true hanya saat 'sholat') supaya catatan lama & centang siswa tetap konsisten.
+  async _setIbadahStatusGuru(studentUid, key, tanggal, status) {
+    const rec = await this._ibadahSiswa(studentUid, tanggal);
+    const done = { ...(rec?.done || {}) };
+    const stat = { ...(rec?.status || {}) };
+    done[key] = status === 'sholat';
+    stat[key] = status;
+    await DB.setStudentData(studentUid, 'ibadah_daily', tanggal, { tanggal, done, status: stat });
+    const lbl = this.IBADAH_STATUS.find(x => x.v === status);
+    toast(tr(`Ditandai: ${lbl.id} ✅`, `Marked: ${lbl.en} ✅`));
   },
 
   async _loadStudentsIbadahData(students, tanggal) {
@@ -2876,31 +2883,51 @@ const Teacher = {
                       tr('Dhuha', 'Dhuha'), tr('Dzuhur', 'Dhuhr')]];
     let anyError = false;
 
-    // Ringkasan "berapa ikut, berapa tidak" untuk tanggal ini.
-    const ikut = { dhuha: 0, dzuhur: 0 };
+    // Ringkasan "berapa ikut, berapa tidak" untuk tanggal ini (Haid & Tidak
+    // Berangkat dihitung terpisah — bukan pelanggaran, jadi tidak masuk "tidak").
+    const rekapHari = { dhuha: { sholat: 0, tidak_sholat: 0, haid: 0, tidak_berangkat: 0 },
+                         dzuhur: { sholat: 0, tidak_sholat: 0, haid: 0, tidak_berangkat: 0 } };
 
     for (let i = 0; i < students.length; i++) {
       const s = students[i];
-      let done = {};
+      let rec = null;
       let loadError = false;
 
       try {
         const studentUid = s.userId || s.id;
         if (!studentUid) { loadError = true; anyError = true; }
-        else done = await this._ibadahSiswa(studentUid, tanggal);
+        else rec = await this._ibadahSiswa(studentUid, tanggal);
       } catch (err) {
         console.error('Gagal memuat data ibadah siswa:', s.nama, err.message);
         loadError = true; anyError = true;
       }
 
-      this.IBADAH.forEach(ib => { if (done[ib.key]) ikut[ib.key]++; });
+      const stat = {};
+      this.IBADAH.forEach(ib => {
+        stat[ib.key] = this._ibStatus(rec, ib.key) || 'tidak_sholat';
+        if (!loadError) rekapHari[ib.key][stat[ib.key]]++;
+      });
 
-      // Tombol (bukan span statis) — guru bisa mengoreksi langsung di sini bila
-      // siswa lupa mencentang sendiri di app-nya. Klik = toggle & simpan seketika.
-      const sel = ib => `<button type="button" class="ib-toggle-btn ${done[ib.key] ? 'ib-ya' : 'ib-tidak'}"
-          data-toggle-ib="${s.userId || s.id}" data-ib-key="${ib.key}">
-          <ion-icon name="${done[ib.key] ? 'checkmark-circle' : 'close-circle'}"></ion-icon> ${done[ib.key] ? tr('Ikut', 'Yes') : tr('Belum', 'No')}
-        </button>`;
+      // Select — guru bisa mengoreksi langsung di sini bila siswa lupa
+      // mencentang sendiri di app-nya, atau menandai Haid/Tidak Berangkat.
+      // Ganti pilihan = simpan seketika (lihat binding data-set-ib di bawah).
+      const sel = ib => {
+        const cur = stat[ib.key];
+        const curDef = this.IBADAH_STATUS.find(x => x.v === cur);
+        const cls = curDef ? curDef.cls : '';
+        const opts = this.IBADAH_STATUS.map(o =>
+          `<option value="${o.v}" ${o.v === cur ? 'selected' : ''}>${tr(o.id, o.en)}</option>`).join('');
+        // Panah dropdown digambar lewat ::after pada WRAPPER, bukan lewat
+        // background-image di elemen <select> itu sendiri — sebagian WebView
+        // (mis. Android) merender opsi select yang terbuka sebagai daftar
+        // di-tempat yang ikut mewarisi background select, sehingga panah
+        // yang digambar di select ikut tergandakan sekali per opsi. Panah di
+        // wrapper aman karena tidak pernah ikut dirender ulang oleh select.
+        return `<span class="ib-status-wrap ${cls}">
+            <select class="input ib-status-select ${cls}"
+              data-set-ib="${s.userId || s.id}" data-ib-key="${ib.key}">${opts}</select>
+          </span>`;
+      };
 
       listHtml.push(`
         <tr>
@@ -2918,26 +2945,29 @@ const Teacher = {
           </td>
         </tr>`);
 
-      csvRows.push([i + 1, s.nama, s.nis || '',
-                    done.dhuha ? 'Ikut' : 'Belum', done.dzuhur ? 'Ikut' : 'Belum']);
+      const lbl = v => tr(this.IBADAH_STATUS.find(x => x.v === v)?.id || '', this.IBADAH_STATUS.find(x => x.v === v)?.en || '');
+      csvRows.push([i + 1, s.nama, s.nis || '', loadError ? '' : lbl(stat.dhuha), loadError ? '' : lbl(stat.dzuhur)]);
     }
 
-    // Kartu ringkasan: berapa ikut, berapa tidak — per ibadah.
+    // Kartu ringkasan: berapa sholat vs tidak (dari hari wajib — Haid & Tidak
+    // Berangkat dikecualikan dari penyebut karena bukan pelanggaran).
     const ring = document.getElementById('ibRingkas');
     if (ring) {
-      const n = students.length;
       ring.innerHTML = this.IBADAH.map(ib => {
-        const ya = ikut[ib.key], tidak = n - ya;
-        const pct = n ? Math.round(ya / n * 100) : 0;
+        const r = rekapHari[ib.key];
+        const wajib = r.sholat + r.tidak_sholat;
+        const pct = wajib ? Math.round(r.sholat / wajib * 100) : 0;
         return `
           <div class="ib-sum">
             <div class="ib-sum-h">${ib.emoji} ${tr(ib.id, ib.en)}</div>
             <div class="ib-sum-n">
-              <span class="ib-ya"><b>${ya}</b> ${tr('ikut', 'yes')}</span>
-              <span class="ib-tidak"><b>${tidak}</b> ${tr('tidak', 'no')}</span>
+              <span class="ib-ya"><b>${r.sholat}</b> ${tr('sholat', 'prayed')}</span>
+              <span class="ib-tidak"><b>${r.tidak_sholat}</b> ${tr('tidak', 'not')}</span>
+              ${r.haid ? `<span class="ib-haid"><b>${r.haid}</b> ${tr('haid', 'menstr.')}</span>` : ''}
+              ${r.tidak_berangkat ? `<span class="ib-absen"><b>${r.tidak_berangkat}</b> ${tr('absen', 'absent')}</span>` : ''}
             </div>
             <div class="ib-sum-bar"><span style="width:${pct}%"></span></div>
-            <div class="ib-sum-pct">${pct}% ${tr('dari', 'of')} ${n} ${tr('siswa', 'students')}</div>
+            <div class="ib-sum-pct">${pct}% ${tr('dari', 'of')} ${wajib} ${tr('siswa wajib', 'obligated students')}</div>
           </div>`;
       }).join('');
     }
@@ -2961,18 +2991,18 @@ const Teacher = {
         b.onclick = () => this._detailIbadahModal(b.dataset.detailib, b.dataset.sname, tanggal);
       });
 
-      // Koreksi manual guru — klik tombol Ikut/Belum untuk membalik status
-      // siswa pada tanggal yang sedang dipantau (mis. siswa lupa mencentang sendiri).
-      document.querySelectorAll('[data-toggle-ib]').forEach(b => {
-        b.onclick = async () => {
-          if (b.disabled) return;
-          b.disabled = true;
+      // Koreksi manual guru — ganti pilihan status ibadah siswa pada tanggal
+      // yang sedang dipantau (mis. siswa lupa mencentang sendiri, atau haid).
+      document.querySelectorAll('[data-set-ib]').forEach(sel => {
+        sel.onchange = async () => {
+          if (sel.disabled) return;
+          sel.disabled = true;
           try {
-            await this._toggleIbadahGuru(b.dataset.toggleIb, b.dataset.ibKey, tanggal);
+            await this._setIbadahStatusGuru(sel.dataset.setIb, sel.dataset.ibKey, tanggal, sel.value);
             await this._loadStudentsIbadahData(students, tanggal);
             this._loadIbadahBulananTable(students, this.ibadahBulan);
           } catch (err) {
-            b.disabled = false;
+            sel.disabled = false;
             toast(err.message || tr('Gagal menyimpan.', 'Failed to save.'), 'error');
           }
         };
@@ -2998,7 +3028,8 @@ const Teacher = {
     const hari = Array.from({ length: 31 }, (_, i) => i + 1);
     const nyata = d => d <= jmlHari;
 
-    // data[uid][tanggal] = { dhuha: bool, dzuhur: bool }
+    // data[uid][tanggal] = record harian penuh ({ done, status }) — status
+    // per ibadah diturunkan lewat this._ibStatus(rec, key) saat dipakai.
     const data = {};
     for (const s of students) {
       const uid = s.userId || s.id;
@@ -3006,7 +3037,7 @@ const Teacher = {
       try {
         const daily = await DB.listStudentData(uid, 'ibadah_daily');
         daily.filter(d => String(d.tanggal || '').startsWith(`${bulan}-`))
-          .forEach(d => { data[s.id][+String(d.tanggal).slice(8, 10)] = d.done || {}; });
+          .forEach(d => { data[s.id][+String(d.tanggal).slice(8, 10)] = d; });
       } catch (_) { /* siswa tanpa data → kotaknya kosong */ }
     }
     return { thn, bln, jmlHari, hari, nyata, data };
@@ -3025,10 +3056,17 @@ const Teacher = {
     const isToday = d => nyata(d) && `${bulan}-${String(d).padStart(2, '0')}` === hariIni;
     const isLibur = d => nyata(d) && new Date(thn, bln - 1, d).getDay() === 0;
 
+    // Haid & Tidak Berangkat dikecualikan dari penyebut (bukan pelanggaran) —
+    // penyebut jadi hari "wajib" (ada catatan Sholat/Tidak Sholat) per siswa.
     const rekap = (sid, key) => {
       if (!hariSekolah.length) return null;
-      const ya = hariSekolah.filter(d => data[sid][d]?.[key]).length;
-      return { ya, n: hariSekolah.length, pct: Math.round(ya / hariSekolah.length * 100) };
+      let ya = 0, wajib = 0;
+      hariSekolah.forEach(d => {
+        const st = this._ibStatus(data[sid][d], key);
+        if (st === 'sholat') { ya++; wajib++; }
+        else if (st === 'tidak_sholat') wajib++;
+      });
+      return wajib ? { ya, n: wajib, pct: Math.round(ya / wajib * 100) } : { ya: 0, n: 0, pct: 0 };
     };
 
     const body = students.map((s, i) => this.IBADAH.map((ib, k) => {
@@ -3040,12 +3078,13 @@ const Teacher = {
         <td class="ib-month-lb">${ib.emoji} ${tr(ib.id, ib.en)}</td>
         ${hari.map(d => {
           if (!nyata(d)) return `<td class="ib-month-off"></td>`;
-          const rec = data[s.id][d];
-          const v = rec ? (rec[ib.key] ? '✓' : '✗') : '';
-          const cls = v === '✓' ? 'ib-month-yes' : v === '✗' ? 'ib-month-no' : '';
+          const st = this._ibStatus(data[s.id][d], ib.key);
+          const stDef = this.IBADAH_STATUS.find(x => x.v === st);
+          const v = stDef ? stDef.sym : '';
+          const cls = stDef ? stDef.cls.replace('ib-st-', 'ib-month-') : '';
           return `<td class="${cls}${isLibur(d) ? ' ib-month-libur' : ''}${isToday(d) ? ' ib-col-today' : ''}">${v}</td>`;
         }).join('')}
-        <td class="center ib-month-pct">${r ? `${r.pct}%<div style="font-size:.6rem;font-weight:500;color:var(--text-3);">${r.ya}/${r.n}</div>` : '–'}</td>
+        <td class="center ib-month-pct">${r && r.n ? `${r.pct}%<div style="font-size:.6rem;font-weight:500;color:var(--text-3);">${r.ya}/${r.n}</div>` : '–'}</td>
       </tr>`;
     }).join('')).join('');
 
@@ -3064,8 +3103,8 @@ const Teacher = {
         <tbody>${body}</tbody>
       </table>
       <div style="font-size:.72rem;color:var(--text-3);padding:8px 10px;">
-        ${tr(`✓ = ikut · ✗ = tidak ikut · kotak kosong = belum ada catatan. Persentase dihitung dari ${hariSekolah.length} hari sekolah bulan ini (hari yang ada catatannya).`,
-             `✓ = attended · ✗ = missed · empty box = no record yet. Percentages are based on the ${hariSekolah.length} school days this month (days with records).`)}
+        ${tr(`✓ = sholat · ✗ = tidak sholat · H = haid · A = tidak berangkat · kotak kosong = belum ada catatan. Persentase dihitung dari hari wajib (Sholat/Tidak Sholat) — Haid & Tidak Berangkat tidak mengurangi persentase.`,
+             `✓ = prayed · ✗ = did not pray · H = menstruating · A = absent · empty box = no record yet. Percentages are based on obligated days (Prayed/Did Not Pray) — Menstruating & Absent do not lower the percentage.`)}
       </div>`;
   },
 
@@ -3083,14 +3122,20 @@ const Teacher = {
 
     const isi = (sid, d, key) => {
       if (!nyata(d)) return '';
-      const rec = data[sid][d];
-      if (!rec) return '';                       // tak ada catatan → kotak kosong
-      return rec[key] ? '✓' : '✗';
+      const st = this._ibStatus(data[sid][d], key);
+      const stDef = this.IBADAH_STATUS.find(x => x.v === st);
+      return stDef ? stDef.sym : '';              // tak ada catatan → kotak kosong
     };
+    // Haid & Tidak Berangkat dikecualikan dari penyebut (bukan pelanggaran).
     const rekap = (sid, key) => {
       if (!hariSekolah.length) return null;
-      const ya = hariSekolah.filter(d => data[sid][d]?.[key]).length;
-      return { ya, n: hariSekolah.length, pct: Math.round(ya / hariSekolah.length * 100) };
+      let ya = 0, wajib = 0;
+      hariSekolah.forEach(d => {
+        const st = this._ibStatus(data[sid][d], key);
+        if (st === 'sholat') { ya++; wajib++; }
+        else if (st === 'tidak_sholat') wajib++;
+      });
+      return wajib ? { ya, n: wajib, pct: Math.round(ya / wajib * 100) } : null;
     };
 
     const kop = Kop.html({ judul: tr('REKAP IBADAH', 'WORSHIP RECAP') });
@@ -3161,7 +3206,7 @@ const Teacher = {
             <th rowspan="2">${tr('NAMA', 'NAME')}</th>
             <th rowspan="2">${tr('Ibadah', 'Worship')}</th>
             <th colspan="31">${tr('Tanggal', 'Date')}</th>
-            <th rowspan="2">${tr('Ikut', 'Attended')}</th>
+            <th rowspan="2">%</th>
           </tr>
           <tr>${hari.map(d => `<th class="hd-d${kelasHari(d)}">${d}</th>`).join('')}</tr>
         </thead>
@@ -3169,11 +3214,12 @@ const Teacher = {
       </table>
       </div>
       <div class="hd-ket">
-        <b>✓</b> = ${tr('ikut', 'attended')} · <b>✗</b> = ${tr('tidak ikut', 'did not attend')}<br>
+        <b>✓</b> = ${tr('sholat', 'prayed')} · <b>✗</b> = ${tr('tidak sholat', 'did not pray')} ·
+        <b>H</b> = ${tr('haid', 'menstruating')} · <b>A</b> = ${tr('tidak berangkat', 'absent')}<br>
         ${tr('Kotak kosong = tidak ada kegiatan pada tanggal itu (mis. libur). Kotak berarsir tebal = tanggal yang tidak ada di bulan ini.',
              'An empty box = no activity on that date (e.g. holiday). Dark shaded boxes = dates that do not exist in this month.')}<br>
-        ${tr(`Persentase dihitung dari ${hariSekolah.length} hari sekolah bulan ini (hari yang ada catatannya).`,
-             `Percentages are based on the ${hariSekolah.length} school days this month (days with records).`)}
+        ${tr('Persentase dihitung dari hari wajib (Sholat/Tidak Sholat) — Haid & Tidak Berangkat tidak mengurangi persentase.',
+             'Percentages are based on obligated days (Prayed/Did Not Pray) — Menstruating & Absent do not lower the percentage.')}
       </div>`);
   },
 
@@ -3185,16 +3231,26 @@ const Teacher = {
     const { hari, nyata, data } = await this._rekapIbadah(students, bulan);
     const hariSekolah = hari.filter(d => nyata(d) && students.some(s => data[s.id][d]));
 
+    const lbl = v => tr(this.IBADAH_STATUS.find(x => x.v === v)?.id || '', this.IBADAH_STATUS.find(x => x.v === v)?.en || '');
     const rows = [[tr('No', 'No'), tr('Nama', 'Name'), 'NIS', tr('Ibadah', 'Worship'),
                    ...hariSekolah.map(d => String(d)),
-                   tr('Ikut', 'Attended'), tr('Tidak', 'Missed'), '%']];
+                   tr('Sholat', 'Prayed'), tr('Tidak Sholat', 'Did Not Pray'),
+                   tr('Haid', 'Menstruating'), tr('Tidak Berangkat', 'Absent'), '%']];
     students.forEach((s, i) => this.IBADAH.forEach(ib => {
-      const ya = hariSekolah.filter(d => data[s.id][d]?.[ib.key]).length;
+      let ya = 0, tidak = 0, haid = 0, absen = 0;
+      hariSekolah.forEach(d => {
+        const st = this._ibStatus(data[s.id][d], ib.key);
+        if (st === 'sholat') ya++;
+        else if (st === 'tidak_sholat') tidak++;
+        else if (st === 'haid') haid++;
+        else if (st === 'tidak_berangkat') absen++;
+      });
+      const wajib = ya + tidak;
       rows.push([
         i + 1, s.nama, s.nis || '', tr(ib.id, ib.en),
-        ...hariSekolah.map(d => (data[s.id][d] ? (data[s.id][d][ib.key] ? 'Ikut' : 'Tidak') : '')),
-        ya, hariSekolah.length - ya,
-        hariSekolah.length ? Math.round(ya / hariSekolah.length * 100) + '%' : ''
+        ...hariSekolah.map(d => lbl(this._ibStatus(data[s.id][d], ib.key))),
+        ya, tidak, haid, absen,
+        wajib ? Math.round(ya / wajib * 100) + '%' : ''
       ]);
     }));
     downloadCSV(rows, `rekap_ibadah_${(cls?.nama || 'kelas').replace(/\s+/g, '_')}_${bulan}.csv`);
@@ -3213,18 +3269,16 @@ const Teacher = {
           daily = await DB.listStudentData(studentUid, 'ibadah_daily');
         } catch (_) { /* ditangani di bawah */ }
 
-        const done = daily.find(d => d.tanggal === tanggal)?.done || {};
+        const rec = daily.find(d => d.tanggal === tanggal) || null;
 
         const kartu = ib => {
-          const ya = !!done[ib.key];
+          const st = this._ibStatus(rec, ib.key);
+          const stDef = this.IBADAH_STATUS.find(x => x.v === st) || this.IBADAH_STATUS[1];
           return `
-            <div class="ib-det ${ya ? 'ya' : 'tidak'}">
+            <div class="ib-det ${stDef.cls}">
               <span class="ib-det-em">${ib.emoji}</span>
               <span class="ib-det-nm">${tr(ib.id, ib.en)}</span>
-              <span class="ib-det-st">
-                <ion-icon name="${ya ? 'checkmark-circle' : 'close-circle'}"></ion-icon>
-                ${ya ? tr('Ikut', 'Attended') : tr('Belum', 'Not yet')}
-              </span>
+              <span class="ib-det-st">${tr(stDef.id, stDef.en)}</span>
             </div>`;
         };
 
@@ -3233,21 +3287,22 @@ const Teacher = {
         const riwayat = Array.from({ length: 14 }, (_, i) => {
           const d = new Date(mulai.getTime() - (13 - i) * 86400000);
           const iso = todayStr(d);
-          const rec = daily.find(x => x.tanggal === iso)?.done;
-          return { iso, tgl: d.getDate(), rec };
+          const dailyRec = daily.find(x => x.tanggal === iso) || null;
+          return { iso, tgl: d.getDate(), rec: dailyRec };
         });
 
         const barisRiwayat = ib => `
           <tr>
             <td class="ib-rw-lb">${ib.emoji} ${tr(ib.id, ib.en)}</td>
-            ${riwayat.map(r => `
-              <td class="center ${!r.rec ? 'ib-rw-kosong' : (r.rec[ib.key] ? 'ib-rw-ya' : 'ib-rw-tidak')}">
-                ${!r.rec ? '·' : (r.rec[ib.key] ? '✓' : '✗')}
-              </td>`).join('')}
+            ${riwayat.map(r => {
+              const st = this._ibStatus(r.rec, ib.key);
+              const stDef = this.IBADAH_STATUS.find(x => x.v === st);
+              return `<td class="center ${stDef ? stDef.cls : 'ib-rw-kosong'}">${stDef ? stDef.sym : '·'}</td>`;
+            }).join('')}
           </tr>`;
 
-        const ikut = ib => riwayat.filter(r => r.rec?.[ib.key]).length;
-        const adaCatatan = riwayat.filter(r => r.rec).length;
+        const ikut = ib => riwayat.filter(r => this._ibStatus(r.rec, ib.key) === 'sholat').length;
+        const adaCatatan = ib => riwayat.filter(r => this._ibStatus(r.rec, ib.key)).length;
 
         m.querySelector('.modal-body').innerHTML = `
           <div style="font-size:.8rem;color:var(--text-3);margin-bottom:12px;">
@@ -3268,7 +3323,7 @@ const Teacher = {
             </table>
           </div>
           <div style="font-size:.78rem;color:var(--text-3);margin-top:10px;line-height:1.6;">
-            ${this.IBADAH.map(ib => `${tr(ib.id, ib.en)}: <b>${ikut(ib)}</b> ${tr('dari', 'of')} ${adaCatatan} ${tr('hari bercatatan', 'recorded days')}`).join(' · ')}<br>
+            ${this.IBADAH.map(ib => `${tr(ib.id, ib.en)}: <b>${ikut(ib)}</b> ${tr('dari', 'of')} ${adaCatatan(ib)} ${tr('hari bercatatan', 'recorded days')}`).join(' · ')}<br>
             <b>·</b> = ${tr('tidak ada catatan pada hari itu (mis. libur)', 'no record that day (e.g. holiday)')}
           </div>`;
       }

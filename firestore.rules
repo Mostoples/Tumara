@@ -100,12 +100,13 @@ service cloud.firestore {
     }
 
     // Jadwal kelas: satu dokumen per kelas (id = classId). Dibaca semua
-    // pengguna terautentikasi; HANYA wali kelas (guru dengan waliKelasId
-    // sama dengan classId) yang boleh menulis.
+    // pengguna terautentikasi; ditulis wali kelasnya (guru dengan waliKelasId
+    // sama dengan classId) ATAU admin (mis. saat menetapkan/mengganti wali
+    // kelas dari panel admin — lihat AdminView._syncWaliKelas di admin.js).
     match /class_schedule/{classId} {
       allow read: if request.auth != null;
-      allow write: if isGuru()
-        && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.waliKelasId == classId;
+      allow write: if isAdmin() || (isGuru()
+        && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.waliKelasId == classId);
     }
 
     // Absensi per-mapel (id = "{classId}_{tanggal}_{guruId}_{mapelSlug}_{pertemuan}").

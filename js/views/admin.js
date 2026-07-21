@@ -59,10 +59,13 @@ const AdminView = {
       </div>`;
       return;
     }
-    // Daftar mapel (buat modal "Buat/Ubah Akun" guru) — dimuat sekali di sini,
-    // dipakai lagi tanpa fetch ulang tiap kali modal dibuka.
+    // Daftar mapel & kelas (buat modal "Buat/Ubah Akun" guru — pilih mapel
+    // diampu & kelas yang diwalikan) — dimuat sekali di sini, dipakai lagi
+    // tanpa fetch ulang tiap kali modal dibuka.
     try { this._mapelOptions = this._sortByOrder(await DB.gList('school_mapel')); }
     catch (_) { this._mapelOptions = this._mapelOptions || []; }
+    try { this._classOptions = this._sortByOrder(await DB.gList('school_classes')); }
+    catch (_) { this._classOptions = this._classOptions || []; }
 
     // Siswa alumni dihitung terpisah dari siswa aktif (bukan dobel-hitung).
     const counts = { admin: 0, guru: 0, siswa: 0, alumni: 0 };
@@ -997,20 +1000,57 @@ const AdminView = {
       </div>`;
     };
 
+    // Wali kelas: sekarang wewenang admin (bukan lagi guru sendiri lewat "Data
+    // Guru"). Kelasnya dari school_classes; ditandai kalau kelas itu sudah
+    // punya wali guru LAIN, supaya admin sadar sebelum menimpanya (satu kelas
+    // idealnya satu wali — lihat _syncWaliKelas).
+    const classOptions = this._classOptions || [];
+    const waliLain = {};
+    (this._users || []).forEach(u => {
+      if ((u.role || 'siswa') === 'guru' && u.waliKelasId && u.id !== user?.id) waliLain[u.waliKelasId] = u.nama;
+    });
+    const waliFieldHTML = () => `
+      <div class="field">
+        <label>${tr('Wali kelas dari', 'Homeroom teacher of')}</label>
+        ${classOptions.length ? `
+        <select class="select" id="mWali">
+          <option value="">${tr('— Bukan wali kelas —', '— Not a homeroom teacher —')}</option>
+          ${classOptions.map(c => `<option value="${esc(c.id)}" ${(user?.waliKelasId || '') === c.id ? 'selected' : ''}>${esc(c.nama)}${waliLain[c.id] ? ` (${tr('sudah wali', 'already homeroom')}: ${esc(waliLain[c.id])})` : ''}</option>`).join('')}
+        </select>
+        <div class="hint">${tr('Satu kelas idealnya cuma satu wali — kalau kelas yang dipilih sudah punya wali lain, dia otomatis dilepas & digantikan guru ini.', 'A class should ideally have one homeroom teacher — if the chosen class already has one, they are automatically unassigned and replaced by this teacher.')}</div>`
+        : `<input type="text" class="input" disabled value="${tr('Belum ada kelas (buat dulu di tab Kelas & Siswa)', 'No classes yet (create one in the Classes & Students tab)')}">`}
+      </div>`;
+
+    // Kelas siswa: akun lama (sebelum kelasId ada) cuma punya `kelas` (nama
+    // bebas teks) — dicocokkan ke daftar master lewat namanya supaya tetap
+    // terpilih otomatis di dropdown, bukan kembali ke "— Pilih kelas —".
+    const siswaKelasId = user?.kelasId
+      || classOptions.find(c => c.nama === user?.kelas)?.id
+      || '';
+
     // Data tambahan per peran; digambar ulang tiap peran berganti.
     const roleFields = r => r === 'guru' ? `
         <div class="field">
           <label>${tr('Mata pelajaran', 'Subjects')}</label>
           ${mapelPickerHTML()}
-          <div class="hint">${tr('Boleh pilih lebih dari satu, sesuai yang benar-benar diampu. Guru juga bisa mengubahnya sendiri.',
-                                 'Pick as many as apply to what they actually teach. Teachers can edit this themselves too.')}</div>
+          <div class="hint">${tr('Boleh pilih lebih dari satu, sesuai yang benar-benar diampu. Ini diatur admin — guru tidak bisa mengubahnya sendiri.',
+                                 'Pick as many as apply to what they actually teach. This is set by the admin — teachers cannot change it themselves.')}</div>
         </div>
+        ${waliFieldHTML()}
         <div class="grid grid-2 keep-2" style="gap:12px;">
           <div class="field"><label>NIP/NIK <span style="font-weight:500;color:var(--text-3)">${tr('(opsional)', '(optional)')}</span></label><input type="text" class="input" id="mNip" value="${esc(user?.nip || '')}"></div>
           <div class="field"><label>${tr('Asal sekolah', 'School')} <span style="font-weight:500;color:var(--text-3)">${tr('(opsional)', '(optional)')}</span></label><input type="text" class="input" id="mSekolah" value="${esc(user?.sekolah || '')}"></div>
         </div>`
       : r === 'siswa' ? `
-        <div class="field"><label>${tr('Kelas', 'Class')}</label><input type="text" class="input" id="mKelas" placeholder="${tr('mis. X TKJ 2', 'e.g. X TKJ 2')}" value="${esc(user?.kelas || '')}"></div>`
+        <div class="field">
+          <label>${tr('Kelas', 'Class')}</label>
+          ${classOptions.length ? `
+          <select class="select" id="mKelas">
+            <option value="">${tr('— Pilih kelas —', '— Choose class —')}</option>
+            ${classOptions.map(c => `<option value="${esc(c.id)}" ${siswaKelasId === c.id ? 'selected' : ''}>${esc(c.nama)}</option>`).join('')}
+          </select>`
+          : `<input type="text" class="input" disabled value="${tr('Belum ada kelas (buat dulu di tab Kelas & Siswa)', 'No classes yet (create one in the Classes & Students tab)')}">`}
+        </div>`
       : '';
 
     // Chip mapel dibuat ulang tiap roleFields() dipanggil (mis. ganti peran
@@ -1096,8 +1136,18 @@ const AdminView = {
             extra.mapel = mapelAmpu[0] || '';
             extra.nip = $('#mNip', m)?.value.trim() || '';
             extra.sekolah = $('#mSekolah', m)?.value.trim() || '';
+            extra.waliKelasId = $('#mWali', m)?.value || '';
           }
-          else if (role === 'siswa') { extra.kelas = $('#mKelas', m)?.value.trim() || ''; }
+          else if (role === 'siswa') {
+            // Dipilih dari daftar kelas (bukan diketik bebas) — kelasId dikunci
+            // ke school_classes supaya listStudentsByClass() ikut mendata akun
+            // ini, sama seperti siswa yang dibuat dari tab "Kelas & Siswa".
+            const kelasId = $('#mKelas', m)?.value || '';
+            const cls = classOptions.find(c => c.id === kelasId);
+            extra.kelasId = kelasId;
+            extra.kelasNama = cls?.nama || '';
+            extra.kelas = cls?.nama || '';
+          }
 
           const btn = $('#mSave', m); btn.disabled = true;
           try {
@@ -1108,6 +1158,7 @@ const AdminView = {
               // melengkapi profil kesehatan, guru/admin tidak.
               if (role !== (user.role || 'siswa')) patch.profileComplete = role !== 'siswa';
               await DB.adminUpdateUser(user.id, patch);
+              if (role === 'guru') await this._syncWaliKelas(user.id, nama, extra.waliKelasId, user.waliKelasId || '');
               toast(tr('Akun diperbarui.', 'Account updated.'));
             } else {
               // Guru & admin: email sungguhan + kata sandi biasa (min 6 —
@@ -1117,7 +1168,8 @@ const AdminView = {
               if (!/^\S+@\S+\.\S+$/.test(email)) { btn.disabled = false; return toast(tr('Masukkan email yang valid.', 'Please enter a valid email.'), 'warning'); }
               if (pass.length < 6) { btn.disabled = false; return toast(tr('Kata sandi minimal 6 karakter.', 'Password must be at least 6 characters.'), 'warning'); }
 
-              await DB.adminCreateUser({ nama, email, password: pass, role, extra });
+              const created = await DB.adminCreateUser({ nama, email, password: pass, role, extra });
+              if (role === 'guru') await this._syncWaliKelas(created.id, nama, extra.waliKelasId, '');
               closeModal();
               this._createdInfoModal(nama, email, pass, role);
               this.render(this._el);
@@ -1132,6 +1184,24 @@ const AdminView = {
         };
       }
     });
+  },
+
+  // Jaga invarian "satu kelas = satu wali kelas" tiap kali admin menetapkan/
+  // mengganti wali lewat _userModal: lepas wali lama di kelas SEBELUMNYA (kalau
+  // pindah/dilepas), lepas guru LAIN yang sudah wali di kelas BARU (kalau ada,
+  // dari cache this._users), lalu catat nama wali baru di dokumen jadwal kelas
+  // (dibaca kop cetak/daftar hadir). class_schedule ditulis admin di sini (rules
+  // membolehkan write hanya utk wali kelasnya sendiri, tapi admin lewat SDK guru
+  // biasa tetap kena rules yang sama — makanya dipanggil dgn akun admin yang
+  // login, bukan meniru guru; lihat firestore.rules match /class_schedule).
+  async _syncWaliKelas(userId, nama, waliKelasId, prevWaliKelasId) {
+    if (prevWaliKelasId && prevWaliKelasId !== waliKelasId) {
+      try { await DB.gUpdate('class_schedule', prevWaliKelasId, { waliNama: '' }); } catch (_) { /* dokumen jadwal mungkin belum ada — abaikan */ }
+    }
+    if (!waliKelasId) return;
+    const lain = (this._users || []).find(x => x.id !== userId && (x.role || 'siswa') === 'guru' && x.waliKelasId === waliKelasId);
+    if (lain) { try { await DB.adminUpdateUser(lain.id, { waliKelasId: '' }); } catch (_) {} }
+    try { await DB.gUpdate('class_schedule', waliKelasId, { classId: waliKelasId, waliNama: nama, updatedAt: new Date().toISOString() }); } catch (_) {}
   },
 
   // Tampilkan kredensial akun yang baru dibuat agar admin bisa menyerahkannya.

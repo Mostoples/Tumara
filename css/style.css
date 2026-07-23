@@ -2068,48 +2068,12 @@ ion-icon { pointer-events: none; flex-shrink: 0; }
 .ib-absen { display: inline-flex; align-items: center; gap: 4px; color: var(--fin); font-weight: 700; }
 [data-theme="dark"] .ib-ya { color: #34d399; }
 
-/* Pilihan status guru (tabel harian): Sholat/Tidak Sholat/Haid/Tidak
-   Berangkat — ganti pilihan langsung tersimpan (lihat data-set-ib di JS).
-   appearance:none WAJIB supaya background-color custom tidak ditimpa tampilan
-   bawaan OS. Panah dropdown SENGAJA tidak digambar lewat background-image di
-   <select> itu sendiri — beberapa WebView (terutama Android) merender opsi
-   select yang terbuka sebagai daftar di-tempat yang ikut mewarisi background
-   select, jadi panahnya ikut tergandakan sekali per opsi. Sebagai gantinya
-   panah digambar di WRAPPER (.ib-status-wrap::after, lihat di bawah) — aman
-   karena wrapper tidak pernah ikut dirender ulang oleh <select>. */
-.ib-status-wrap { position: relative; display: inline-block; }
-.ib-status-wrap::after {
-  content: ''; position: absolute; right: 10px; top: 50%;
-  width: 10px; height: 10px; transform: translateY(-50%); pointer-events: none;
-  -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E") no-repeat center / contain;
-  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E") no-repeat center / contain;
-  background-color: var(--text-3);
-}
-.ib-status-wrap.ib-st-sholat::after { background-color: var(--brand-dark); }
-[data-theme="dark"] .ib-status-wrap.ib-st-sholat::after { background-color: #34d399; }
-.ib-status-wrap.ib-st-tidak::after  { background-color: var(--danger); }
-.ib-status-wrap.ib-st-haid::after   { background-color: var(--prod); }
-.ib-status-wrap.ib-st-absen::after  { background-color: var(--fin); }
-
-.ib-status-select {
-  min-width: 138px; font-size: .78rem; font-weight: 700;
-  padding: 6px 26px 6px 12px; border-radius: 999px; border: 1.5px solid transparent;
-  cursor: pointer; transition: filter .15s, background .15s, color .15s;
-  -webkit-appearance: none; -moz-appearance: none; appearance: none;
-}
-.ib-status-select:hover    { filter: brightness(.97); }
-.ib-status-select:disabled { opacity: .5; cursor: wait; }
-.ib-status-select.ib-st-sholat { background-color: var(--brand-soft); color: var(--brand-dark); border-color: var(--brand); }
-.ib-status-select.ib-st-tidak  { background-color: var(--danger-soft); color: var(--danger); border-color: var(--danger); }
-.ib-status-select.ib-st-haid   { background-color: var(--prod-soft);   color: var(--prod); border-color: var(--prod); }
-.ib-status-select.ib-st-absen  { background-color: var(--fin-soft);    color: var(--fin); border-color: var(--fin); }
-[data-theme="dark"] .ib-status-select.ib-st-sholat { color: #34d399; }
-
 /* Rekap bulanan di layar (bukan cuma PDF) — kolom tanggal 1-31, 2 baris per
    siswa (Dhuha & Dzuhur), persentase di akhir. Sama bentuknya dengan PDF Rekap. */
 .ib-month-table { min-width: 900px; border-collapse: collapse; }
 .ib-month-table th, .ib-month-table td { padding: 3px 4px; font-size: .68rem; text-align: center; white-space: nowrap; border: 1px solid var(--border); }
-.ib-month-table td.ib-month-nama { text-align: left; font-size: .8rem; font-weight: 700; padding: 5px 10px; }
+.ib-month-table td.ib-month-nama { text-align: left; font-size: .8rem; font-weight: 700; padding: 5px 10px; cursor: pointer; }
+.ib-month-table td.ib-month-nama:hover { text-decoration: underline; color: var(--brand-dark); }
 .ib-month-table td.ib-month-lb { text-align: left; font-size: .68rem; color: var(--text-3); padding-left: 6px; }
 .ib-month-table td.ib-month-off, .ib-month-table th.ib-month-off { background: var(--surface-3); }
 .ib-month-table td.ib-month-libur, .ib-month-table th.ib-month-libur { background: var(--surface-2); }
@@ -2120,6 +2084,13 @@ ion-icon { pointer-events: none; flex-shrink: 0; }
 .ib-month-table td.ib-month-absen { color: var(--fin); font-weight: 800; }
 .ib-month-table td.ib-month-pct { font-weight: 800; }
 .ib-month-table th.ib-col-today, .ib-month-table td.ib-col-today { background: var(--brand-soft); }
+
+/* Kotak tanggal ketuk-untuk-ganti di rekap bulanan (lihat data-cur/data-uid di
+   JS) — sama fungsinya dengan tombol ibadah harian, tapi langsung di kolom
+   tanggalnya sendiri. */
+.ib-month-table td.ib-month-cell { cursor: pointer; transition: background .12s; }
+.ib-month-table td.ib-month-cell:hover { background: var(--surface-3); }
+.ib-month-table td.ib-month-cell[data-busy] { opacity: .5; cursor: wait; }
 
 /* Detail satu siswa. */
 .ib-det-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }

@@ -2740,27 +2740,10 @@ const Teacher = {
           <div class="es-title">${tr('Kelas ini belum punya siswa', 'This class has no students')}</div>
         </div>` : `
         <div class="disclaimer" style="margin-bottom:14px;"><ion-icon name="information-circle"></ion-icon><span>${tr(
-          'Ibadah dicentang mandiri oleh siswa lewat app-nya sendiri. Guru cuma memantau — tapi bisa mengoreksi lewat pilihan status (Sholat / Tidak Sholat / Haid / Tidak Berangkat) di tabel bila siswa lupa mencentang.',
-          'Worship is checked off by students themselves in their own app. Teachers only monitor — but can correct it via the status dropdown (Prayed / Did Not Pray / Menstruating / Absent) in the table if a student forgot to check it.')}</span></div>
+          'Ibadah dicentang mandiri oleh siswa lewat app-nya sendiri. Guru cuma memantau — tapi bisa mengoreksi langsung di tabel Laporan Bulanan di bawah dengan mengetuk kotak tanggalnya (✓ Sholat → ✗ Tidak Sholat → 🩸 Haid → A Tidak Berangkat) bila siswa lupa mencentang.',
+          'Worship is checked off by students themselves in their own app. Teachers only monitor — but can correct it directly in the Monthly Report table below by tapping the date box (✓ Prayed → ✗ Did Not Pray → 🩸 Menstruating → A Absent) if a student forgot to check it.')}</span></div>
 
         <div class="ib-ringkas" id="ibRingkas"></div>
-
-        <div class="table-wrap" style="margin-top:14px;">
-          <table class="data-table" id="ibadahTable">
-            <thead>
-              <tr>
-                <th style="width:40px;">No</th>
-                <th class="sticky-col" style="min-width:150px;">${tr('Nama', 'Name')}</th>
-                <th class="center" style="min-width:110px;">🕗 ${tr('Sholat Dhuha', 'Dhuha')}</th>
-                <th class="center" style="min-width:110px;">☀️ ${tr('Sholat Dzuhur', 'Dhuhr')}</th>
-                <th class="center" style="width:80px;">${tr('Detail', 'Detail')}</th>
-              </tr>
-            </thead>
-            <tbody id="ibadahTableBody">
-              <tr><td colspan="5" class="center"><div class="portal-loading"><div class="spinner"></div></div></td></tr>
-            </tbody>
-          </table>
-        </div>
 
         <div class="section-head" style="margin-top:26px;">
           <h2><ion-icon name="calendar-outline" style="vertical-align:-2px;color:var(--brand);"></ion-icon> ${tr('Laporan Bulanan', 'Monthly Report')}</h2>
@@ -2773,8 +2756,8 @@ const Teacher = {
           <button class="btn btn-sm" id="printIbadah" style="margin-bottom:1px;"><ion-icon name="print-outline"></ion-icon> ${tr('PDF Rekap', 'Recap PDF')}</button>
           <button class="btn btn-sm" id="csvIbadah" style="margin-bottom:1px;"><ion-icon name="download-outline"></ion-icon> ${tr('CSV Rekap', 'Recap CSV')}</button>
           ${Kop.btnHTML('kopIbadah')}
-          <span class="hd-hint">${tr('Berapa siswa ikut & tidak ikut Dhuha/Dzuhur, per tanggal, lengkap dengan persentasenya.',
-                                      'How many students joined or missed Dhuha/Dhuhr, per date, with percentages.')}</span>
+          <span class="hd-hint">${tr('Ketuk kotak tanggal untuk menandai/mengoreksi status. Persentase dihitung otomatis.',
+                                      'Tap a date box to mark/correct the status. Percentages are calculated automatically.')}</span>
         </div>
         <div class="table-wrap" id="ibadahBulananWrap" style="margin-top:14px;">
           <div class="portal-loading"><div class="spinner"></div></div>
@@ -2845,6 +2828,10 @@ const Teacher = {
     { v: 'tidak_berangkat', id: 'Tidak Berangkat', en: 'Absent',        sym: 'A', cls: 'ib-st-absen' }
   ],
 
+  // Urutan siklus ketika ikon di tabel diketuk. Dimulai dari default
+  // (Tidak Sholat) supaya sekali ketuk = tandai Sholat, aksi tersering guru.
+  IBADAH_STATUS_CYCLE: ['tidak_sholat', 'sholat', 'haid', 'tidak_berangkat'],
+
   // Ambil record ibadah lengkap (done + status) satu siswa pada satu tanggal.
   async _ibadahSiswa(uid, tanggal) {
     const daily = await DB.listStudentData(uid, 'ibadah_daily');
@@ -2878,7 +2865,6 @@ const Teacher = {
   },
 
   async _loadStudentsIbadahData(students, tanggal) {
-    const listHtml = [];
     const csvRows = [[tr('No', 'No'), tr('Nama', 'Name'), 'NIS',
                       tr('Dhuha', 'Dhuha'), tr('Dzuhur', 'Dhuhr')]];
     let anyError = false;
@@ -2908,43 +2894,6 @@ const Teacher = {
         if (!loadError) rekapHari[ib.key][stat[ib.key]]++;
       });
 
-      // Select — guru bisa mengoreksi langsung di sini bila siswa lupa
-      // mencentang sendiri di app-nya, atau menandai Haid/Tidak Berangkat.
-      // Ganti pilihan = simpan seketika (lihat binding data-set-ib di bawah).
-      const sel = ib => {
-        const cur = stat[ib.key];
-        const curDef = this.IBADAH_STATUS.find(x => x.v === cur);
-        const cls = curDef ? curDef.cls : '';
-        const opts = this.IBADAH_STATUS.map(o =>
-          `<option value="${o.v}" ${o.v === cur ? 'selected' : ''}>${tr(o.id, o.en)}</option>`).join('');
-        // Panah dropdown digambar lewat ::after pada WRAPPER, bukan lewat
-        // background-image di elemen <select> itu sendiri — sebagian WebView
-        // (mis. Android) merender opsi select yang terbuka sebagai daftar
-        // di-tempat yang ikut mewarisi background select, sehingga panah
-        // yang digambar di select ikut tergandakan sekali per opsi. Panah di
-        // wrapper aman karena tidak pernah ikut dirender ulang oleh select.
-        return `<span class="ib-status-wrap ${cls}">
-            <select class="input ib-status-select ${cls}"
-              data-set-ib="${s.userId || s.id}" data-ib-key="${ib.key}">${opts}</select>
-          </span>`;
-      };
-
-      listHtml.push(`
-        <tr>
-          <td class="center">${i + 1}</td>
-          <td class="sticky-col">
-            <div style="display:flex;align-items:center;gap:8px;">
-              ${this._avatarHTML(s)}
-              <b>${esc(s.nama)}</b>
-            </div>
-          </td>
-          <td class="center">${loadError ? '-' : sel(this.IBADAH[0])}</td>
-          <td class="center">${loadError ? '-' : sel(this.IBADAH[1])}</td>
-          <td class="center">
-            <button class="mini-icon-btn" data-detailib="${s.userId || s.id}" data-sname="${esc(s.nama)}"><ion-icon name="eye-outline"></ion-icon></button>
-          </td>
-        </tr>`);
-
       const lbl = v => tr(this.IBADAH_STATUS.find(x => x.v === v)?.id || '', this.IBADAH_STATUS.find(x => x.v === v)?.en || '');
       csvRows.push([i + 1, s.nama, s.nis || '', loadError ? '' : lbl(stat.dhuha), loadError ? '' : lbl(stat.dzuhur)]);
     }
@@ -2972,41 +2921,8 @@ const Teacher = {
       }).join('');
     }
 
-    const tbody = document.getElementById('ibadahTableBody');
-    if (tbody) {
-      if (anyError) {
-        const warnRow = document.createElement('tr');
-        warnRow.innerHTML = `<td colspan="5" style="padding:10px;text-align:center;">
-          <div style="background:rgba(245,158,11,.12);border-radius:10px;padding:12px;font-size:.82rem;color:var(--fin);">
-            <ion-icon name="warning-outline" style="vertical-align:-2px;"></ion-icon>
-            ${tr('Beberapa data siswa gagal dimuat. Pastikan Firestore Rules sudah di-deploy.', 'Some student data failed to load. Make sure Firestore Rules are deployed.')}
-          </div>
-        </td>`;
-        tbody.innerHTML = warnRow.outerHTML + listHtml.join('');
-      } else {
-        tbody.innerHTML = listHtml.join('');
-      }
-
-      document.querySelectorAll('[data-detailib]').forEach(b => {
-        b.onclick = () => this._detailIbadahModal(b.dataset.detailib, b.dataset.sname, tanggal);
-      });
-
-      // Koreksi manual guru — ganti pilihan status ibadah siswa pada tanggal
-      // yang sedang dipantau (mis. siswa lupa mencentang sendiri, atau haid).
-      document.querySelectorAll('[data-set-ib]').forEach(sel => {
-        sel.onchange = async () => {
-          if (sel.disabled) return;
-          sel.disabled = true;
-          try {
-            await this._setIbadahStatusGuru(sel.dataset.setIb, sel.dataset.ibKey, tanggal, sel.value);
-            await this._loadStudentsIbadahData(students, tanggal);
-            this._loadIbadahBulananTable(students, this.ibadahBulan);
-          } catch (err) {
-            sel.disabled = false;
-            toast(err.message || tr('Gagal menyimpan.', 'Failed to save.'), 'error');
-          }
-        };
-      });
+    if (anyError) {
+      toast(tr('Beberapa data siswa gagal dimuat. Pastikan Firestore Rules sudah di-deploy.', 'Some student data failed to load. Make sure Firestore Rules are deployed.'), 'warning');
     }
 
     const exp = document.getElementById('exportIbadah');
@@ -3069,12 +2985,17 @@ const Teacher = {
       return wajib ? { ya, n: wajib, pct: Math.round(ya / wajib * 100) } : { ya: 0, n: 0, pct: 0 };
     };
 
+    // Setiap kotak tanggal ketuk-untuk-ganti (lihat binding di bawah) — sama
+    // seperti tombol ibadah harian, tapi langsung pada tanggal yang tampak di
+    // kolomnya, tanpa perlu ganti "Tanggal Pantauan" dulu. data-cur dipakai
+    // buat menentukan status berikutnya di siklus (IBADAH_STATUS_CYCLE).
     const body = students.map((s, i) => this.IBADAH.map((ib, k) => {
       const r = rekap(s.id, ib.key);
+      const uid = s.userId || s.id;
       return `<tr>
         ${k === 0 ? `
           <td class="center" rowspan="2">${i + 1}</td>
-          <td class="ib-month-nama" rowspan="2">${esc(s.nama)}</td>` : ''}
+          <td class="ib-month-nama" rowspan="2" data-detailib="${uid}" data-sname="${esc(s.nama)}" title="${tr('Lihat detail & riwayat 14 hari', 'View detail & 14-day history')}">${esc(s.nama)}</td>` : ''}
         <td class="ib-month-lb">${ib.emoji} ${tr(ib.id, ib.en)}</td>
         ${hari.map(d => {
           if (!nyata(d)) return `<td class="ib-month-off"></td>`;
@@ -3082,7 +3003,9 @@ const Teacher = {
           const stDef = this.IBADAH_STATUS.find(x => x.v === st);
           const v = stDef ? stDef.sym : '';
           const cls = stDef ? stDef.cls.replace('ib-st-', 'ib-month-') : '';
-          return `<td class="${cls}${isLibur(d) ? ' ib-month-libur' : ''}${isToday(d) ? ' ib-col-today' : ''}">${v}</td>`;
+          const tgl = `${bulan}-${String(d).padStart(2, '0')}`;
+          return `<td class="ib-month-cell${cls ? ' ' + cls : ''}${isLibur(d) ? ' ib-month-libur' : ''}${isToday(d) ? ' ib-col-today' : ''}"
+            data-uid="${uid}" data-ib-key="${ib.key}" data-tgl="${tgl}" data-cur="${st || 'tidak_sholat'}">${v}</td>`;
         }).join('')}
         <td class="center ib-month-pct">${r && r.n ? `${r.pct}%<div style="font-size:.6rem;font-weight:500;color:var(--text-3);">${r.ya}/${r.n}</div>` : '–'}</td>
       </tr>`;
@@ -3103,9 +3026,34 @@ const Teacher = {
         <tbody>${body}</tbody>
       </table>
       <div style="font-size:.72rem;color:var(--text-3);padding:8px 10px;">
-        ${tr(`✓ = sholat · ✗ = tidak sholat · H = haid · A = tidak berangkat · kotak kosong = belum ada catatan. Persentase dihitung dari hari wajib (Sholat/Tidak Sholat) — Haid & Tidak Berangkat tidak mengurangi persentase.`,
-             `✓ = prayed · ✗ = did not pray · H = menstruating · A = absent · empty box = no record yet. Percentages are based on obligated days (Prayed/Did Not Pray) — Menstruating & Absent do not lower the percentage.`)}
+        ${tr(`✓ = sholat · ✗ = tidak sholat · H = haid · A = tidak berangkat · kotak kosong = belum ada catatan. Ketuk kotak tanggal untuk menandai/mengoreksi, ketuk nama untuk lihat detail. Persentase dihitung dari hari wajib (Sholat/Tidak Sholat) — Haid & Tidak Berangkat tidak mengurangi persentase.`,
+             `✓ = prayed · ✗ = did not pray · H = menstruating · A = absent · empty box = no record yet. Tap a date box to mark/correct, tap the name to view detail. Percentages are based on obligated days (Prayed/Did Not Pray) — Menstruating & Absent do not lower the percentage.`)}
       </div>`;
+
+    const table = wrap.querySelector('table');
+    if (table) {
+      table.onclick = async e => {
+        const nameTd = e.target.closest('[data-detailib]');
+        if (nameTd) {
+          const refDate = bulan === todayStr().slice(0, 7) ? hariIni : `${bulan}-${String(hariSekolah[hariSekolah.length - 1] || 1).padStart(2, '0')}`;
+          this._detailIbadahModal(nameTd.dataset.detailib, nameTd.dataset.sname, refDate);
+          return;
+        }
+        const cell = e.target.closest('.ib-month-cell');
+        if (!cell || cell.dataset.busy) return;
+        cell.dataset.busy = '1';
+        try {
+          const cur = cell.dataset.cur || 'tidak_sholat';
+          const curIdx = this.IBADAH_STATUS_CYCLE.indexOf(cur);
+          const next = this.IBADAH_STATUS_CYCLE[(curIdx + 1) % this.IBADAH_STATUS_CYCLE.length];
+          await this._setIbadahStatusGuru(cell.dataset.uid, cell.dataset.ibKey, cell.dataset.tgl, next);
+          await this._loadIbadahBulananTable(students, bulan);
+        } catch (err) {
+          delete cell.dataset.busy;
+          toast(err.message || tr('Gagal menyimpan.', 'Failed to save.'), 'error');
+        }
+      };
+    }
   },
 
   async _printRekapIbadah(cls, students) {

@@ -33,7 +33,7 @@ const Health = {
     else if (this.tab === 'biometrik') await this.renderBiometrik(body);
     else if (this.tab === 'nutrisi') await this.renderNutrisi(body);
     else if (this.tab === 'calc') this.renderCalc(body);
-    else if (this.tab === 'sleep') this.renderSleep(body);
+    else if (this.tab === 'sleep') await this.renderSleep(body);
     else if (this.tab === 'berat') await this.renderWeight(body);
     else if (this.tab === 'obat') await this.renderMeds(body);
     else if (this.tab === 'mental') await this.renderMental(body);
@@ -954,10 +954,15 @@ const Health = {
 
   /* ============ TAB: TIDUR ============ */
 
-  renderSleep(el) {
+  async renderSleep(el) {
     const [hh, mm] = this.sleepTime.split(':').map(Number);
     const options = Calc.sleepTimes(hh, mm, this.sleepMode);
     const isBangun = this.sleepMode === 'bangun';
+
+    const all = await DB.list('health_daily');
+    const sleepLogs = all.filter(d => d.tidur > 0).sort((a, b) => (a.tanggal || '') < (b.tanggal || '') ? -1 : 1);
+    const barItems = sleepLogs.slice(-14).map(d => ({ label: fmtDate(d.tanggal, { short: true }).replace(/\s\d{4}$/, ''), value: d.tidur }));
+    const avg = sleepLogs.length ? +(sleepLogs.reduce((s, d) => s + d.tidur, 0) / sleepLogs.length).toFixed(1) : 0;
 
     el.innerHTML = `
       <div class="grid grid-2" style="align-items:start;">
@@ -995,6 +1000,37 @@ const Health = {
                 ${o.best ? `<span class="badge badge-green">${tr('Disarankan', 'Recommended')}</span>` : `<span class="badge badge-gray">${o.cycles <= 3 ? tr('Darurat saja', 'Emergencies only') : tr('Cukup', 'Okay')}</span>`}
               </div>`).join('')}
           </div>
+        </div>
+      </div>
+
+      <div class="section-head" style="margin-top:20px;"><h2>${tr('Riwayat Tidur', 'Sleep History')}</h2></div>
+      <div class="grid grid-2" style="align-items:start;">
+        <div class="card">
+          <div class="card-title"><ion-icon name="bar-chart" style="color:var(--prod)"></ion-icon>${tr('Tren Tidur', 'Sleep Trend')}</div>
+          ${barItems.length ? `
+            <div class="card-sub">${tr(`Rata-rata ${avg} jam / malam (${barItems.length} catatan terakhir)`, `Average ${avg} hours / night (last ${barItems.length} logs)`)}</div>
+            <div style="margin-top:12px;">${barChartSVG(barItems, { color: 'var(--prod)' })}</div>` : `
+            <div class="empty-state" style="padding:24px 10px;">
+              <ion-icon name="moon-outline"></ion-icon>
+              <div class="es-title">${tr('Belum ada catatan tidur', 'No sleep logs yet')}</div>
+              <div class="es-sub">${tr('Catat jam tidurmu di tab Hari Ini setiap pagi 🌙', 'Log your sleep hours in the Today tab each morning 🌙')}</div>
+            </div>`}
+        </div>
+
+        <div class="card">
+          <div class="card-title"><ion-icon name="time-outline" style="color:var(--prod)"></ion-icon>${tr('Catatan Terakhir', 'Recent Logs')}</div>
+          ${sleepLogs.length ? `
+            <div style="display:flex;flex-direction:column;gap:9px;margin-top:12px;max-height:280px;overflow-y:auto;">
+              ${sleepLogs.slice().reverse().slice(0, 20).map(d => `
+                <div class="list-item">
+                  <div class="item-icon" style="background:var(--prod-soft);color:var(--prod);"><ion-icon name="moon-outline"></ion-icon></div>
+                  <div style="flex:1;">
+                    <div style="font-weight:700;font-size:.88rem;">${d.tidur} ${tr('jam', 'hours')}</div>
+                    <div style="font-size:.75rem;color:var(--text-3);">${fmtDate(d.tanggal, { weekday: true })}</div>
+                  </div>
+                  <span class="badge ${d.tidur >= 8 ? 'badge-green' : d.tidur >= 7 ? 'badge-amber' : 'badge-red'}">${d.tidur >= 8 ? tr('Cukup', 'Enough') : d.tidur >= 7 ? tr('Hampir', 'Almost') : tr('Kurang', 'Not enough')}</span>
+                </div>`).join('')}
+            </div>` : `<div style="font-size:.82rem;color:var(--text-3);margin-top:12px;">${tr('Belum ada data.', 'No data yet.')}</div>`}
         </div>
       </div>`;
 

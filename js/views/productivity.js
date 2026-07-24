@@ -57,7 +57,7 @@ const Prod = {
               return `<button class="tab ${route === r ? 'active' : ''}" data-route="${r}"><ion-icon name="${icon}"></ion-icon>${label()}</button>`;
             }).join('')}
           </div>
-          <button class="btn btn-ghost btn-sm" id="prodUbahPekerjaan"><ion-icon name="briefcase-outline"></ion-icon> ${tr('Ubah Pekerjaan', 'Change Job')}</button>
+          <button class="btn btn-prod btn-sm" id="prodUbahPekerjaan"><ion-icon name="briefcase-outline"></ion-icon> ${tr('Ubah Pekerjaan', 'Change Job')}</button>
         </div>` : ''}
       <div id="prodBody"></div>`;
 

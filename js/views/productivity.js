@@ -50,15 +50,20 @@ const Prod = {
 
     el.innerHTML = `
       ${klaster ? `
-        <div class="tabs">
-          ${klaster.map(r => {
-            const [icon, label] = this._TAB_INFO[r];
-            return `<button class="tab ${route === r ? 'active' : ''}" data-route="${r}"><ion-icon name="${icon}"></ion-icon>${label()}</button>`;
-          }).join('')}
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:20px;">
+          <div class="tabs" style="margin-bottom:0;">
+            ${klaster.map(r => {
+              const [icon, label] = this._TAB_INFO[r];
+              return `<button class="tab ${route === r ? 'active' : ''}" data-route="${r}"><ion-icon name="${icon}"></ion-icon>${label()}</button>`;
+            }).join('')}
+          </div>
+          <button class="btn btn-ghost btn-sm" id="prodUbahPekerjaan"><ion-icon name="briefcase-outline"></ion-icon> ${tr('Ubah Pekerjaan', 'Change Job')}</button>
         </div>` : ''}
       <div id="prodBody"></div>`;
 
     $$('.tab', el).forEach(t => t.onclick = () => App.navigate(t.dataset.route));
+    const ubahBtn = $('#prodUbahPekerjaan', el);
+    if (ubahBtn) ubahBtn.onclick = () => Profile._pekerjaanModal(DB.user);
 
     const body = $('#prodBody', el);
     if (route === 'tugas') await this.renderTasks(body);

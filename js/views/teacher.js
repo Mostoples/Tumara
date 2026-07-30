@@ -2102,6 +2102,7 @@ const Teacher = {
       ${this._classBar(activeCls)}
       <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end;margin-bottom:12px;">
         <button class="btn btn-primary btn-sm" id="addTugas" style="margin-bottom:1px;"><ion-icon name="add"></ion-icon> ${tr('Kirim Tugas', 'Send Task')}</button>
+        ${tasks.length ? `<button class="btn btn-sm" id="tugasLaporanSemua" style="margin-bottom:1px;"><ion-icon name="bar-chart-outline"></ion-icon> ${tr('Laporan Tugas Semua', 'All Tasks Report')}</button>` : ''}
       </div>
       <div style="font-size:.8rem;color:var(--text-3);margin-bottom:14px;">${tr('Tugas yang kamu kirim langsung muncul di app siswa kelas ini.', "Tasks you send appear instantly in this class's student apps.")}</div>
 
@@ -2135,6 +2136,10 @@ const Teacher = {
 
     this._bindClassBar(el);
     $('#addTugas', el).onclick = () => this._tugasKelasModal();
+    $('#tugasLaporanSemua', el) && ($('#tugasLaporanSemua', el).onclick = () => {
+      const w = openPrintWindow();
+      if (w) this._printLaporanTugasSemua(activeCls, this.classId, tasks, subs, w);
+    });
     $$('[data-edit]', el).forEach(b => b.onclick = () => this._tugasKelasModal(tasks.find(t => t.id === b.dataset.edit)));
     $$('[data-detail]', el).forEach(b => b.onclick = () => {
       this.detailTaskId = b.dataset.detail;   // buka halaman detail
@@ -2231,6 +2236,7 @@ const Teacher = {
               <label style="display:flex;align-items:center;gap:8px;font-size:.78rem;color:var(--text-3);font-weight:600;">
                 ${tr('Nilai', 'Grade')}
                 <input class="input nilai-input" type="number" min="0" max="100" data-sub="${s.id}" value="${s.nilai ?? ''}" placeholder="—" style="width:80px;">
+                <span class="nilai-saved" data-sub="${s.id}" style="font-size:.72rem;color:var(--success,#16a34a);opacity:0;transition:opacity .3s;">✓ ${tr('Tersimpan', 'Saved')}</span>
               </label>
             </div>`; }).join('')}
         </div>` : `
@@ -2243,23 +2249,32 @@ const Teacher = {
     $$('[data-viewsrc]', el).forEach(im => im.onclick = () => openImageViewer(im.dataset.viewsrc));
 
     // Nilai per pengumpulan → simpan (debounce), sama seperti pola di tab Penilaian.
+    // Guru bisa langsung menilai begitu foto/PDF tugas siswa terlihat, tanpa
+    // pindah halaman — beri centang "Tersimpan" sekilas biar terasa tersimpan.
     let nilaiT;
     $$('.nilai-input', el).forEach(inp => inp.oninput = () => {
       let val = inp.value === '' ? '' : clamp(+inp.value, 0, 100);
       if (val !== '' && String(val) !== inp.value) inp.value = val;
       clearTimeout(nilaiT);
-      nilaiT = setTimeout(() => DB.gUpdate('class_submissions', inp.dataset.sub, { nilai: val === '' ? null : val }), 400);
+      const saved = $(`.nilai-saved[data-sub="${inp.dataset.sub}"]`, el);
+      if (saved) saved.style.opacity = '0';
+      nilaiT = setTimeout(async () => {
+        await DB.gUpdate('class_submissions', inp.dataset.sub, { nilai: val === '' ? null : val });
+        if (saved && val !== '') { saved.style.opacity = '1'; setTimeout(() => saved.style.opacity = '0', 1600); }
+      }, 400);
     });
     $('#dtPrintLaporan', el) && ($('#dtPrintLaporan', el).onclick = () => {
       const roster = students.slice().sort((a, b) => (a.nama || '').localeCompare(b.nama || ''));
       const body = roster.map((s, i) => {
         const sub = subByStudent.get(s.id);
+        const nilai = sub?.nilai;
         return `<tr>
           <td class="center">${i + 1}</td>
           <td>${esc(s.nama || '')}</td>
           <td class="center nowrap">${esc(s.nis || '-')}</td>
           <td class="center">${sub ? tr('Sudah', 'Submitted') : tr('Belum', 'Not yet')}</td>
           <td class="center nowrap">${sub?.submittedAt ? fmtDate(sub.submittedAt, { short: true }) : '-'}</td>
+          <td class="center" style="font-weight:bold;">${nilai !== undefined && nilai !== null && nilai !== '' ? nilai : '-'}</td>
         </tr>`;
       }).join('');
       printHTML(`${tr('Laporan Pengumpulan', 'Submission Report')} — ${t.judul}`, `
@@ -2269,7 +2284,7 @@ const Teacher = {
         <p class="muted" style="margin-bottom:8px;"><b>${tr('Rekap', 'Summary')}:</b> ${tr('Sudah mengumpulkan', 'Submitted')} ${sudah.length} · ${tr('Belum mengumpulkan', 'Not yet')} ${belum.length} · ${tr('Total', 'Total')} ${students.length} ${tr('siswa', 'students')}</p>
         <table>
           <thead><tr>
-            <th style="width:6%;">No</th><th>${tr('Nama Siswa', 'Student Name')}</th><th style="width:14%;">NIS</th><th style="width:14%;">${tr('Status', 'Status')}</th><th style="width:20%;">${tr('Waktu Kumpul', 'Submitted At')}</th>
+            <th style="width:5%;">No</th><th>${tr('Nama Siswa', 'Student Name')}</th><th style="width:12%;">NIS</th><th style="width:12%;">${tr('Status', 'Status')}</th><th style="width:17%;">${tr('Waktu Kumpul', 'Submitted At')}</th><th style="width:10%;">${tr('Nilai', 'Grade')}</th>
           </tr></thead>
           <tbody>${body}</tbody>
         </table>`);
@@ -2380,6 +2395,88 @@ const Teacher = {
         };
       }
     });
+  },
+
+  // Laporan gabungan SEMUA tugas kelas ini dalam satu tabel matriks: kolom =
+  // tiap tugas (judul + gambar lampiran yang bisa diklik), baris = siswa
+  // dengan nilai per tugas, kolom terakhir = rata-rata nilai (%). Terpisah
+  // dari laporan pengumpulan per-tugas (yang lain) — ini rekap satu semester.
+  async _printLaporanTugasSemua(cls, classId, tasks, subs, w) {
+    const students = await this._students(classId);
+    if (!students.length) { w?.close(); return toast(tr('Kelas ini belum punya siswa.', 'This class has no students yet.'), 'warning'); }
+    if (!tasks.length) { w?.close(); return toast(tr('Belum ada tugas di kelas ini.', 'No tasks in this class yet.'), 'warning'); }
+
+    // Urut kronologis (tenggat, lalu tanggal dibuat) supaya terbaca seperti tugas ke-1, ke-2, dst.
+    const ordered = tasks.slice().sort((a, b) =>
+      (a.tenggat || a.dibuatPada || '').localeCompare(b.tenggat || b.dibuatPada || ''));
+
+    const nilaiMap = new Map();   // `${taskId}_${studentId}` -> nilai
+    subs.forEach(s => {
+      if (s.nilai !== undefined && s.nilai !== null && s.nilai !== '') nilaiMap.set(`${s.taskId}_${s.studentId}`, +s.nilai);
+    });
+
+    const kop = Kop.html({ judul: tr('LAPORAN NILAI TUGAS', 'TASK GRADES REPORT') });
+
+    const thJudul = ordered.map(t => `<th>${esc(t.judul)}${t.mapel ? `<br><span style="font-weight:400;">${esc(t.mapel)}</span>` : ''}</th>`).join('');
+    // SENGAJA link teks, bukan <img> inline: lampiran disimpan sebagai URL
+    // thumbnail Google Drive (STORAGE_BACKEND='drive', lihat supabase-storage.js),
+    // dan link itu tak konsisten dimuat sebagai <img> di jendela cetak — halaman
+    // ini dibangun lewat window.open('','_blank')+document.write (bukan navigasi
+    // sungguhan), dan endpoint thumbnail Drive kerap menolak dimuat dalam konteks
+    // itu meski persis sama linknya tampil normal di dalam app. Link asli tetap
+    // bisa dibuka & dilihat lewat tab baru (navigasi sungguhan selalu berhasil).
+    const thGambar = ordered.map(t => {
+      const att = taskAttachments(t)[0];
+      if (!att) return `<th>–</th>`;
+      return `<th><a href="${esc(att.url)}" target="_blank" rel="noopener">${att.isPdf ? 'PDF' : tr('Lihat Gambar', 'View Image')}</a></th>`;
+    }).join('');
+
+    const body = students.map((s, i) => {
+      const nilaiList = [];
+      const cells = ordered.map(t => {
+        const v = nilaiMap.get(`${t.id}_${s.id}`);
+        if (v !== undefined) nilaiList.push(v);
+        return `<td class="center">${v !== undefined ? v : '-'}</td>`;
+      }).join('');
+      const avg = nilaiList.length ? (nilaiList.reduce((a, b) => a + b, 0) / nilaiList.length) : null;
+      return `<tr>
+        <td class="center">${i + 1}</td>
+        <td class="ltg-nama">${esc(s.nama || '')}</td>
+        <td class="center nowrap">${esc(s.nis || '-')}</td>
+        ${cells}
+        <td class="center ltg-avg">${avg !== null ? avg.toFixed(1) + '%' : '-'}</td>
+      </tr>`;
+    }).join('');
+
+    printHTML(`${tr('Laporan Tugas Semua', 'All Tasks Report')} — ${cls?.nama || ''}`, `
+      <style>
+        /* Bisa sampai puluhan kolom tugas → kertas mendatar, sama seperti Daftar Hadir/Rekap Ibadah. */
+        @page{size:A4 landscape;margin:10mm;}
+        table.ltg th,table.ltg td{padding:3px 4px;font-size:9.5px;text-align:center;}
+        table.ltg td.ltg-nama{text-align:left;white-space:nowrap;font-size:10px;}
+        table.ltg td.ltg-avg{font-weight:bold;}
+      </style>
+      ${kop}
+      <div style="text-align:center;font-size:14px;font-weight:bold;margin:6px 0 10px;font-family:'Times New Roman',Times,serif;">
+        ${tr('LAPORAN NILAI TUGAS', 'TASK GRADES REPORT')}<br>
+        <span style="font-size:12px;font-weight:normal;">${esc(cls?.nama || '')}</span>
+      </div>
+      <p class="muted" style="margin-bottom:8px;">${tr('Total tugas', 'Total tasks')}: ${ordered.length} · ${tr('Total siswa', 'Total students')}: ${students.length}</p>
+      <div class="tbl-scroll">
+      <table class="ltg">
+        <thead>
+          <tr>
+            <th rowspan="2">No</th>
+            <th rowspan="2">${tr('Nama Siswa', 'Student Name')}</th>
+            <th rowspan="2">NIS</th>
+            ${thJudul}
+            <th rowspan="2">${tr('Rata-rata', 'Average')} (%)</th>
+          </tr>
+          <tr>${thGambar}</tr>
+        </thead>
+        <tbody>${body}</tbody>
+      </table>
+      </div>`, w);
   },
 
   /* ============ TAB: JADWAL KELAS (khusus WALI KELAS) ============

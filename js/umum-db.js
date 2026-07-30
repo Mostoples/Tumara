@@ -177,7 +177,8 @@ const DB = (() => {
         'health_daily', 'workouts', 'notes', 'tasks', 'schedule', 'transactions', 'goals', 'pomodoro',
         'weights', 'meds', 'habits', 'habit_logs', 'ibadah_daily', 'ibadah_checklist', 'hafalan', 'quran_log', 'ibadah_notes',
         'budgets', 'debts', 'biometrics', 'foods', 'menstrual', 'wallets', 'assets', 'sedekah',
-        'murid', 'absensiManual', 'nilaiTugas', 'nilaiManual', 'jurnalManual'
+        'murid', 'absensiManual', 'nilaiTugas', 'nilaiManual', 'jurnalManual',
+        'job_log'
       ];
       const out = { user: { ...user }, diekspor: new Date().toISOString() };
       for (const c of COLLECTIONS) out[c] = await api.list(c);

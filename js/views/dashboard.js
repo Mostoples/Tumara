@@ -25,7 +25,15 @@ const Dashboard = {
   _MENU_UMUM: [
     { route: 'health',  icon: 'heart',          color: 'green',  label: () => tr('Kesehatan', 'Health'),       sub: () => tr('Kalori, tidur & olahraga', 'Calories, sleep & exercise') },
     { route: 'ibadah',  icon: 'moon',           color: 'teal',   label: () => tr('Ibadah', 'Worship'),         sub: () => tr("Sholat, Qur'an & dzikir", "Prayer, Qur'an & dhikr") },
-    { route: 'catatan', icon: 'rocket',         color: 'purple', label: () => tr('Produktivitas', 'Productivity'), sub: () => tr('Catatan, jadwal & fokus', 'Notes, schedule & focus') },
+    // sub dinamis: kalau pekerjaan user match JOB_MODULE (lihat
+    // js/views/job-select.js), tab "Log Kerja" ikut muncul di dalam halaman
+    // Produktivitas (lihat Prod._KLASTER, js/views/productivity.js) — jadi
+    // subtitle di sini menyebutnya juga, supaya tak menyiratkan isinya CUMA
+    // 3 hal itu utk semua orang.
+    { route: 'catatan', icon: 'rocket',         color: 'purple', label: () => tr('Produktivitas', 'Productivity'),
+      sub: () => (typeof JobLog !== 'undefined' && JobLog._myJobKeys().length)
+        ? tr('Catatan, jadwal, fokus & log kerja', 'Notes, schedule, focus & work log')
+        : tr('Catatan, jadwal & fokus', 'Notes, schedule & focus') },
     { route: 'tugas',   icon: 'calendar-number',color: 'blue',   label: () => tr('Daily Planner', 'Daily Planner'), sub: () => tr('To-do & kebiasaan', 'To-do & habits') },
     { route: 'finance', icon: 'wallet',         color: 'amber',  label: () => tr('Keuangan', 'Finance'),       sub: () => tr('Uang saku & menabung', 'Allowance & saving goals') }
   ],

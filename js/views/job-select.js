@@ -71,6 +71,80 @@ const JOB_PRESETS = {
   lainnya:       { kategori: [], kebiasaan: [] }
 };
 
+// Modul kerja khusus per-pekerjaan ("Log Kerja") — dipakai js/views/job-log.js
+// & Dashboard._menuUmum (js/views/dashboard.js) supaya tab Produktivitas tidak
+// cuma Catatan/Jadwal/Fokus generik untuk semua orang. Cuma pekerjaan yang
+// polanya cocok jadi "catatan transaksi/aktivitas harian" yang dapat entri di
+// sini — Guru sudah punya modulnya sendiri ("Kelas", lihat kelas-guru.js);
+// Pelajar/Karyawan/PNS/Freelancer-ringan sudah cukup terlayani lewat
+// Tugas+Jadwal+kategori (JOB_PRESETS di atas), sengaja tidak ditambahi modul
+// baru supaya tidak membangun modul bespoke utk 11 pekerjaan sekaligus.
+// `jenis`: opsi dropdown "jenis catatan" di modal job-log.js (nilai `v` yang
+// disimpan ke Firestore harus stabil — jangan diubah setelah dipakai user).
+const JOB_MODULE = {
+  pedagang: {
+    icon: 'storefront-outline',
+    label: () => tr('Stok & Kas', 'Stock & Cash'),
+    jenis: [
+      { v: 'stok_masuk',  id: 'Stok Masuk',  en: 'Stock In' },
+      { v: 'stok_keluar', id: 'Stok Keluar', en: 'Stock Out' },
+      { v: 'kas_masuk',   id: 'Kas Masuk',   en: 'Cash In' },
+      { v: 'kas_keluar',  id: 'Kas Keluar',  en: 'Cash Out' },
+    ],
+  },
+  entrepreneur: {
+    icon: 'trending-up-outline',
+    label: () => tr('Kas Usaha', 'Business Cash'),
+    jenis: [
+      { v: 'masuk',  id: 'Pemasukan',   en: 'Income' },
+      { v: 'keluar', id: 'Pengeluaran', en: 'Expense' },
+    ],
+  },
+  pengemudi: {
+    icon: 'car-outline',
+    label: () => tr('Setoran & Servis', 'Earnings & Service'),
+    jenis: [
+      { v: 'setoran', id: 'Setoran',          en: 'Earnings' },
+      { v: 'servis',  id: 'Servis Kendaraan', en: 'Vehicle Service' },
+    ],
+  },
+  freelancer: {
+    icon: 'laptop-outline',
+    label: () => tr('Klien & Invoice', 'Clients & Invoices'),
+    jenis: [
+      { v: 'invoice', id: 'Invoice',    en: 'Invoice' },
+      { v: 'klien',   id: 'Klien Baru', en: 'New Client' },
+    ],
+  },
+  'tani-nelayan': {
+    icon: 'leaf-outline',
+    label: () => tr('Panen & Hasil Jual', 'Harvest & Sales'),
+    jenis: [
+      { v: 'panen', id: 'Panen',      en: 'Harvest' },
+      { v: 'jual',  id: 'Hasil Jual', en: 'Sales' },
+    ],
+  },
+  // Sengaja "Catatan Kerja", BUKAN "Pasien"/rekam medis — ini catatan
+  // pribadi tenaga kesehatan ttg shift/pekerjaannya sendiri, bukan
+  // penyimpanan data kesehatan pihak ketiga (rekam medis pasien sungguhan).
+  nakes: {
+    icon: 'medkit-outline',
+    label: () => tr('Shift & Catatan Kerja', 'Shift & Work Notes'),
+    jenis: [
+      { v: 'shift',   id: 'Shift',   en: 'Shift' },
+      { v: 'catatan', id: 'Catatan', en: 'Note' },
+    ],
+  },
+  irt: {
+    icon: 'home-outline',
+    label: () => tr('Belanja & Menu', 'Shopping & Menu'),
+    jenis: [
+      { v: 'belanja', id: 'Belanja',     en: 'Shopping' },
+      { v: 'menu',    id: 'Menu Harian', en: 'Daily Menu' },
+    ],
+  },
+};
+
 const JobSelectView = {
   _selected: null,   // Set<string> — key JOBS yang dipilih (di luar "lainnya"), state lokal sebelum disimpan
   _custom: '',        // teks bebas pekerjaan lain (opsional)
@@ -151,10 +225,17 @@ const JobSelectView = {
     $$('.job-card').forEach(c => c.classList.add('busy'));
     try {
       await UmumAuth.savePekerjaan(list);
-      // Pekerjaan bebas ketik → coba siapkan saran AI (kategori/kebiasaan)
-      // SEBELUM pindah halaman (location.replace di bawah membatalkan
-      // fetch yang belum selesai) — gagal pun tak masalah, ensure() diam-diam.
-      if (this._custom) await AiJobPreset.ensure(this._custom, UmumAuth.user, patch => UmumAuth._patch(patch));
+      // Siapkan saran AI (kategori/kebiasaan) utk SEMUA pekerjaan yang dipilih
+      // — kartu preset dikirim pakai label kanoniknya (id Indonesia, stabil
+      // lepas dari bahasa UI) supaya kunci cache-nya konsisten dgn yang dibaca
+      // productivity.js — SEBELUM pindah halaman (location.replace di bawah
+      // membatalkan fetch yang belum selesai). Serial (bukan Promise.all):
+      // ensure() men-merge `aiJobPresets` dari snapshot `user` yang diberikan,
+      // jadi paralel bisa saling timpa hasil satu sama lain kalau lebih dari
+      // satu pekerjaan dipilih. Gagal pun tak masalah, ensure() diam-diam.
+      const jobTexts = [...this._selected].map(k => JOBS.find(j => j.key === k)?.id || k);
+      if (this._custom) jobTexts.push(this._custom);
+      for (const jt of jobTexts) await AiJobPreset.ensure(jt, UmumAuth.user, patch => UmumAuth._patch(patch));
       location.replace(UmumAuth.hasDataDiri(UmumAuth.user) ? 'umum-app.html' : 'data-diri.html');
     } catch (_) {
       toast(tr('Gagal menyimpan pilihan. Coba lagi.', 'Failed to save your choice. Please try again.'), 'error');

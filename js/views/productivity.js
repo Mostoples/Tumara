@@ -39,21 +39,38 @@ const Prod = {
     jadwal:    ['calendar-outline',      () => tr('Jadwal', 'Schedule')],
     fokus:     ['timer-outline',         () => tr('Fokus', 'Focus')],
     tugas:     ['checkbox-outline',      () => tr('Tugas', 'Tasks')],
-    kebiasaan: ['repeat-outline',        () => tr('Kebiasaan', 'Habits')]
+    kebiasaan: ['repeat-outline',        () => tr('Kebiasaan', 'Habits')],
+    // Ikon/label dinamis krn tab ini cuma muncul (& artinya beda-beda) utk
+    // pekerjaan yang match JOB_MODULE — lihat js/views/job-log.js.
+    kerja:     [() => (typeof JobLog !== 'undefined' ? JobLog._icon() : 'briefcase-outline'),
+                () => (typeof JobLog !== 'undefined' ? JobLog._label() : tr('Log Kerja', 'Work Log'))]
+  },
+
+  // Klaster "produktivitas" statis (Catatan/Jadwal/Fokus) + tab "Log Kerja"
+  // KALAU pekerjaan user match JOB_MODULE — supaya Produktivitas tak cuma
+  // 3 hal yang sama generik utk semua orang (lihat js/views/job-log.js).
+  _effKlaster() {
+    const adaLogKerja = typeof JobLog !== 'undefined' && JobLog._myJobKeys().length > 0;
+    return {
+      ...this._KLASTER,
+      produktivitas: adaLogKerja ? [...this._KLASTER.produktivitas, 'kerja'] : this._KLASTER.produktivitas
+    };
   },
 
   async render(el) {
     const route = App.route;
     const klaster = DB.user?.pekerjaan
-      ? Object.values(this._KLASTER).find(rutes => rutes.includes(route))
+      ? Object.values(this._effKlaster()).find(rutes => rutes.includes(route))
       : null;
+    if (klaster) this._ensureJobPresets();
 
     el.innerHTML = `
       ${klaster ? `
         <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:20px;">
           <div class="tabs" style="margin-bottom:0;">
             ${klaster.map(r => {
-              const [icon, label] = this._TAB_INFO[r];
+              const [iconRaw, label] = this._TAB_INFO[r];
+              const icon = typeof iconRaw === 'function' ? iconRaw() : iconRaw;
               return `<button class="tab ${route === r ? 'active' : ''}" data-route="${r}"><ion-icon name="${icon}"></ion-icon>${label()}</button>`;
             }).join('')}
           </div>
@@ -70,18 +87,53 @@ const Prod = {
     else if (route === 'catatan') await this.renderNotes(body);
     else if (route === 'kebiasaan') await this.renderHabits(body);
     else if (route === 'jadwal') await this.renderSchedule(body);
+    else if (route === 'kerja') await JobLog.render(body);
     else this.renderPomo(body);
   },
 
   /* ============ TAB: HABIT TRACKER ============ */
 
-  // Preset utk satu entri pekerjaanList: JOB_PRESETS bawaan (12 kartu) kalau
-  // key dikenal; kalau bukan (pekerjaan bebas ketik), coba cache saran AI di
-  // user.aiJobPresets (lihat js/ai-job-preset.js) — atau null kalau belum ada.
+  // Satu entri pekerjaanList bisa berupa key kartu preset (mis. "guru") atau
+  // teks bebas ketik (mis. "Programmer") — kunci cache saran AI selalu pakai
+  // TEKS label kanonik (id Indonesia, stabil lepas dari bahasa UI), bukan key
+  // kartu, supaya konsisten dgn yang dikirim job-select.js/profile.js saat
+  // ensure() dipanggil. Dipakai juga oleh _ensureJobPresets() di bawah.
+  _jobText(jobKey) {
+    return (typeof JOBS !== 'undefined' && JOBS.find(j => j.key === jobKey)?.id) || jobKey;
+  },
+
+  // Preset utk satu entri pekerjaanList: saran AI (di-cache di user.aiJobPresets,
+  // lihat js/ai-job-preset.js) kalau sudah ada — didahulukan karena lebih
+  // variatif/spesifik — jatuh ke JOB_PRESETS statis bawaan (12 kartu) kalau
+  // belum, atau null kalau pekerjaan bebas ketik & AI-nya belum/gagal dibuat.
   _presetFor(jobKey) {
-    if (JOB_PRESETS[jobKey]) return JOB_PRESETS[jobKey];
-    if (typeof AiJobPreset === 'undefined') return null;
-    return AiJobPreset.asPreset(AiJobPreset.cached(DB.user, jobKey));
+    if (typeof AiJobPreset !== 'undefined') {
+      const ai = AiJobPreset.asPreset(AiJobPreset.cached(DB.user, this._jobText(jobKey)));
+      if (ai) return ai;
+    }
+    return JOB_PRESETS[jobKey] || null;
+  },
+
+  // Backfill diam-diam: siapkan saran AI utk SEMUA pekerjaan yang dipilih user
+  // (bukan cuma yang ketik bebas) begitu tab Produktivitas dibuka, kalau belum
+  // pernah digenerate — supaya akun yang memilih pekerjaannya SEBELUM fitur AI
+  // per-pekerjaan ini ada tetap kebagian, tanpa harus buka "Ubah Pekerjaan"
+  // lagi. TIDAK diawait oleh render() (tak boleh menunda tampil tab), dan
+  // hanya App.refresh() kalau BENAR-BENAR ada entri baru tersimpan — ensure()
+  // sendiri sudah no-op instan kalau sudah pernah di-cache, jadi render ulang
+  // berikutnya tidak memicu App.refresh() lagi (mencegah loop render).
+  _ensureJobPresets() {
+    if (typeof AiJobPreset === 'undefined' || typeof JOBS === 'undefined') return;
+    const list = DB.user?.pekerjaanList?.length ? DB.user.pekerjaanList : (DB.user?.pekerjaan ? [DB.user.pekerjaan] : []);
+    if (!list.length) return;
+    (async () => {
+      let changed = false;
+      // Serial, bukan Promise.all — lihat catatan race di job-select.js.
+      for (const k of list) {
+        if (await AiJobPreset.ensure(this._jobText(k), DB.user, patch => DB.updateUser(patch))) changed = true;
+      }
+      if (changed) App.refresh();
+    })();
   },
 
   // Saran kebiasaan berdasarkan pekerjaan (JOB_PRESETS di job-select.js),
@@ -119,6 +171,7 @@ const Prod = {
       </div>
 
       ${saran.length ? `
+        <div style="font-size:.78rem;color:var(--text-3);font-weight:600;margin-bottom:8px;">✨ ${tr('Disarankan untuk pekerjaanmu', 'Suggested for your job')}</div>
         <div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:16px;">
           ${saran.map(s => `<button class="chip" data-saran="${esc(s.nama)}" data-emoji="${s.emoji}">${s.emoji} ${esc(s.nama)}</button>`).join('')}
         </div>` : ''}

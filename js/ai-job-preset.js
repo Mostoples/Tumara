@@ -1,19 +1,22 @@
 /* ============================================================
-   TUMARA — Saran AI utk pekerjaan bebas ketik
+   TUMARA — Saran AI per pekerjaan (Produktivitas)
    ------------------------------------------------------------
-   Kartu pekerjaan bawaan (JOB_PRESETS di js/views/job-select.js)
-   sudah punya saran kategori tugas & kebiasaan bawaan. Untuk yang
-   ketik pekerjaan sendiri (bukan salah satu dari 12 kartu), modul
-   ini memanggil proxy Apps Script (google-apps-script/Code.gs,
-   action 'aiJobPreset') SEKALI per teks pekerjaan, lalu hasilnya
-   di-cache di Firestore (users/{uid}.aiJobPresets) lewat callback
-   `persist` yang diberikan pemanggil — modul ini tak perlu tahu
-   apakah pemanggilnya UmumAuth (saat onboarding) atau DB (saat
-   ganti pekerjaan lewat Profil).
+   Dipakai utk SEMUA pekerjaan — baik salah satu dari 12 kartu
+   preset (JOB_PRESETS di js/views/job-select.js, dipakai sbg
+   fallback instan sebelum/kalau AI belum/tak berhasil) maupun yang
+   ketik sendiri (yang sebelumnya sama sekali tak dapat saran).
+   Modul ini memanggil proxy Apps Script (google-apps-script/
+   AiJobPreset.gs, action 'aiJobPreset') SEKALI per teks pekerjaan,
+   lalu hasilnya di-cache di Firestore (users/{uid}.aiJobPresets)
+   lewat callback `persist` yang diberikan pemanggil — modul ini tak
+   perlu tahu apakah pemanggilnya UmumAuth (saat onboarding), DB
+   (saat ganti pekerjaan lewat Profil), atau productivity.js (saat
+   membuka tab Produktivitas, utk "membackfill" akun lama yang
+   pekerjaannya dipilih sebelum fitur ini ada).
 
    Kalau panggilan gagal (jaringan/limit/dll.), `ensure()` diam-diam
-   tidak melakukan apa-apa — app lanjut dgn tampilan generik seperti
-   sebelum fitur ini ada, TANPA pesan error ke user.
+   tidak melakukan apa-apa — app lanjut dgn tampilan generik/preset
+   statis seperti sebelum fitur ini ada, TANPA pesan error ke user.
    ============================================================ */
 
 // Endpoint & token proxy — project Apps Script TERPISAH dari proxy upload
@@ -80,19 +83,32 @@ const AiJobPreset = {
     return { kategori, kebiasaan };
   },
 
+  // Cegah 2 panggilan bersamaan utk teks pekerjaan yang sama menembak proxy
+  // dua kali (mis. render ulang tab sebelum panggilan pertama selesai, atau
+  // beberapa pekerjaan di-ensure() paralel oleh pemanggil yang lalai serial).
+  _inflight: new Set(),
+
   // Cek cache → kalau belum ada, panggil AI → sanitasi → simpan lewat
   // `persist(patch)` (mis. UmumAuth._patch atau DB.updateUser). Tak pernah
   // throw — kegagalan apapun cukup berarti "belum ada saran AI", bukan error.
+  // Balikan `true` hanya kalau BENAR-BENAR baru menyimpan entri (dipakai
+  // pemanggil utk tahu perlu refresh tampilan atau tidak).
   async ensure(jobText, user, persist) {
-    if (!jobText || this.cached(user, jobText)) return;
+    const key = this.keyOf(jobText);
+    if (!jobText || this.cached(user, jobText) || this._inflight.has(key)) return false;
+    this._inflight.add(key);
     try {
       const out = await this._post({ action: 'aiJobPreset', jobText }, 15000);
-      if (!out || !out.ok) return;
+      if (!out || !out.ok) return false;
       const entry = { ...this._sanitize(out), generatedAt: new Date().toISOString() };
-      if (!entry.kategori.length && !entry.kebiasaan.length) return;
-      await persist({ aiJobPresets: { ...(user.aiJobPresets || {}), [this.keyOf(jobText)]: entry } });
+      if (!entry.kategori.length && !entry.kebiasaan.length) return false;
+      await persist({ aiJobPresets: { ...(user.aiJobPresets || {}), [key]: entry } });
+      return true;
     } catch (_) {
       // diam-diam — lihat komentar di atas.
+      return false;
+    } finally {
+      this._inflight.delete(key);
     }
   },
 };

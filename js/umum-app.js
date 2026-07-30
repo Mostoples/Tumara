@@ -31,6 +31,7 @@ const App = {
     finance:    [() => tr('Keuangan', 'Finance'),       () => tr('Uang saku terpantau, nabung jalan terus', 'Allowance tracked, savings on track')],
     ibadah:     [() => tr('Ibadah', 'Worship'),         () => tr('Sholat, Al-Qur\'an, dzikir & zakat', 'Prayer, Qur\'an, dhikr & zakat')],
     kelas:      [() => tr('Kelas', 'Class'),            () => tr('Murid, absensi, nilai & jurnal mengajarmu', 'Your students, attendance, grades & teaching journal')],
+    kerja:      [() => (typeof JobLog !== 'undefined' ? JobLog._label() : tr('Log Kerja', 'Work Log')), () => tr('Catatan kerja harianmu', 'Your daily work log')],
     profile:    [() => tr('Profil', 'Profile'),         () => tr('Data diri & pengaturan aplikasi', 'Personal data & app settings')]
   },
 
@@ -45,6 +46,7 @@ const App = {
     finance:   () => Fin,
     ibadah:    () => Ibadah,
     kelas:     () => KelasGuru,
+    kerja:     () => Prod,
     profile:   () => Profile
   },
 
@@ -87,12 +89,18 @@ const App = {
 
   // Nav-link bertanda data-job hanya tampil kalau pekerjaan itu ada di
   // pekerjaanList user (mis. "Kelas" cuma untuk Guru — lihat js/views/kelas-guru.js).
+  // data-job boleh berisi BEBERAPA pekerjaan dipisah koma (mis. "Log Kerja"
+  // yang berlaku utk 7 pekerjaan sekaligus — lihat JOB_MODULE di
+  // js/views/job-select.js) — tampil kalau SALAH SATU cocok.
   // Dipanggil ulang di profile.js setelah pekerjaan diubah, supaya sidebar
   // langsung ikut berubah tanpa perlu reload halaman.
   _syncJobNav() {
     const u = DB.user;
     const pekerjaanList = u?.pekerjaanList?.length ? u.pekerjaanList : (u?.pekerjaan ? [u.pekerjaan] : []);
-    $$('.nav-link[data-job]').forEach(a => a.classList.toggle('hidden', !pekerjaanList.includes(a.dataset.job)));
+    $$('.nav-link[data-job]').forEach(a => {
+      const jobs = a.dataset.job.split(',');
+      a.classList.toggle('hidden', !jobs.some(j => pekerjaanList.includes(j)));
+    });
   },
 
   showApp() {
